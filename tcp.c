@@ -1,8 +1,10 @@
 #include "cache.h"
 #include "run-command.h"
 
-#ifndef HOST_NAME_MAX
-#define HOST_NAME_MAX 256
+#ifndef NO_IPV6
+#include "dns-ipv6.h"
+#else
+#include "dns-ipv4.h"
 #endif
 
 #define STR_(s)	# s
@@ -39,44 +41,27 @@ static void enable_keepalive(int sockfd)
 			strerror(errno));
 }
 
-#ifndef NO_IPV6
-
-static const char *ai_name(const struct addrinfo *ai)
-{
-	static char addr[NI_MAXHOST];
-	if (getnameinfo(ai->ai_addr, ai->ai_addrlen, addr, sizeof(addr), NULL, 0,
-			NI_NUMERICHOST) != 0)
-		strcpy(addr, "(unknown)");
-
-	return addr;
-}
-
 void git_locate_host(const char *hostname, char **ip_address,
 					char **canon_hostname)
 {
-	struct addrinfo hints;
-	struct addrinfo *ai;
-	int gai;
-	static char addrbuf[HOST_NAME_MAX + 1];
-	struct sockaddr_in *sin_addr;
+	resolver_result ai;
+	resolved_address i;
 
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_flags = AI_CANONNAME;
-
-	gai = getaddrinfo(hostname, NULL, &hints, &ai);
-	if (gai)
+	if (dns_resolve(hostname, NULL,
+			RESOLVE_CANONNAME | RESOLVE_FAIL_QUIETLY, &ai))
 		return;
 
-	sin_addr = (void *)ai->ai_addr;
-	inet_ntop(AF_INET, &sin_addr->sin_addr, addrbuf, sizeof(addrbuf));
-	free(*ip_address);
-	*ip_address = xstrdup(addrbuf);
+	for_each_address(i, ai) {
+		free(*ip_address);
+		*ip_address = dns_ip_address(&i, &ai);
 
-	free(*canon_hostname);
-	*canon_hostname = xstrdup(ai->ai_canonname ?
-				  ai->ai_canonname : *ip_address);
+		free(*canon_hostname);
+		*canon_hostname = xstrdup(dns_canonname(i, ai) ?
+					dns_canonname(i, ai) : *ip_address);
+		break;
+	}
 
-	freeaddrinfo(ai);
+	dns_free(ai);
 }
 
 /*
@@ -87,46 +72,42 @@ static int git_tcp_connect_sock(char *host, int flags)
 	struct strbuf error_message = STRBUF_INIT;
 	int sockfd = -1;
 	const char *port = STR(DEFAULT_GIT_PORT);
-	struct addrinfo hints, *ai0, *ai;
-	int gai;
-	int cnt = 0;
+	resolver_result ai;
+	resolved_address i;
+	int cnt = -1;
 
 	get_host_and_port(&host, &port);
 	if (!*port)
 		port = "<none>";
 
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
-
 	if (flags & CONNECT_VERBOSE)
 		fprintf(stderr, "Looking up %s ... ", host);
 
-	gai = getaddrinfo(host, port, &hints, &ai);
-	if (gai)
-		die("Unable to look up %s (port %s) (%s)", host, port, gai_strerror(gai));
+	if (dns_resolve(host, port, 0, &ai))
+		die("BUG: dns_resolve returned error?");
 
 	if (flags & CONNECT_VERBOSE)
 		fprintf(stderr, "done.\nConnecting to %s (port %s) ... ", host, port);
 
-	for (ai0 = ai; ai; ai = ai->ai_next, cnt++) {
-		sockfd = socket(ai->ai_family,
-				ai->ai_socktype, ai->ai_protocol);
-		if ((sockfd < 0) ||
-		    (connect(sockfd, ai->ai_addr, ai->ai_addrlen) < 0)) {
+	for_each_address(i, ai) {
+		cnt++;
+		sockfd = socket(dns_family(i, ai),
+				dns_socktype(i, ai), dns_protocol(i, ai));
+		if (sockfd < 0 ||
+		    connect(sockfd, dns_addr(i, ai), dns_addrlen(i, ai)) < 0) {
 			strbuf_addf(&error_message, "%s[%d: %s]: errno=%s\n",
-				    host, cnt, ai_name(ai), strerror(errno));
+				    host, cnt, dns_name(&i), strerror(errno));
 			if (0 <= sockfd)
 				close(sockfd);
 			sockfd = -1;
 			continue;
 		}
 		if (flags & CONNECT_VERBOSE)
-			fprintf(stderr, "%s ", ai_name(ai));
+			fprintf(stderr, "%s ", dns_name(&i));
 		break;
 	}
 
-	freeaddrinfo(ai0);
+	dns_free(ai);
 
 	if (sockfd < 0)
 		die("unable to connect to %s:\n%s", host, error_message.buf);
@@ -140,107 +121,6 @@ static int git_tcp_connect_sock(char *host, int flags)
 
 	return sockfd;
 }
-
-#else /* NO_IPV6 */
-
-void git_locate_host(const char *hostname, char **ip_address,
-					char **canon_hostname)
-{
-	struct hostent *hent;
-	struct sockaddr_in sa;
-	char **ap;
-	static char addrbuf[HOST_NAME_MAX + 1];
-
-	hent = gethostbyname(hostname);
-
-	ap = hent->h_addr_list;
-	memset(&sa, 0, sizeof sa);
-	sa.sin_family = hent->h_addrtype;
-	sa.sin_port = htons(0);
-	memcpy(&sa.sin_addr, *ap, hent->h_length);
-
-	inet_ntop(hent->h_addrtype, &sa.sin_addr,
-		  addrbuf, sizeof(addrbuf));
-
-	free(*canon_hostname);
-	*canon_hostname = xstrdup(hent->h_name);
-	free(*ip_address);
-	*ip_address = xstrdup(addrbuf);
-}
-
-/*
- * Returns a connected socket() fd, or else die()s.
- */
-static int git_tcp_connect_sock(char *host, int flags)
-{
-	struct strbuf error_message = STRBUF_INIT;
-	int sockfd = -1;
-	const char *port = STR(DEFAULT_GIT_PORT);
-	char *ep;
-	struct hostent *he;
-	struct sockaddr_in sa;
-	char **ap;
-	unsigned int nport;
-	int cnt;
-
-	get_host_and_port(&host, &port);
-
-	if (flags & CONNECT_VERBOSE)
-		fprintf(stderr, "Looking up %s ... ", host);
-
-	he = gethostbyname(host);
-	if (!he)
-		die("Unable to look up %s (%s)", host, hstrerror(h_errno));
-	nport = strtoul(port, &ep, 10);
-	if ( ep == port || *ep ) {
-		/* Not numeric */
-		struct servent *se = getservbyname(port,"tcp");
-		if ( !se )
-			die("Unknown port %s", port);
-		nport = se->s_port;
-	}
-
-	if (flags & CONNECT_VERBOSE)
-		fprintf(stderr, "done.\nConnecting to %s (port %s) ... ", host, port);
-
-	for (cnt = 0, ap = he->h_addr_list; *ap; ap++, cnt++) {
-		memset(&sa, 0, sizeof sa);
-		sa.sin_family = he->h_addrtype;
-		sa.sin_port = htons(nport);
-		memcpy(&sa.sin_addr, *ap, he->h_length);
-
-		sockfd = socket(he->h_addrtype, SOCK_STREAM, 0);
-		if ((sockfd < 0) ||
-		    connect(sockfd, (struct sockaddr *)&sa, sizeof sa) < 0) {
-			strbuf_addf(&error_message, "%s[%d: %s]: errno=%s\n",
-				host,
-				cnt,
-				inet_ntoa(*(struct in_addr *)&sa.sin_addr),
-				strerror(errno));
-			if (0 <= sockfd)
-				close(sockfd);
-			sockfd = -1;
-			continue;
-		}
-		if (flags & CONNECT_VERBOSE)
-			fprintf(stderr, "%s ",
-				inet_ntoa(*(struct in_addr *)&sa.sin_addr));
-		break;
-	}
-
-	if (sockfd < 0)
-		die("unable to connect to %s:\n%s", host, error_message.buf);
-
-	enable_keepalive(sockfd);
-
-	if (flags & CONNECT_VERBOSE)
-		fprintf(stderr, "done.\n");
-
-	return sockfd;
-}
-
-#endif /* NO_IPV6 */
-
 
 void git_tcp_connect(int fd[2], char *host, int flags)
 {

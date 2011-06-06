@@ -151,6 +151,10 @@ all::
 # Notably on Solaris hstrerror resides in libresolv and on Solaris 7
 # inet_ntop and inet_pton additionally reside there.
 #
+# Define USE_SRV_RR if you want git to pay attention to SRV resource records
+# when looking up servers to contact over git protocol.  This implies
+# NEEDS_RESOLV.
+#
 # Define NO_MMAP if you want to avoid mmap.
 #
 # Define NO_PTHREADS if you do not have or do not want to use Pthreads.
@@ -1495,6 +1499,11 @@ endif
 ifdef NEEDS_NSL
 	EXTLIBS += -lnsl
 endif
+ifdef USE_SRV_RR
+	BASIC_CFLAGS += -DUSE_SRV_RR
+	LIB_OBJS += srv.o
+	NEEDS_RESOLV = YesPlease
+endif
 ifdef NEEDS_RESOLV
 	EXTLIBS += -lresolv
 endif
@@ -2174,6 +2183,7 @@ builtin/commit.o builtin/revert.o wt-status.o: wt-status.h
 builtin/tar-tree.o archive-tar.o: tar.h
 connect.o transport.o url.o http-backend.o: url.h
 connect.o daemon.o tcp.o: tcp.h
+tcp.o srv.o: srv.h
 http-fetch.o http-walker.o remote-curl.o transport.o walker.o: walker.h
 http.o http-walker.o http-push.o http-fetch.o remote-curl.o: http.h url.h
 

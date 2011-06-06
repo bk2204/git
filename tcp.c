@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "run-command.h"
+#include "srv.h"
 
 #ifndef NO_IPV6
 #include "dns-ipv6.h"
@@ -72,46 +73,85 @@ void git_locate_host(const char *hostname, char **ip_address,
 static int git_tcp_connect_sock(char *host, int flags)
 {
 	struct strbuf error_message = STRBUF_INIT;
-	int sockfd = -1;
-	const char *port = STR(DEFAULT_GIT_PORT);
-	resolver_result ai;
-	resolved_address i;
-	int cnt = -1;
+	int sockfd = -1, gai = 0;
+	const char *port = NULL;
+	struct host *hosts = NULL;
+	int j, n = 0;
 
 	get_host_and_port(&host, &port);
+	if (!port) {
+		port = STR(DEFAULT_GIT_PORT);
+		n = get_srv(host, &hosts);
+	}
+	if (n < 0)
+		die("Unable to look up %s", host);
 	if (!*port)
 		port = "<none>";
-
-	if (flags & CONNECT_VERBOSE)
-		fprintf(stderr, "Looking up %s ... ", host);
-
-	if (dns_resolve(host, port, 0, &ai))
-		die("BUG: dns_resolve returned error?");
-
-	if (flags & CONNECT_VERBOSE)
-		fprintf(stderr, "done.\nConnecting to %s (port %s) ... ", host, port);
-
-	for_each_address(i, ai) {
-		cnt++;
-		sockfd = socket(dns_family(i, ai),
-				dns_socktype(i, ai), dns_protocol(i, ai));
-		if (sockfd < 0 ||
-		    connect(sockfd, dns_addr(i, ai), dns_addrlen(i, ai)) < 0) {
-			strbuf_addf(&error_message, "%s[%d: %s]: errno=%s\n",
-				    host, cnt, dns_name(&i), strerror(errno));
-			if (0 <= sockfd)
-				close(sockfd);
-			sockfd = -1;
-			continue;
-		}
-		if (flags & CONNECT_VERBOSE)
-			fprintf(stderr, "%s ", dns_name(&i));
-		break;
+	if (!n) {
+		hosts = xmalloc(sizeof(*hosts));
+		hosts[0].hostname = xstrdup(host);
+		hosts[0].port = xstrdup(port);
+		n = 1;
 	}
 
-	dns_free(ai);
+	for (j = 0; j < n; j++) {
+		resolver_result ai;
+		resolved_address i;
+		int cnt;
 
-	if (sockfd < 0)
+		if (flags & CONNECT_VERBOSE)
+			fprintf(stderr, "Looking up %s ... ", hosts[j].hostname);
+
+		gai = dns_resolve(hosts[j].hostname,
+				hosts[j].port, RESOLVE_FAIL_QUIETLY, &ai);
+		if (gai) {
+			if (flags & CONNECT_VERBOSE)
+				fprintf(stderr, "failed.\n");
+
+			if (n == 1 && !strcmp(host, hosts[j].hostname))
+				strbuf_addf(&error_message, "%s: %s\n",
+					host, dns_strerror(gai));
+			else
+				strbuf_addf(&error_message,
+					"%s[%d: %s:%s]: %s\n", host, j,
+					hosts[j].hostname, hosts[j].port,
+					dns_strerror(gai));
+			continue;
+		}
+
+		if (flags & CONNECT_VERBOSE)
+			fprintf(stderr, "done.\nConnecting to %s (port %s) ... ",
+					hosts[j].hostname, hosts[j].port);
+
+		cnt = -1;
+		for_each_address(i, ai) {
+			cnt++;
+			sockfd = socket(dns_family(i, ai),
+					dns_socktype(i, ai), dns_protocol(i, ai));
+			if (sockfd < 0 ||
+			    connect(sockfd, dns_addr(i, ai), dns_addrlen(i, ai)) < 0) {
+				strbuf_addf(&error_message, "%s[%d: %s]: errno=%s\n",
+						hosts[j].hostname,
+						cnt,
+						dns_name(&i),
+						strerror(errno));
+				if (0 <= sockfd)
+					close(sockfd);
+				sockfd = -1;
+				continue;
+			}
+			if (flags & CONNECT_VERBOSE)
+				fprintf(stderr, "%s ", dns_name(&i));
+			break;
+		}
+
+		dns_free(ai);
+
+		if (sockfd >= 0)
+			break;
+	}
+
+	if (gai || sockfd < 0)
 		die("unable to connect to %s:\n%s", host, error_message.buf);
 
 	enable_keepalive(sockfd);
@@ -119,8 +159,12 @@ static int git_tcp_connect_sock(char *host, int flags)
 	if (flags & CONNECT_VERBOSE)
 		fprintf(stderr, "done.\n");
 
+	for (j = 0; j < n; j++) {
+		free(hosts[j].hostname);
+		free(hosts[j].port);
+	}
+	free(hosts);
 	strbuf_release(&error_message);
-
 	return sockfd;
 }
 

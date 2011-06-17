@@ -56,8 +56,10 @@ void git_locate_host(const char *hostname, char **ip_address,
 		*ip_address = dns_ip_address(&i, &ai);
 
 		free(*canon_hostname);
-		*canon_hostname = xstrdup(dns_canonname(i, ai) ?
-					dns_canonname(i, ai) : *ip_address);
+		*canon_hostname =
+			dns_canonname(i, ai) ? xstrdup(dns_canonname(i, ai)) :
+			*ip_address ? xstrdup(*ip_address) :
+			NULL;
 		break;
 	}
 

@@ -1,9 +1,7 @@
 #ifndef DNS_IPV4_H
 #define DNS_IPV4_H
 
-#ifndef HOST_NAME_MAX
-#define HOST_NAME_MAX 256
-#endif
+#define ADDRBUFLEN 64	/* 46 for an ipv6 address, plus a little extra */
 
 struct ipv4_address {
 	char **ap;
@@ -37,9 +35,10 @@ static inline const char *dns_name(const resolved_address *addr)
 static inline char *dns_ip_address(const resolved_address *addr,
 					const resolver_result *ai)
 {
-	char addrbuf[HOST_NAME_MAX + 1];
-	inet_ntop(ai->he->h_addrtype, &addr->sa.sin_addr,
-		  addrbuf, sizeof(addrbuf));
+	char addrbuf[ADDRBUFLEN];
+	if (!inet_ntop(ai->he->h_addrtype, &addr->sa.sin_addr,
+		  addrbuf, sizeof(addrbuf)))
+		return NULL;
 	return xstrdup(addrbuf);
 }
 

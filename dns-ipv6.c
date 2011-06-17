@@ -1,8 +1,9 @@
 #include "cache.h"
 #include "dns-ipv6.h"
 
-#ifndef HOST_NAME_MAX
-#define HOST_NAME_MAX 256
+/* from RFC 2553 */
+#ifndef NI_MAXHOST
+#define NI_MAXHOST 1025
 #endif
 
 const char *dns_name(const resolved_address *i)
@@ -19,12 +20,11 @@ const char *dns_name(const resolved_address *i)
 char *dns_ip_address(const resolved_address *i, const resolver_result *ai0)
 {
 	const struct addrinfo *ai = *i;
-	char addrbuf[HOST_NAME_MAX + 1];
-	struct sockaddr_in *sin_addr;
-
-	sin_addr = (void *)ai->ai_addr;
-	inet_ntop(AF_INET, &sin_addr->sin_addr, addrbuf, sizeof(addrbuf));
-	return xstrdup(addrbuf);
+	char addr[NI_MAXHOST];
+	if (getnameinfo(ai->ai_addr, ai->ai_addrlen, addr, sizeof(addr),
+			NULL, 0, NI_NUMERICHOST))
+		return NULL;
+	return xstrdup(addr);
 }
 
 int dns_resolve(const char *host, const char *port, int flags,

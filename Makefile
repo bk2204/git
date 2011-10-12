@@ -251,6 +251,10 @@ all::
 # Define NO_CROSS_DIRECTORY_HARDLINKS if you plan to distribute the installed
 # programs as a tar, where bin/ and libexec/ might be on different file systems.
 #
+# Define NO_HARDLINKS if you plan to distribute the installed programs as a tar
+# that might be extracted on a filesystem like btrfs that does not cope well
+# with many links to one inode in one directory.
+#
 # Define USE_NED_ALLOCATOR if you want to replace the platforms default
 # memory allocators with the nedmalloc allocator written by Niall Douglas.
 #
@@ -2552,12 +2556,14 @@ endif
 	} && \
 	for p in $(filter $(install_bindir_programs),$(BUILT_INS)); do \
 		$(RM) "$$bindir/$$p" && \
+		test -z "$(NO_HARDLINKS)" && \
 		ln "$$bindir/git$X" "$$bindir/$$p" 2>/dev/null || \
 		ln -s "git$X" "$$bindir/$$p" 2>/dev/null || \
 		cp "$$bindir/git$X" "$$bindir/$$p" || exit; \
 	done && \
 	for p in $(BUILT_INS); do \
 		$(RM) "$$execdir/$$p" && \
+		test -z "$(NO_HARDLINKS)" && \
 		ln "$$execdir/git$X" "$$execdir/$$p" 2>/dev/null || \
 		ln -s "git$X" "$$execdir/$$p" 2>/dev/null || \
 		cp "$$execdir/git$X" "$$execdir/$$p" || exit; \
@@ -2565,6 +2571,7 @@ endif
 	remote_curl_aliases="$(REMOTE_CURL_ALIASES)" && \
 	for p in $$remote_curl_aliases; do \
 		$(RM) "$$execdir/$$p" && \
+		test -z "$(NO_HARDLINKS)" && \
 		ln "$$execdir/git-remote-http$X" "$$execdir/$$p" 2>/dev/null || \
 		ln -s "git-remote-http$X" "$$execdir/$$p" 2>/dev/null || \
 		cp "$$execdir/git-remote-http$X" "$$execdir/$$p" || exit; \

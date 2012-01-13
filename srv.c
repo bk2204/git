@@ -83,7 +83,6 @@ static int srv_parse(ns_msg *msg, struct parsed_srv_rr **res)
 {
 	struct parsed_srv_rr *rrs = NULL;
 	int nr_parsed = 0;
-	int cnames = 0;
 	int i, n;
 
 	n = ns_msg_count(*msg, ns_s_an);
@@ -98,30 +97,33 @@ static int srv_parse(ns_msg *msg, struct parsed_srv_rr **res)
 		if (ns_rr_type(rr) != ns_t_cname)
 			break;
 	}
-	cnames = i;
-	n -= cnames;
 
-	rrs = xmalloc(n * sizeof(*rrs));
-	for (i = 0; i < n; i++) {
+	rrs = xmalloc((n - i) * sizeof(*rrs));
+	for (; i < n; i++) {
 		ns_rr rr;
 
-		if (ns_parserr(msg, ns_s_an, cnames + i, &rr)) {
+		if (ns_parserr(msg, ns_s_an, i, &rr)) {
 			error("cannot parse DNS RR: %s", strerror(errno));
 			goto fail;
 		}
 		if (ns_rr_type(rr) != ns_t_srv) {
-			error("expected SRV RR, found RR type %d",
+			/*
+			 * Maybe the server is playing tricks and returned
+			 * an A record.  Let it pass and if we don't get
+			 * any SRV RRs, we can fall back to an A lookup.
+			 */
+			warning("expected SRV RR, found RR type %d",
 						(int) ns_rr_type(rr));
-			goto fail;
+			continue;
 		}
-		if (srv_parse_rr(msg, &rr, rrs + i))
+		if (srv_parse_rr(msg, &rr, rrs + nr_parsed))
 			/* srv_parse_rr writes a message */
 			goto fail;
 		nr_parsed++;
 	}
 
 	*res = rrs;
-	return n;
+	return nr_parsed;
 fail:
 	for (i = 0; i < nr_parsed; i++)
 		free(rrs[i].target);
@@ -274,13 +276,23 @@ int get_srv(const char *host, struct host **hosts)
 	if (len < 0)
 		goto out;
 
+	/*
+	 * If the reply to a SRV query is malformed, fall back to an
+	 * A query.
+	 *
+	 * The RFC2782 usage rules don't say anything about this, but
+	 * in practice, it seems that some firewalls or DNS servers
+	 * (think: captive portal) handle A queries sensibly and
+	 * provide malformed replies in response to SRV queries.
+	 */
+	if (ns_initparse(buf, len, &msg)) {
+		warning("cannot parse SRV response: %s", strerror(errno));
+		goto out;
+	}
+
 	/* If a SRV RR cannot be parsed, give up. */
 	ret = -1;
 
-	if (ns_initparse(buf, len, &msg)) {
-		error("cannot initialize DNS parser: %s", strerror(errno));
-		goto out;
-	}
 	n = srv_parse(&msg, &rrs);
 	if (n < 0)
 		/* srv_parse writes a message */

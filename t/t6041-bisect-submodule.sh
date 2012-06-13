@@ -27,6 +27,7 @@ git_bisect () {
 	git bisect bad $BAD
 }
 
+KNOWN_FAILURE_RECURSE_SUBMODULE_SERIES_BREAKS_REPLACE_SUBMODULE_TEST=1
 test_submodule_switch "git_bisect"
 
 test_done

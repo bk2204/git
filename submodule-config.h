@@ -5,6 +5,8 @@
 #include "submodule.h"
 #include "strbuf.h"
 
+struct option;
+
 /*
  * Submodule entry containing the information about a certain submodule
  * in a certain revision.
@@ -23,6 +25,8 @@ struct submodule {
 
 int parse_fetch_recurse_submodules_arg(const char *opt, const char *arg);
 int parse_update_recurse_submodules_arg(const char *opt, const char *arg);
+int option_parse_update_submodules(const struct option *opt,
+		const char *arg, int unset);
 int parse_push_recurse_submodules_arg(const char *opt, const char *arg);
 int parse_submodule_config_option(const char *var, const char *value);
 const struct submodule *submodule_from_name(const unsigned char *commit_sha1,

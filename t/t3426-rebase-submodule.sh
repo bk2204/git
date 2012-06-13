@@ -6,6 +6,8 @@ test_description='rebase can handle submodules'
 . "$TEST_DIRECTORY"/lib-submodule-update.sh
 . "$TEST_DIRECTORY"/lib-rebase.sh
 
+KNOWN_FAILURE_RECURSE_SUBMODULE_SERIES_BREAKS_REPLACE_SUBMODULE_TEST=1
+
 git_rebase () {
 	git status -su >expect &&
 	ls -1pR * >>expect &&

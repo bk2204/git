@@ -1,6 +1,7 @@
 #include "cache.h"
 #include "submodule-config.h"
 #include "submodule.h"
+#include "parse-options.h"
 #include "strbuf.h"
 
 /*
@@ -252,6 +253,20 @@ static int parse_update_recurse(const char *opt, const char *arg,
 int parse_update_recurse_submodules_arg(const char *opt, const char *arg)
 {
 	return parse_update_recurse(opt, arg, 1);
+}
+
+int option_parse_update_submodules(const struct option *opt,
+				   const char *arg, int unset)
+{
+	if (unset) {
+		*(int *)opt->value = RECURSE_SUBMODULES_OFF;
+	} else {
+		if (arg)
+			*(int *)opt->value = parse_update_recurse_submodules_arg(opt->long_name, arg);
+		else
+			*(int *)opt->value = RECURSE_SUBMODULES_ON;
+	}
+	return 0;
 }
 
 static int parse_push_recurse(const char *opt, const char *arg,

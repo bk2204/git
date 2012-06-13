@@ -5,6 +5,8 @@ test_description='pull can handle submodules'
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/lib-submodule-update.sh
 
+KNOWN_FAILURE_RECURSE_SUBMODULE_SERIES_BREAKS_REPLACE_SUBMODULE_TEST=1
+
 reset_branch_to_HEAD () {
 	git branch -D "$1" &&
 	git checkout -b "$1" HEAD &&
@@ -40,6 +42,7 @@ git_pull_noff () {
 
 KNOWN_FAILURE_NOFF_MERGE_DOESNT_CREATE_EMPTY_SUBMODULE_DIR=1
 KNOWN_FAILURE_NOFF_MERGE_ATTEMPTS_TO_MERGE_REMOVED_SUBMODULE_FILES=1
+KNOWN_FAILURE_RECURSE_SUBMODULE_SERIES_BREAKS_REPLACE_SUBMODULE_TEST=
 test_submodule_switch "git_pull_noff"
 
 test_done

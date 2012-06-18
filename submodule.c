@@ -335,6 +335,42 @@ static void print_submodule_summary(struct rev_info *rev, FILE *f,
 	strbuf_release(&sb);
 }
 
+int populate_submodule(const char *path, unsigned char sha1[20], int force)
+{
+	const struct submodule *submodule;
+	const char *name, *real_git_dir;
+	struct strbuf buf = STRBUF_INIT;
+	struct child_process cp;
+	const char *argv[] = {"read-tree", force ? "--reset" : "-m", "-u", NULL, NULL};
+
+	submodule = submodule_from_path(null_sha1, path);
+	if (!submodule || !submodule->name)
+		return 0;
+
+	name = submodule->name;
+
+	strbuf_addf(&buf, "%s/modules/%s", resolve_gitdir(get_git_dir()), name);
+	real_git_dir = resolve_gitdir(buf.buf);
+	if (!real_git_dir)
+		goto out;
+	connect_work_tree_and_git_dir(path, real_git_dir);
+
+	/* Run read-tree --reset sha1 */
+	memset(&cp, 0, sizeof(cp));
+	cp.argv = argv;
+	cp.env = local_repo_env;
+	cp.git_cmd = 1;
+	cp.no_stdin = 1;
+	cp.dir = path;
+	argv[3] = sha1_to_hex(sha1);
+	if (run_command(&cp))
+		warning(_("Checking out submodule %s failed"), path);
+
+out:
+	strbuf_release(&buf);
+	return 0;
+}
+
 int depopulate_submodule(const char *path)
 {
 	struct strbuf dot_git = STRBUF_INIT;
@@ -1185,23 +1221,25 @@ void connect_work_tree_and_git_dir(const char *work_tree, const char *git_dir)
 {
 	struct strbuf file_name = STRBUF_INIT;
 	struct strbuf rel_path = STRBUF_INIT;
+	const char *real_git_dir = xstrdup(real_path(git_dir));
 	const char *real_work_tree = xstrdup(real_path(work_tree));
 
 	/* Update gitfile */
 	strbuf_addf(&file_name, "%s/.git", work_tree);
 	write_file(file_name.buf, "gitdir: %s",
-		   relative_path(git_dir, real_work_tree, &rel_path));
+		   relative_path(real_git_dir, real_work_tree, &rel_path));
 
 	/* Update core.worktree setting */
 	strbuf_reset(&file_name);
-	strbuf_addf(&file_name, "%s/config", git_dir);
+	strbuf_addf(&file_name, "%s/config", real_git_dir);
 	git_config_set_in_file(file_name.buf, "core.worktree",
-			       relative_path(real_work_tree, git_dir,
+			       relative_path(real_work_tree, real_git_dir,
 					     &rel_path));
 
 	strbuf_release(&file_name);
 	strbuf_release(&rel_path);
 	free((void *)real_work_tree);
+	free((void *)real_git_dir);
 }
 
 int parallel_submodules(void)

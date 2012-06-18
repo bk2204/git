@@ -350,16 +350,7 @@ test_submodule_switch () {
 	'
 	# Replacing a submodule with files in a directory must fail as the
 	# submodule work tree isn't removed ...
-	if test "$KNOWN_FAILURE_NOFF_MERGE_ATTEMPTS_TO_MERGE_REMOVED_SUBMODULE_FILES" = 1
-	then
-		# Non fast-forward merges attempt to merge the former
-		# submodule files with the newly checked out ones in the
-		# directory of the same name while it shouldn't.
-		RESULT="failure"
-	else
-		RESULT="success"
-	fi
-	test_expect_$RESULT "$command: replace submodule with a directory must fail" '
+	test_expect_failure "$command: replace submodule with a directory must fail" '
 		prolog &&
 		reset_work_tree_to add_sub1 &&
 		(
@@ -371,7 +362,7 @@ test_submodule_switch () {
 		)
 	'
 	# ... especially when it contains a .git directory.
-	test_expect_$RESULT "$command: replace submodule containing a .git directory with a directory must fail" '
+	test_expect_failure "$command: replace submodule containing a .git directory with a directory must fail" '
 		prolog &&
 		reset_work_tree_to add_sub1 &&
 		(

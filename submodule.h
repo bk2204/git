@@ -49,6 +49,7 @@ void show_submodule_summary(FILE *f, const char *path,
 void set_config_fetch_recurse_submodules(int value);
 void set_config_update_recurse_submodules(int default_value, int option_value);
 int submodule_needs_update(const char *path);
+int populate_submodule(const char *path, unsigned char sha1[20], int force);
 int depopulate_submodule(const char *path);
 void check_for_new_submodule_commits(unsigned char new_sha1[20]);
 int fetch_populated_submodules(const struct argv_array *options,

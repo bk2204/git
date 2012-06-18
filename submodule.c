@@ -16,6 +16,8 @@
 #include "quote.h"
 
 static int config_fetch_recurse_submodules = RECURSE_SUBMODULES_ON_DEMAND;
+static int config_update_recurse_submodules = RECURSE_SUBMODULES_OFF;
+static int option_update_recurse_submodules = RECURSE_SUBMODULES_DEFAULT;
 static int parallel_jobs = 1;
 static struct string_list changed_submodule_paths = STRING_LIST_INIT_NODUP;
 static int initialized_fetch_ref_tips;
@@ -394,6 +396,24 @@ void show_submodule_summary(FILE *f, const char *path,
 void set_config_fetch_recurse_submodules(int value)
 {
 	config_fetch_recurse_submodules = value;
+}
+
+void set_config_update_recurse_submodules(int default_value, int option_value)
+{
+	config_update_recurse_submodules = default_value;
+	option_update_recurse_submodules = option_value;
+}
+
+int submodule_needs_update(const char *path)
+{
+	if (!submodule_from_path(null_sha1, path))
+		return 0;
+
+	/* update can't be "none", "merge" or "rebase" */
+
+	if (option_update_recurse_submodules != RECURSE_SUBMODULES_DEFAULT)
+		return 1;
+	return config_update_recurse_submodules != RECURSE_SUBMODULES_OFF;
 }
 
 static int has_remote(const char *refname, const struct object_id *oid,

@@ -1371,7 +1371,7 @@ sub cmd_commit_diff {
 			fatal("Needed URL or usable git-svn --id in ",
 			      "the command-line\n", $usage);
 		}
-		$url = $gs->{url};
+		$url = $gs->url;
 		$svn_path = $gs->path;
 	}
 	unless (defined $_revision) {
@@ -1639,15 +1639,16 @@ sub complete_url_ls_init {
 			      "and a separate URL is not specified");
 		}
 	}
-	my $url = $ra->{url};
+	my $url = $ra->url;
 	my $gs = Git::SVN->init($url, undef, undef, undef, 1);
 	my $k = "svn-remote.$gs->{repo_id}.url";
 	my $orig_url = eval { command_oneline(qw/config --get/, $k) };
-	if ($orig_url && ($orig_url ne $gs->{url})) {
+	if ($orig_url && ($orig_url ne $gs->url)) {
 		die "$k already set: $orig_url\n",
-		    "wanted to set to: $gs->{url}\n";
+		    "wanted to set to: $gs->url\n";
 	}
-	command_oneline('config', $k, $gs->{url}) unless $orig_url;
+	command_oneline('config', $k, $gs->url) unless $orig_url;
+
 	my $remote_path = $gs->path . "/$repo_path";
 	$remote_path =~ s{%([0-9A-F]{2})}{chr hex($1)}ieg;
 	$remote_path =~ s#/+#/#g;
@@ -2557,7 +2558,7 @@ sub _set_svm_vars {
 		# username is of no interest
 		$src =~ s{(^[a-z\+]*://)[^/@]*@}{$1};
 
-		my $replace = $ra->{url};
+		my $replace = $ra->url;
 		$replace .= "/$path" if length $path;
 
 		my $section = "svn-remote.$self->{repo_id}";
@@ -2596,16 +2597,17 @@ sub _set_svm_vars {
 	$path = $ra->{svn_path};
 	$ra = Git::SVN::Ra->new($ra->{repos_root});
 	while (length $path) {
-		unless ($tried{"$ra->{url}/$path"}) {
+		my $try = $ra->url ."/$path";
+		unless ($tried{$try}) {
 			$ok = $self->read_svm_props($ra, $path, $r);
 			last if $ok;
-			$tried{"$ra->{url}/$path"} = 1;
+			$tried{$try} = 1;
 		}
 		$path =~ s#/?[^/]+$##;
 	}
 	die "Path: '$path' should be ''\n" if $path ne '';
 	$ok ||= $self->read_svm_props($ra, $path, $r);
-	$tried{"$ra->{url}/$path"} = 1;
+	$tried{$ra->url ."/$path"} = 1;
 	if (!$ok) {
 		die @err, (map { "  $_\n" } keys %tried), "\n";
 	}
@@ -3105,7 +3107,7 @@ sub find_parent_branch {
 	}
 	my $r = $i->{copyfrom_rev};
 	my $repos_root = $self->ra->{repos_root};
-	my $url = $self->ra->{url};
+	my $url = $self->ra->url;
 	my $new_url = $url . $branch_from;
 	print STDERR  "Found possible branch point: ",
 	              "$new_url => ", $self->full_url, ", $r\n"
@@ -6616,14 +6618,14 @@ sub minimize_connections {
 		my $ra = Git::SVN::Ra->new($url);
 
 		# skip existing cases where we already connect to the root
-		if (($ra->{url} eq $ra->{repos_root}) ||
+		if (($ra->url eq $ra->{repos_root}) ||
 		    ($ra->{repos_root} eq $repo_id)) {
-			$root_repos->{$ra->{url}} = $repo_id;
+			$root_repos->{$ra->url} = $repo_id;
 			next;
 		}
 
 		my $root_ra = Git::SVN::Ra->new($ra->{repos_root});
-		my $root_path = $ra->{url};
+		my $root_path = $ra->url;
 		$root_path =~ s#^\Q$ra->{repos_root}\E(/|$)##;
 		foreach my $path (keys %$fetch) {
 			my $ref_id = $fetch->{$path};

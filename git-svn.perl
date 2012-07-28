@@ -1507,24 +1507,6 @@ sub cmd_commit_diff {
 	}
 }
 
-sub escape_uri_only {
-	my ($uri) = @_;
-	my @tmp;
-	foreach (split m{/}, $uri) {
-		s/([^~\w.%+-]|%(?![a-fA-F0-9]{2}))/sprintf("%%%02X",ord($1))/eg;
-		push @tmp, $_;
-	}
-	join('/', @tmp);
-}
-
-sub escape_url {
-	my ($url) = @_;
-	if ($url =~ m#^([^:]+)://([^/]*)(.*)$#) {
-		my ($scheme, $domain, $uri) = ($1, $2, escape_uri_only($3));
-		$url = "$scheme://$domain$uri";
-	}
-	$url;
-}
 
 sub cmd_info {
 	my $path = canonicalize_path(defined($_[0]) ? $_[0] : ".");
@@ -1552,18 +1534,18 @@ sub cmd_info {
 	my $full_url = $url . ($fullpath eq "" ? "" : "/$fullpath");
 
 	if ($_url) {
-		print escape_url($full_url), "\n";
+		print canonicalize_url($full_url), "\n";
 		return;
 	}
 
 	my $result = "Path: $path\n";
 	$result .= "Name: " . basename($path) . "\n" if $file_type ne "dir";
-	$result .= "URL: " . escape_url($full_url) . "\n";
+	$result .= "URL: " . canonicalize_url($full_url) . "\n";
 
 	eval {
 		my $repos_root = $gs->repos_root;
 		Git::SVN::remove_username($repos_root);
-		$result .= "Repository Root: " . escape_url($repos_root) . "\n";
+		$result .= "Repository Root: " . canonicalize_url($repos_root) . "\n";
 	};
 	if ($@) {
 		$result .= "Repository Root: (offline)\n";
@@ -2389,7 +2371,7 @@ sub find_existing_remote {
 
 sub init_remote_config {
 	my ($self, $url, $no_write) = @_;
-	$url =~ s!/+$!!; # strip trailing slash
+	$url = ::canonicalize_url($url);
 	my $r = read_all_remotes();
 	my $existing = find_existing_remote($url, $r);
 	if ($existing) {
@@ -5596,24 +5578,6 @@ sub _auth_providers () {
 	]
 }
 
-sub escape_uri_only {
-	my ($uri) = @_;
-	my @tmp;
-	foreach (split m{/}, $uri) {
-		s/([^~\w.%+-]|%(?![a-fA-F0-9]{2}))/sprintf("%%%02X",ord($1))/eg;
-		push @tmp, $_;
-	}
-	join('/', @tmp);
-}
-
-sub escape_url {
-	my ($url) = @_;
-	if ($url =~ m#^(https?)://([^/]+)(.*)$#) {
-		my ($scheme, $domain, $uri) = ($1, $2, escape_uri_only($3));
-		$url = "$scheme://$domain$uri";
-	}
-	$url;
-}
 
 sub new {
 	my ($class, $url) = @_;
@@ -5649,7 +5613,7 @@ sub new {
 			$Git::SVN::Prompt::_no_auth_cache = 1;
 		}
 	} # no warnings 'once'
-	my $self = SVN::Ra->new(url => escape_url($url), auth => $baton,
+	my $self = SVN::Ra->new(url => ::canonicalize_url($url), auth => $baton,
 	                      config => $config,
 			      pool => SVN::Pool->new,
 	                      auth_provider_callbacks => $callbacks);
@@ -5841,7 +5805,7 @@ sub gs_do_switch {
 
 	if ($old_url =~ m#^svn(\+ssh)?://# ||
 	    ($full_url =~ m#^https?://# &&
-	     escape_url($full_url) ne $full_url)) {
+	     ::canonicalize_url($full_url) ne $full_url)) {
 		$_[0] = undef;
 		$self = undef;
 		$RA = undef;
@@ -5854,7 +5818,7 @@ sub gs_do_switch {
 	}
 
 	$ra ||= $self;
-	$url_b = escape_url($url_b);
+	$url_b = ::canonicalize_url($url_b);
 	my $reporter = $ra->do_switch($rev_b, '', 1, $url_b, $editor, $pool);
 	my @lock = $SVN::Core::VERSION ge '1.2.0' ? (undef) : ();
 	$reporter->set_path('', $rev_a, 0, @lock, $pool);
@@ -6109,7 +6073,8 @@ sub minimize_url {
 			$ra->get_log("", $latest, 0, 1, 0, 1, sub {});
 		};
 	} while ($@ && ($c = shift @components));
-	$url;
+
+	return ::canonicalize_url($url);
 }
 
 sub can_do_switch {

@@ -1285,6 +1285,38 @@ sub _canonicalize_url_ourselves {
 	return $url;
 }
 
+=head3 join_paths
+
+    my $new_path = join_paths(@paths);
+
+Appends @paths together into a single path.  Any empty paths are ignored.
+
+=cut
+
+sub join_paths {
+	my @paths = @_;
+
+	@paths = grep { defined $_ && length $_ } @paths;
+
+	return '' unless @paths;
+	return $paths[0] if @paths == 1;
+
+	my $new_path = shift @paths;
+	$new_path =~ s{/+$}{};
+
+	my $last_path = pop @paths;
+	$last_path =~ s{^/+}{};
+
+	for my $path (@paths) {
+		$path =~ s{^/+}{};
+		$path =~ s{/+$}{};
+		$new_path .= "/$path";
+	}
+
+	return $new_path .= "/$last_path";
+}
+
+
 # get_svnprops(PATH)
 # ------------------
 # Helper for cmd_propget and cmd_proplist below.
@@ -1298,7 +1330,7 @@ sub get_svnprops {
 	$path = $cmd_dir_prefix . $path;
 	fatal("No such file or directory: $path") unless -e $path;
 	my $is_dir = -d $path ? 1 : 0;
-	$path = $gs->{path} . '/' . $path;
+	$path = join_paths($gs->{path}, $path);
 
 	# canonicalize the path (otherwise libsvn will abort or fail to
 	# find the file)
@@ -2342,9 +2374,7 @@ sub init_remote_config {
 			}
 			my $old_path = $self->path;
 			$url =~ s!^\Q$min_url\E(/|$)!!;
-			if (length $old_path) {
-				$url .= "/$old_path";
-			}
+			$url = ::join_paths($url, $old_path);
 			$self->path($url);
 			$url = $min_url;
 		}

@@ -1531,16 +1531,16 @@ sub cmd_info {
 	# canonicalize_path() will return "" to make libsvn 1.5.x happy,
 	$path = "." if $path eq "";
 
-	my $full_url = $url . ($fullpath eq "" ? "" : "/$fullpath");
+	my $full_url = canonicalize_url( $url . ($fullpath eq "" ? "" : "/$fullpath") );
 
 	if ($_url) {
-		print canonicalize_url($full_url), "\n";
+		print "$full_url\n";
 		return;
 	}
 
 	my $result = "Path: $path\n";
 	$result .= "Name: " . basename($path) . "\n" if $file_type ne "dir";
-	$result .= "URL: " . canonicalize_url($full_url) . "\n";
+	$result .= "URL: $full_url\n";
 
 	eval {
 		my $repos_root = $gs->repos_root;
@@ -5581,7 +5581,7 @@ sub _auth_providers () {
 
 sub new {
 	my ($class, $url) = @_;
-	$url =~ s!/+$!!;
+	$url = ::canonicalize_url($url);
 	return $RA if ($RA && $RA->url eq $url);
 
 	::_req_svn();
@@ -5613,7 +5613,7 @@ sub new {
 			$Git::SVN::Prompt::_no_auth_cache = 1;
 		}
 	} # no warnings 'once'
-	my $self = SVN::Ra->new(url => ::canonicalize_url($url), auth => $baton,
+	my $self = SVN::Ra->new(url => $url, auth => $baton,
 	                      config => $config,
 			      pool => SVN::Pool->new,
 	                      auth_provider_callbacks => $callbacks);

@@ -1358,6 +1358,31 @@ sub join_paths {
 }
 
 
+=head3 add_path_to_url
+
+    my $new_url = add_path_to_url($url, $path);
+
+Appends $path onto the $url.  If $path is empty, $url is returned unchanged.
+
+=cut
+
+sub add_path_to_url {
+	my($url, $path) = @_;
+
+	return $url if !defined $path or !length $path;
+
+	# Strip trailing and leading slashes so we don't
+	# wind up with http://x.com///path
+	$url  =~ s{/+$}{};
+	$path =~ s{^/+}{};
+
+	# If a path has a % in it, URI escape it so it's not
+	# mistaken for a URI escape later.
+	$path =~ s{%}{%25}g;
+
+	return join '/', $url, $path;
+}
+
 # get_svnprops(PATH)
 # ------------------
 # Helper for cmd_propget and cmd_proplist below.
@@ -1531,7 +1556,7 @@ sub cmd_info {
 	# canonicalize_path() will return "" to make libsvn 1.5.x happy,
 	$path = "." if $path eq "";
 
-	my $full_url = canonicalize_url( $url . ($fullpath eq "" ? "" : "/$fullpath") );
+	my $full_url = canonicalize_url( add_path_to_url( $url, $fullpath ) );
 
 	if ($_url) {
 		print "$full_url\n";
@@ -2639,8 +2664,7 @@ sub _set_svm_vars {
 		# username is of no interest
 		$src =~ s{(^[a-z\+]*://)[^/@]*@}{$1};
 
-		my $replace = $ra->url;
-		$replace .= "/$path" if length $path;
+		my $replace = ::add_path_to_url($ra->url, $path);
 
 		my $section = "svn-remote.$self->{repo_id}";
 		tmp_config("$section.svm-source", $src);
@@ -2657,7 +2681,7 @@ sub _set_svm_vars {
 	my $path = $self->path;
 	my %tried;
 	while (length $path) {
-		my $try = $self->url . "/$path";
+		my $try = ::add_path_to_url($self->url, $path);
 		unless ($tried{$try}) {
 			return $ra if $self->read_svm_props($ra, $path, $r);
 			$tried{$try} = 1;
@@ -2666,7 +2690,7 @@ sub _set_svm_vars {
 	}
 	die "Path: '$path' should be ''\n" if $path ne '';
 	return $ra if $self->read_svm_props($ra, $path, $r);
-	$tried{$self->url."/$path"} = 1;
+	$tried{ ::add_path_to_url($self->url, $path) } = 1;
 
 	if ($ra->{repos_root} eq $self->url) {
 		die @err, (map { "  $_\n" } keys %tried), "\n";
@@ -2678,7 +2702,7 @@ sub _set_svm_vars {
 	$path = $ra->{svn_path};
 	$ra = Git::SVN::Ra->new($ra->{repos_root});
 	while (length $path) {
-		my $try = $ra->url ."/$path";
+		my $try = ::add_path_to_url($ra->url, $path);
 		unless ($tried{$try}) {
 			$ok = $self->read_svm_props($ra, $path, $r);
 			last if $ok;
@@ -2688,7 +2712,7 @@ sub _set_svm_vars {
 	}
 	die "Path: '$path' should be ''\n" if $path ne '';
 	$ok ||= $self->read_svm_props($ra, $path, $r);
-	$tried{$ra->url ."/$path"} = 1;
+	$tried{ ::add_path_to_url($ra->url, $path) } = 1;
 	if (!$ok) {
 		die @err, (map { "  $_\n" } keys %tried), "\n";
 	}
@@ -3008,20 +3032,19 @@ sub rewrite_uuid {
 
 sub metadata_url {
 	my ($self) = @_;
-	($self->rewrite_root || $self->url) .
-	   (length $self->path ? '/' . $self->path : '');
+	my $url = $self->rewrite_root || $self->url;
+	return ::add_path_to_url( $url, $self->path );
 }
 
 sub full_url {
 	my ($self) = @_;
-	$self->url . (length $self->path ? '/' . $self->path : '');
+	return ::add_path_to_url( $self->url, $self->path );
 }
 
 sub full_pushurl {
 	my ($self) = @_;
 	if ($self->{pushurl}) {
-		return $self->{pushurl} . (length $self->path ? '/' .
-		       $self->path : '');
+		return ::add_path_to_url( $self->{pushurl}, $self->path );
 	} else {
 		return $self->full_url;
 	}
@@ -3189,7 +3212,7 @@ sub find_parent_branch {
 	my $r = $i->{copyfrom_rev};
 	my $repos_root = $self->ra->{repos_root};
 	my $url = $self->ra->url;
-	my $new_url = $url . $branch_from;
+	my $new_url = ::add_path_to_url( $url, $branch_from );
 	print STDERR  "Found possible branch point: ",
 	              "$new_url => ", $self->full_url, ", $r\n"
 	              unless $::_q > 1;
@@ -3518,12 +3541,11 @@ sub find_extra_svk_parents {
 	for my $ticket ( @tickets ) {
 		my ($uuid, $path, $rev) = split /:/, $ticket;
 		if ( $uuid eq $self->ra_uuid ) {
-			my $url = $self->url;
-			my $repos_root = $url;
+			my $repos_root = $self->url;
 			my $branch_from = $path;
 			$branch_from =~ s{^/}{};
-			my $gs = $self->other_gs($repos_root."/".$branch_from,
-			                         $url,
+			my $gs = $self->other_gs(::add_path_to_url( $repos_root, $branch_from ),
+			                         $repos_root,
 			                         $branch_from,
 			                         $rev,
 			                         $self->{ref_id});
@@ -3931,8 +3953,7 @@ sub make_log_entry {
 		$email ||= "$author\@$uuid";
 		$commit_email ||= "$author\@$uuid";
 	} elsif ($self->use_svnsync_props) {
-		my $full_url = $self->svnsync->{url};
-		$full_url .= "/".$self->path if length $self->path;
+		my $full_url = ::add_path_to_url( $self->svnsync->{url}, $self->path );
 		remove_username($full_url);
 		my $uuid = $self->svnsync->{uuid};
 		$log_entry{metadata} = "$full_url\@$rev $uuid";
@@ -5798,9 +5819,8 @@ sub gs_do_switch {
 	my $path = $gs->path;
 	my $pool = SVN::Pool->new;
 
-	my $full_url = $self->url;
-	my $old_url = $full_url;
-	$full_url .= '/' . $path if length $path;
+	my $old_url = $self->url;
+	my $full_url = ::add_path_to_url( $self->url, $path );
 	my ($ra, $reparented);
 
 	if ($old_url =~ m#^svn(\+ssh)?://# ||
@@ -6066,7 +6086,7 @@ sub minimize_url {
 	my @components = split(m!/!, $self->{svn_path});
 	my $c = '';
 	do {
-		$url .= "/$c" if length $c;
+		$url = ::add_path_to_url($url, $c);
 		eval {
 			my $ra = (ref $self)->new($url);
 			my $latest = $ra->get_latest_revnum;

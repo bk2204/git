@@ -2461,6 +2461,8 @@ sub init_remote_config {
 sub find_by_url { # repos_root and, path are optional
 	my ($class, $full_url, $repos_root, $path) = @_;
 
+	$full_url = ::canonicalize_url($full_url);
+
 	return undef unless defined $full_url;
 	remove_username($full_url);
 	remove_username($repos_root) if defined $repos_root;
@@ -2499,6 +2501,11 @@ sub find_by_url { # repos_root and, path are optional
 			}
 			$p =~ s#^\Q$z\E(?:/|$)#$prefix# or next;
 		}
+
+		# remote fetch paths are not URI escaped.  Decode ours
+		# so they match
+		$p = uri_decode($p);
+
 		foreach my $f (keys %$fetch) {
 			next if $f ne $p;
 			return Git::SVN->new($fetch->{$f}, $repo_id, $f);
@@ -3033,18 +3040,18 @@ sub rewrite_uuid {
 sub metadata_url {
 	my ($self) = @_;
 	my $url = $self->rewrite_root || $self->url;
-	return ::add_path_to_url( $url, $self->path );
+	return ::canonicalize_url( ::add_path_to_url( $url, $self->path ) );
 }
 
 sub full_url {
 	my ($self) = @_;
-	return ::add_path_to_url( $self->url, $self->path );
+	return ::canonicalize_url( ::add_path_to_url( $self->url, $self->path ) );
 }
 
 sub full_pushurl {
 	my ($self) = @_;
 	if ($self->{pushurl}) {
-		return ::add_path_to_url( $self->{pushurl}, $self->path );
+		return ::canonicalize_url( ::add_path_to_url( $self->{pushurl}, $self->path ) );
 	} else {
 		return $self->full_url;
 	}
@@ -3212,7 +3219,7 @@ sub find_parent_branch {
 	my $r = $i->{copyfrom_rev};
 	my $repos_root = $self->ra->{repos_root};
 	my $url = $self->ra->url;
-	my $new_url = ::add_path_to_url( $url, $branch_from );
+	my $new_url = ::canonicalize_url( ::add_path_to_url( $url, $branch_from ) );
 	print STDERR  "Found possible branch point: ",
 	              "$new_url => ", $self->full_url, ", $r\n"
 	              unless $::_q > 1;
@@ -3953,7 +3960,9 @@ sub make_log_entry {
 		$email ||= "$author\@$uuid";
 		$commit_email ||= "$author\@$uuid";
 	} elsif ($self->use_svnsync_props) {
-		my $full_url = ::add_path_to_url( $self->svnsync->{url}, $self->path );
+		my $full_url = ::canonicalize_url(
+			::add_path_to_url( $self->svnsync->{url}, $self->path )
+		);
 		remove_username($full_url);
 		my $uuid = $self->svnsync->{uuid};
 		$log_entry{metadata} = "$full_url\@$rev $uuid";
@@ -5634,6 +5643,7 @@ sub new {
 			$Git::SVN::Prompt::_no_auth_cache = 1;
 		}
 	} # no warnings 'once'
+
 	my $self = SVN::Ra->new(url => $url, auth => $baton,
 	                      config => $config,
 			      pool => SVN::Pool->new,
@@ -5730,6 +5740,7 @@ sub get_log {
 				qw/copyfrom_path copyfrom_rev action/;
 			if ($s{'copyfrom_path'}) {
 				$s{'copyfrom_path'} =~ s/$prefix_regex//;
+				$s{'copyfrom_path'} = ::canonicalize_path($s{'copyfrom_path'});
 			}
 			$_[0]{$p} = \%s;
 		}
@@ -5832,7 +5843,11 @@ sub gs_do_switch {
 		$ra = Git::SVN::Ra->new($full_url);
 		$ra_invalid = 1;
 	} elsif ($old_url ne $full_url) {
-		SVN::_Ra::svn_ra_reparent($self->{session}, $full_url, $pool);
+		SVN::_Ra::svn_ra_reparent(
+			$self->{session},
+			::canonicalize_url($full_url),
+			$pool
+		);
 		$self->url($full_url);
 		$reparented = 1;
 	}

@@ -4366,7 +4366,7 @@ sub path {
 
 	if (@_) {
 		my $path = shift;
-		$self->{path} = $path;
+		$self->{path} = ::canonicalize_path($path);
 		return;
 	}
 
@@ -4378,7 +4378,7 @@ sub url {
 
 	if (@_) {
 		my $url = shift;
-		$self->{url} = $url;
+		$self->{url} = ::canonicalize_url($url);
 		return;
 	}
 
@@ -5656,7 +5656,7 @@ sub url {
 
 	if (@_) {
 		my $url = shift;
-		$self->{url} = $url;
+		$self->{url} = ::canonicalize_url($url);
 		return;
 	}
 

@@ -5,10 +5,14 @@ struct string_list_item {
 	char *string;
 	void *util;
 };
+
+typedef int (*compare_strings_fn)(const char *, const char *);
+
 struct string_list {
 	struct string_list_item *items;
 	unsigned int nr, alloc;
 	unsigned int strdup_strings:1;
+	compare_strings_fn cmp; /* NULL uses strcmp() */
 };
 
 #define STRING_LIST_INIT_NODUP { NULL, 0, 0, 0 }
@@ -44,15 +48,6 @@ void filter_string_list(struct string_list *list, int free_util,
  * Preserve the order of the items that are retained.
  */
 void string_list_remove_empty_items(struct string_list *list, int free_util);
-
-/*
- * Return the longest string in prefixes that is a prefix (in the
- * sense of prefixcmp()) of string, or NULL if no such prefix exists.
- * This function does not require the string_list to be sorted (it
- * does a linear search).
- */
-char *string_list_longest_prefix(const struct string_list *prefixes, const char *string);
-
 
 /* Use these functions only on sorted lists: */
 int string_list_has_string(const struct string_list *list, const char *string);

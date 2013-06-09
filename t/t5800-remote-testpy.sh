@@ -3,12 +3,12 @@
 # Copyright (c) 2010 Sverre Rabbelier
 #
 
-test_description='Test remote-helper import and export commands'
+test_description='Test python remote-helper framework'
 
 . ./test-lib.sh
 
 if ! test_have_prereq PYTHON ; then
-	skip_all='skipping git-remote-hg tests, python not available'
+	skip_all='skipping python remote-helper tests, python not available'
 	test_done
 fi
 
@@ -17,7 +17,7 @@ import sys
 if sys.hexversion < 0x02040000:
     sys.exit(1)
 ' || {
-	skip_all='skipping git-remote-hg tests, python version < 2.4'
+	skip_all='skipping python remote-helper tests, python version < 2.4'
 	test_done
 }
 
@@ -38,12 +38,12 @@ test_expect_success 'setup repository' '
 '
 
 test_expect_success 'cloning from local repo' '
-	git clone "testgit::${PWD}/server" localclone &&
+	git clone "testpy::${PWD}/server" localclone &&
 	test_cmp public/file localclone/file
 '
 
 test_expect_success 'cloning from remote repo' '
-	git clone "testgit::file://${PWD}/server" clone &&
+	git clone "testpy::file://${PWD}/server" clone &&
 	test_cmp public/file clone/file
 '
 
@@ -73,11 +73,11 @@ test_expect_success 'pushing to local repo' '
 '
 
 # Generally, skip this test.  It demonstrates a now-fixed race in
-# git-remote-testgit, but is too slow to leave in for general use.
+# git-remote-testpy, but is too slow to leave in for general use.
 : test_expect_success 'racily pushing to local repo' '
 	test_when_finished "rm -rf server2 localclone2" &&
 	cp -R server server2 &&
-	git clone "testgit::${PWD}/server2" localclone2 &&
+	git clone "testpy::${PWD}/server2" localclone2 &&
 	(cd localclone2 &&
 	echo content >>file &&
 	git commit -a -m three &&
@@ -143,6 +143,27 @@ test_expect_failure 'push new branch with old:new refspec' '
 	 git push origin new-name:new-refspec
 	) &&
 	compare_refs clone HEAD server refs/heads/new-refspec
+'
+
+test_expect_success 'proper failure checks for fetching' '
+	(GIT_REMOTE_TESTGIT_FAILURE=1 &&
+	export GIT_REMOTE_TESTGIT_FAILURE &&
+	cd localclone &&
+	test_must_fail git fetch 2>&1 | \
+		grep "Error while running fast-import"
+	)
+'
+
+# We sleep to give fast-export a chance to catch the SIGPIPE
+test_expect_failure 'proper failure checks for pushing' '
+	(GIT_REMOTE_TESTGIT_FAILURE=1 &&
+	export GIT_REMOTE_TESTGIT_FAILURE &&
+	GIT_REMOTE_TESTGIT_SLEEPY=1 &&
+	export GIT_REMOTE_TESTGIT_SLEEPY &&
+	cd localclone &&
+	test_must_fail git push --all 2>&1 | \
+		grep "Error while running fast-export"
+	)
 '
 
 test_done

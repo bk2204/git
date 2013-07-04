@@ -821,6 +821,9 @@ static void prep_exclude(struct dir_struct *dir, const char *base, int baselen)
 				dir->basebuf, stk->baselen - 1,
 				dir->basebuf + current, &dt);
 			dir->basebuf[stk->baselen - 1] = '/';
+			if (dir->exclude &&
+			    dir->exclude->flags & EXC_FLAG_NEGATIVE)
+				dir->exclude = NULL;
 			if (dir->exclude) {
 				dir->basebuf[stk->baselen] = 0;
 				dir->exclude_stack = stk;
@@ -1542,9 +1545,9 @@ void setup_standard_excludes(struct dir_struct *dir)
 		home_config_paths(NULL, &xdg_path, "ignore");
 		excludes_file = xdg_path;
 	}
-	if (!access_or_warn(path, R_OK))
+	if (!access_or_warn(path, R_OK, 0))
 		add_excludes_from_file(dir, path);
-	if (excludes_file && !access_or_warn(excludes_file, R_OK))
+	if (excludes_file && !access_or_warn(excludes_file, R_OK, 0))
 		add_excludes_from_file(dir, excludes_file);
 }
 

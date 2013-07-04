@@ -135,6 +135,13 @@ test_expect_success 'clone shallow depth 1' '
 	test "`git --git-dir=shallow0/.git rev-list --count HEAD`" = 1
 '
 
+test_expect_success 'clone shallow depth 1 with fsck' '
+	git config --global fetch.fsckobjects true &&
+	git clone --no-single-branch --depth 1 "file://$(pwd)/." shallow0fsck &&
+	test "`git --git-dir=shallow0fsck/.git rev-list --count HEAD`" = 1 &&
+	git config --global --unset fetch.fsckobjects
+'
+
 test_expect_success 'clone shallow' '
 	git clone --no-single-branch --depth 2 "file://$(pwd)/." shallow
 '
@@ -371,6 +378,20 @@ test_expect_success 'clone shallow with packed refs' '
 	GIT_DIR=shallow8/.git git count-objects -v |
 		grep "^in-pack" > count8.actual &&
 	test_cmp count8.expected count8.actual
+'
+
+test_expect_success 'fetch in shallow repo unreachable shallow objects' '
+	(
+		git clone --bare --branch B --single-branch "file://$(pwd)/." no-reflog &&
+		git clone --depth 1 "file://$(pwd)/no-reflog" shallow9 &&
+		cd no-reflog &&
+		git tag -d TAGB1 TAGB2 &&
+		git update-ref refs/heads/B B~~ &&
+		git gc --prune=now &&
+		cd ../shallow9 &&
+		git fetch origin &&
+		git fsck --no-dangling
+	)
 '
 
 test_expect_success 'setup tests for the --stdin parameter' '

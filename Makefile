@@ -69,6 +69,9 @@ all::
 # Define NO_MSGFMT_EXTENDED_OPTIONS if your implementation of msgfmt
 # doesn't support GNU extensions like --check and --statistics
 #
+# Define NEEDS_CLIPPED_WRITE if your write(2) cannot write more than
+# INT_MAX bytes at once (e.g. MacOS X).
+#
 # Define HAVE_PATHS_H if you have paths.h and want to use the default PATH
 # it specifies.
 #
@@ -136,6 +139,10 @@ all::
 # link against any libraries installed there.  If defined you may
 # specify your own (or DarwinPort's) include directories and
 # library directories by defining CFLAGS and LDFLAGS appropriately.
+#
+# Define NO_APPLE_COMMON_CRYPTO if you are building on Darwin/Mac OS X
+# and do not want to use Apple's CommonCrypto library.  This allows you
+# to provide your own OpenSSL library, for example from MacPorts.
 #
 # Define BLK_SHA1 environment variable to make use of the bundled
 # optimized C SHA1 routine.
@@ -1054,6 +1061,11 @@ ifeq ($(uname_S),Darwin)
 			BASIC_LDFLAGS += -L/opt/local/lib
 		endif
 	endif
+	ifndef NO_APPLE_COMMON_CRYPTO
+		APPLE_COMMON_CRYPTO = YesPlease
+		COMPAT_CFLAGS += -DAPPLE_COMMON_CRYPTO
+	endif
+	NO_REGEX = YesPlease
 	PTHREAD_LIBS =
 endif
 
@@ -1388,10 +1400,16 @@ ifdef PPC_SHA1
 	LIB_OBJS += ppc/sha1.o ppc/sha1ppc.o
 	LIB_H += ppc/sha1.h
 else
+ifdef APPLE_COMMON_CRYPTO
+	COMPAT_CFLAGS += -DCOMMON_DIGEST_FOR_OPENSSL
+	SHA1_HEADER = <CommonCrypto/CommonDigest.h>
+else
 	SHA1_HEADER = <openssl/sha.h>
 	EXTLIBS += $(LIB_4_CRYPTO)
 endif
 endif
+endif
+
 ifdef NO_PERL_MAKEMAKER
 	export NO_PERL_MAKEMAKER
 endif
@@ -1464,6 +1482,11 @@ endif
 
 ifndef NO_MSGFMT_EXTENDED_OPTIONS
 	MSGFMT += --check --statistics
+endif
+
+ifdef NEEDS_CLIPPED_WRITE
+	BASIC_CFLAGS += -DNEEDS_CLIPPED_WRITE
+	COMPAT_OBJS += compat/clipped-write.o
 endif
 
 ifneq (,$(XDL_FAST_HASH))

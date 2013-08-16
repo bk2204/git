@@ -27,7 +27,6 @@ MAKE_FRAG
 my %pm = (
 	'Git.pm' => '$(INST_LIBDIR)/Git.pm',
 	'Git/I18N.pm' => '$(INST_LIBDIR)/Git/I18N.pm',
-	'Git/SVN/Memoize/YAML.pm' => '$(INST_LIBDIR)/Git/SVN/Memoize/YAML.pm',
 );
 
 # We come with our own bundled Error.pm. It's not in the set of default

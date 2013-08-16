@@ -1171,7 +1171,7 @@ sub cmd_show_ignore {
 	my ($url, $rev, $uuid, $gs) = working_head_info('HEAD');
 	$gs ||= Git::SVN->new;
 	my $r = (defined $_revision ? $_revision : $gs->ra->get_latest_revnum);
-	$gs->prop_walk($gs->path, $r, sub {
+	$gs->prop_walk($gs->{path}, $r, sub {
 		my ($gs, $path, $props) = @_;
 		print STDOUT "\n# $path\n";
 		my $s = $props->{'svn:ignore'} or return;
@@ -1187,7 +1187,7 @@ sub cmd_show_externals {
 	my ($url, $rev, $uuid, $gs) = working_head_info('HEAD');
 	$gs ||= Git::SVN->new;
 	my $r = (defined $_revision ? $_revision : $gs->ra->get_latest_revnum);
-	$gs->prop_walk($gs->path, $r, sub {
+	$gs->prop_walk($gs->{path}, $r, sub {
 		my ($gs, $path, $props) = @_;
 		print STDOUT "\n# $path\n";
 		my $s = $props->{'svn:externals'} or return;
@@ -1202,7 +1202,7 @@ sub cmd_create_ignore {
 	my ($url, $rev, $uuid, $gs) = working_head_info('HEAD');
 	$gs ||= Git::SVN->new;
 	my $r = (defined $_revision ? $_revision : $gs->ra->get_latest_revnum);
-	$gs->prop_walk($gs->path, $r, sub {
+	$gs->prop_walk($gs->{path}, $r, sub {
 		my ($gs, $path, $props) = @_;
 		# $path is of the form /path/to/dir/
 		$path = '.' . $path;
@@ -1232,45 +1232,7 @@ sub cmd_mkdirs {
 	$gs->mkemptydirs($_revision);
 }
 
-# Turn foo/../bar into bar
-sub _collapse_dotdot {
-	my $path = shift;
-
-	1 while $path =~ s{/[^/]+/+\.\.}{};
-	1 while $path =~ s{[^/]+/+\.\./}{};
-	1 while $path =~ s{[^/]+/+\.\.}{};
-
-	return $path;
-}
-
-
 sub canonicalize_path {
-	my $path = shift;
-	my $rv;
-
-	::_req_svn();
-
-	# The 1.7 way to do it
-	if ( defined &SVN::_Core::svn_dirent_canonicalize ) {
-		$path = _collapse_dotdot($path);
-		$rv = SVN::_Core::svn_dirent_canonicalize($path);
-	}
-	# The 1.6 way to do it
-	# This can return undef on subversion-perl-1.4.2-2.el5 (CentOS 5.2)
-	elsif ( defined &SVN::_Core::svn_path_canonicalize ) {
-		$path = _collapse_dotdot($path);
-		$rv = SVN::_Core::svn_path_canonicalize($path);
-	}
-
-	return $rv if defined $rv;
-
-	# No SVN API canonicalization is available, or the SVN API
-	# didn't return a successful result, do it ourselves
-	return _canonicalize_path_ourselves($path);
-}
-
-
-sub _canonicalize_path_ourselves {
 	my ($path) = @_;
 	my $dot_slash_added = 0;
 	if (substr($path, 0, 1) ne "/") {
@@ -1281,7 +1243,7 @@ sub _canonicalize_path_ourselves {
 	# good reason), so let's do this manually.
 	$path =~ s#/+#/#g;
 	$path =~ s#/\.(?:/|$)#/#g;
-	$path = _collapse_dotdot($path);
+	$path =~ s#/[^/]+/\.\.##g;
 	$path =~ s#/$##g;
 	$path =~ s#^\./## if $dot_slash_added;
 	$path =~ s#^/##;
@@ -1290,97 +1252,9 @@ sub _canonicalize_path_ourselves {
 }
 
 sub canonicalize_url {
-	my $url = shift;
-
-	::_req_svn();
-
-	# The 1.7 way to do it
-	if ( defined &SVN::_Core::svn_uri_canonicalize ) {
-		return SVN::_Core::svn_uri_canonicalize($url);
-	}
-	# There wasn't a 1.6 way to do it, so we do it ourself.
-	else {
-		return _canonicalize_url_ourselves($url);
-	}
-}
-
-
-sub _canonicalize_url_path {
-	my ($uri_path) = @_;
-
-	my @parts;
-	foreach my $part (split m{/+}, $uri_path) {
-		$part =~ s/([^~\w.%+-]|%(?![a-fA-F0-9]{2}))/sprintf("%%%02X",ord($1))/eg;
-		push @parts, $part;
-	}
-
-	return join('/', @parts);
-}
-
-sub _canonicalize_url_ourselves {
 	my ($url) = @_;
-	if ($url =~ m#^([^:]+)://([^/]*)(.*)$#) {
-		my ($scheme, $domain, $uri) = ($1, $2, _canonicalize_url_path(canonicalize_path($3)));
-		$url = "$scheme://$domain$uri";
-	}
-	$url;
-}
-
-=head3 join_paths
-
-    my $new_path = join_paths(@paths);
-
-Appends @paths together into a single path.  Any empty paths are ignored.
-
-=cut
-
-sub join_paths {
-	my @paths = @_;
-
-	@paths = grep { defined $_ && length $_ } @paths;
-
-	return '' unless @paths;
-	return $paths[0] if @paths == 1;
-
-	my $new_path = shift @paths;
-	$new_path =~ s{/+$}{};
-
-	my $last_path = pop @paths;
-	$last_path =~ s{^/+}{};
-
-	for my $path (@paths) {
-		$path =~ s{^/+}{};
-		$path =~ s{/+$}{};
-		$new_path .= "/$path";
-	}
-
-	return $new_path .= "/$last_path";
-}
-
-
-=head3 add_path_to_url
-
-    my $new_url = add_path_to_url($url, $path);
-
-Appends $path onto the $url.  If $path is empty, $url is returned unchanged.
-
-=cut
-
-sub add_path_to_url {
-	my($url, $path) = @_;
-
-	return $url if !defined $path or !length $path;
-
-	# Strip trailing and leading slashes so we don't
-	# wind up with http://x.com///path
-	$url  =~ s{/+$}{};
-	$path =~ s{^/+}{};
-
-	# If a path has a % in it, URI escape it so it's not
-	# mistaken for a URI escape later.
-	$path =~ s{%}{%25}g;
-
-	return join '/', $url, $path;
+	$url =~ s#^([^:]+://[^/]*/)(.*)$#$1 . canonicalize_path($2)#e;
+	return $url;
 }
 
 # get_svnprops(PATH)
@@ -1396,7 +1270,7 @@ sub get_svnprops {
 	$path = $cmd_dir_prefix . $path;
 	fatal("No such file or directory: $path") unless -e $path;
 	my $is_dir = -d $path ? 1 : 0;
-	$path = join_paths($gs->{path}, $path);
+	$path = $gs->{path} . '/' . $path;
 
 	# canonicalize the path (otherwise libsvn will abort or fail to
 	# find the file)
@@ -1497,8 +1371,8 @@ sub cmd_commit_diff {
 			fatal("Needed URL or usable git-svn --id in ",
 			      "the command-line\n", $usage);
 		}
-		$url = $gs->url;
-		$svn_path = $gs->path;
+		$url = $gs->{url};
+		$svn_path = $gs->{path};
 	}
 	unless (defined $_revision) {
 		fatal("-r|--revision is a required argument\n", $usage);
@@ -1532,6 +1406,24 @@ sub cmd_commit_diff {
 	}
 }
 
+sub escape_uri_only {
+	my ($uri) = @_;
+	my @tmp;
+	foreach (split m{/}, $uri) {
+		s/([^~\w.%+-]|%(?![a-fA-F0-9]{2}))/sprintf("%%%02X",ord($1))/eg;
+		push @tmp, $_;
+	}
+	join('/', @tmp);
+}
+
+sub escape_url {
+	my ($url) = @_;
+	if ($url =~ m#^([^:]+)://([^/]*)(.*)$#) {
+		my ($scheme, $domain, $uri) = ($1, $2, escape_uri_only($3));
+		$url = "$scheme://$domain$uri";
+	}
+	$url;
+}
 
 sub cmd_info {
 	my $path = canonicalize_path(defined($_[0]) ? $_[0] : ".");
@@ -1556,21 +1448,21 @@ sub cmd_info {
 	# canonicalize_path() will return "" to make libsvn 1.5.x happy,
 	$path = "." if $path eq "";
 
-	my $full_url = canonicalize_url( add_path_to_url( $url, $fullpath ) );
+	my $full_url = $url . ($fullpath eq "" ? "" : "/$fullpath");
 
 	if ($_url) {
-		print "$full_url\n";
+		print escape_url($full_url), "\n";
 		return;
 	}
 
 	my $result = "Path: $path\n";
 	$result .= "Name: " . basename($path) . "\n" if $file_type ne "dir";
-	$result .= "URL: $full_url\n";
+	$result .= "URL: " . escape_url($full_url) . "\n";
 
 	eval {
 		my $repos_root = $gs->repos_root;
 		Git::SVN::remove_username($repos_root);
-		$result .= "Repository Root: " . canonicalize_url($repos_root) . "\n";
+		$result .= "Repository Root: " . escape_url($repos_root) . "\n";
 	};
 	if ($@) {
 		$result .= "Repository Root: (offline)\n";
@@ -1718,8 +1610,6 @@ sub post_fetch_checkout {
 sub complete_svn_url {
 	my ($url, $path) = @_;
 	$path =~ s#/+$##;
-
-	# If the path is not a URL...
 	if ($path !~ m#^[a-z\+]+://#) {
 		if (!defined $url || $url !~ m#^[a-z\+]+://#) {
 			fatal("E: '$path' is not a complete URL ",
@@ -1747,17 +1637,16 @@ sub complete_url_ls_init {
 			      "and a separate URL is not specified");
 		}
 	}
-	my $url = $ra->url;
+	my $url = $ra->{url};
 	my $gs = Git::SVN->init($url, undef, undef, undef, 1);
 	my $k = "svn-remote.$gs->{repo_id}.url";
 	my $orig_url = eval { command_oneline(qw/config --get/, $k) };
-	if ($orig_url && ($orig_url ne $gs->url)) {
+	if ($orig_url && ($orig_url ne $gs->{url})) {
 		die "$k already set: $orig_url\n",
-		    "wanted to set to: $gs->url\n";
+		    "wanted to set to: $gs->{url}\n";
 	}
-	command_oneline('config', $k, $gs->url) unless $orig_url;
-
-	my $remote_path = $gs->path . "/$repo_path";
+	command_oneline('config', $k, $gs->{url}) unless $orig_url;
+	my $remote_path = "$gs->{path}/$repo_path";
 	$remote_path =~ s{%([0-9A-F]{2})}{chr hex($1)}ieg;
 	$remote_path =~ s#/+#/#g;
 	$remote_path =~ s#^/##g;
@@ -2142,10 +2031,6 @@ use IPC::Open3;
 use Time::Local;
 use Memoize;  # core since 5.8.0, Jul 2002
 use Memoize::Storable;
-my $can_use_yaml;
-BEGIN {
-	$can_use_yaml = eval { require Git::SVN::Memoize::YAML; 1};
-}
 
 my ($_gc_nr, $_gc_period);
 
@@ -2307,9 +2192,9 @@ sub read_all_remotes {
 		} elsif (m!^(.+)\.usesvmprops=\s*(.*)\s*$!) {
 			$r->{$1}->{svm} = {};
 		} elsif (m!^(.+)\.url=\s*(.*)\s*$!) {
-			$r->{$1}->{url} = ::canonicalize_url($2);
+			$r->{$1}->{url} = $2;
 		} elsif (m!^(.+)\.pushurl=\s*(.*)\s*$!) {
-			$r->{$1}->{pushurl} = ::canonicalize_url($2);
+			$r->{$1}->{pushurl} = $2;
 		} elsif (m!^(.+)\.ignore-refs=\s*(.*)\s*$!) {
 			$r->{$1}->{ignore_refs_regex} = $2;
 		} elsif (m!^(.+)\.(branches|tags)=$svn_refspec$!) {
@@ -2400,7 +2285,7 @@ sub find_existing_remote {
 
 sub init_remote_config {
 	my ($self, $url, $no_write) = @_;
-	$url = ::canonicalize_url($url);
+	$url =~ s!/+$!!; # strip trailing slash
 	my $r = read_all_remotes();
 	my $existing = find_existing_remote($url, $r);
 	if ($existing) {
@@ -2424,10 +2309,12 @@ sub init_remote_config {
 				print STDERR "Using higher level of URL: ",
 					     "$url => $min_url\n";
 			}
-			my $old_path = $self->path;
-			$url =~ s!^\Q$min_url\E(/|$)!!;
-			$url = ::join_paths($url, $old_path);
-			$self->path($url);
+			my $old_path = $self->{path};
+			$self->{path} = $url;
+			$self->{path} =~ s!^\Q$min_url\E(/|$)!!;
+			if (length $old_path) {
+				$self->{path} .= "/$old_path";
+			}
 			$url = $min_url;
 		}
 	}
@@ -2451,21 +2338,17 @@ sub init_remote_config {
 	unless ($no_write) {
 		command_noisy('config',
 			      "svn-remote.$self->{repo_id}.url", $url);
-		my $path = $self->path;
-		$path =~ s{^/}{};
-		$path =~ s{%([0-9A-F]{2})}{chr hex($1)}ieg;
-		$self->path($path);
+		$self->{path} =~ s{^/}{};
+		$self->{path} =~ s{%([0-9A-F]{2})}{chr hex($1)}ieg;
 		command_noisy('config', '--add',
 			      "svn-remote.$self->{repo_id}.fetch",
-			      $self->path.":".$self->refname);
+			      "$self->{path}:".$self->refname);
 	}
-	$self->url($url);
+	$self->{url} = $url;
 }
 
 sub find_by_url { # repos_root and, path are optional
 	my ($class, $full_url, $repos_root, $path) = @_;
-
-	$full_url = ::canonicalize_url($full_url);
 
 	return undef unless defined $full_url;
 	remove_username($full_url);
@@ -2505,11 +2388,6 @@ sub find_by_url { # repos_root and, path are optional
 			}
 			$p =~ s#^\Q$z\E(?:/|$)#$prefix# or next;
 		}
-
-		# remote fetch paths are not URI escaped.  Decode ours
-		# so they match
-		$p = uri_decode($p);
-
 		foreach my $f (keys %$fetch) {
 			next if $f ne $p;
 			return Git::SVN->new($fetch->{$f}, $repo_id, $f);
@@ -2552,26 +2430,20 @@ sub new {
 		}
 	}
 	my $self = _new($class, $repo_id, $ref_id, $path);
-	if (!defined $self->path || !length $self->path) {
+	if (!defined $self->{path} || !length $self->{path}) {
 		my $fetch = command_oneline('config', '--get',
 		                            "svn-remote.$repo_id.fetch",
 		                            ":$ref_id\$") or
 		     die "Failed to read \"svn-remote.$repo_id.fetch\" ",
 		         "\":$ref_id\$\" in config\n";
-		my($path) = split(/\s*:\s*/, $fetch);
-		$self->path($path);
+		($self->{path}, undef) = split(/\s*:\s*/, $fetch);
 	}
-	{
-		my $path = $self->path;
-		$path =~ s{/+}{/}g;
-		$path =~ s{\A/}{};
-		$path =~ s{/\z}{};
-		$self->path($path);
-	}
-	my $url = command_oneline('config', '--get',
-	                          "svn-remote.$repo_id.url") or
+	$self->{path} =~ s{/+}{/}g;
+	$self->{path} =~ s{\A/}{};
+	$self->{path} =~ s{/\z}{};
+	$self->{url} = command_oneline('config', '--get',
+	                               "svn-remote.$repo_id.url") or
                   die "Failed to read \"svn-remote.$repo_id.url\" in config\n";
-	$self->url($url);
 	$self->{pushurl} = eval { command_oneline('config', '--get',
 	                          "svn-remote.$repo_id.pushurl") };
 	$self->rebuild;
@@ -2675,7 +2547,8 @@ sub _set_svm_vars {
 		# username is of no interest
 		$src =~ s{(^[a-z\+]*://)[^/@]*@}{$1};
 
-		my $replace = ::add_path_to_url($ra->url, $path);
+		my $replace = $ra->{url};
+		$replace .= "/$path" if length $path;
 
 		my $section = "svn-remote.$self->{repo_id}";
 		tmp_config("$section.svm-source", $src);
@@ -2689,21 +2562,20 @@ sub _set_svm_vars {
 	}
 
 	my $r = $ra->get_latest_revnum;
-	my $path = $self->path;
+	my $path = $self->{path};
 	my %tried;
 	while (length $path) {
-		my $try = ::add_path_to_url($self->url, $path);
-		unless ($tried{$try}) {
+		unless ($tried{"$self->{url}/$path"}) {
 			return $ra if $self->read_svm_props($ra, $path, $r);
-			$tried{$try} = 1;
+			$tried{"$self->{url}/$path"} = 1;
 		}
 		$path =~ s#/?[^/]+$##;
 	}
 	die "Path: '$path' should be ''\n" if $path ne '';
 	return $ra if $self->read_svm_props($ra, $path, $r);
-	$tried{ ::add_path_to_url($self->url, $path) } = 1;
+	$tried{"$self->{url}/$path"} = 1;
 
-	if ($ra->{repos_root} eq $self->url) {
+	if ($ra->{repos_root} eq $self->{url}) {
 		die @err, (map { "  $_\n" } keys %tried), "\n";
 	}
 
@@ -2713,21 +2585,20 @@ sub _set_svm_vars {
 	$path = $ra->{svn_path};
 	$ra = Git::SVN::Ra->new($ra->{repos_root});
 	while (length $path) {
-		my $try = ::add_path_to_url($ra->url, $path);
-		unless ($tried{$try}) {
+		unless ($tried{"$ra->{url}/$path"}) {
 			$ok = $self->read_svm_props($ra, $path, $r);
 			last if $ok;
-			$tried{$try} = 1;
+			$tried{"$ra->{url}/$path"} = 1;
 		}
 		$path =~ s#/?[^/]+$##;
 	}
 	die "Path: '$path' should be ''\n" if $path ne '';
 	$ok ||= $self->read_svm_props($ra, $path, $r);
-	$tried{ ::add_path_to_url($ra->url, $path) } = 1;
+	$tried{"$ra->{url}/$path"} = 1;
 	if (!$ok) {
 		die @err, (map { "  $_\n" } keys %tried), "\n";
 	}
-	Git::SVN::Ra->new($self->url);
+	Git::SVN::Ra->new($self->{url});
 }
 
 sub svnsync {
@@ -2794,7 +2665,7 @@ sub ra_uuid {
 		if (!$@ && $uuid && $uuid =~ /^([a-f\d\-]{30,})$/i) {
 			$self->{ra_uuid} = $uuid;
 		} else {
-			die "ra_uuid called without URL\n" unless $self->url;
+			die "ra_uuid called without URL\n" unless $self->{url};
 			$self->{ra_uuid} = $self->ra->get_uuid;
 			tmp_config('--add', $key, $self->{ra_uuid});
 		}
@@ -2818,7 +2689,7 @@ sub repos_root {
 
 sub ra {
 	my ($self) = shift;
-	my $ra = Git::SVN::Ra->new($self->url);
+	my $ra = Git::SVN::Ra->new($self->{url});
 	$self->_set_repos_root($ra->{repos_root});
 	if ($self->use_svm_props && !$self->{svm}) {
 		if ($self->no_metadata) {
@@ -2852,7 +2723,7 @@ sub prop_walk {
 	$path =~ s#^/*#/#g;
 	my $p = $path;
 	# Strip the irrelevant part of the path.
-	$p =~ s#^/+\Q@{[$self->path]}\E(/|$)#/#;
+	$p =~ s#^/+\Q$self->{path}\E(/|$)#/#;
 	# Ensure the path is terminated by a `/'.
 	$p =~ s#/*$#/#;
 
@@ -2873,7 +2744,7 @@ sub prop_walk {
 
 	foreach (sort keys %$dirent) {
 		next if $dirent->{$_}->{kind} != $SVN::Node::dir;
-		$self->prop_walk($self->path . $p . $_, $rev, $sub);
+		$self->prop_walk($self->{path} . $p . $_, $rev, $sub);
 	}
 }
 
@@ -3043,19 +2914,20 @@ sub rewrite_uuid {
 
 sub metadata_url {
 	my ($self) = @_;
-	my $url = $self->rewrite_root || $self->url;
-	return ::canonicalize_url( ::add_path_to_url( $url, $self->path ) );
+	($self->rewrite_root || $self->{url}) .
+	   (length $self->{path} ? '/' . $self->{path} : '');
 }
 
 sub full_url {
 	my ($self) = @_;
-	return ::canonicalize_url( ::add_path_to_url( $self->url, $self->path ) );
+	$self->{url} . (length $self->{path} ? '/' . $self->{path} : '');
 }
 
 sub full_pushurl {
 	my ($self) = @_;
 	if ($self->{pushurl}) {
-		return ::canonicalize_url( ::add_path_to_url( $self->{pushurl}, $self->path ) );
+		return $self->{pushurl} . (length $self->{path} ? '/' .
+		       $self->{path} : '');
 	} else {
 		return $self->full_url;
 	}
@@ -3171,20 +3043,20 @@ sub do_git_commit {
 
 sub match_paths {
 	my ($self, $paths, $r) = @_;
-	return 1 if $self->path eq '';
-	if (my $path = $paths->{"/".$self->path}) {
+	return 1 if $self->{path} eq '';
+	if (my $path = $paths->{"/$self->{path}"}) {
 		return ($path->{action} eq 'D') ? 0 : 1;
 	}
-	$self->{path_regex} ||= qr{^/\Q@{[$self->path]}\E/};
+	$self->{path_regex} ||= qr/^\/\Q$self->{path}\E\//;
 	if (grep /$self->{path_regex}/, keys %$paths) {
 		return 1;
 	}
 	my $c = '';
-	foreach (split m#/#, $self->path) {
+	foreach (split m#/#, $self->{path}) {
 		$c .= "/$_";
 		next unless ($paths->{$c} &&
 		             ($paths->{$c}->{action} =~ /^[AR]$/));
-		if ($self->ra->check_path($self->path, $r) ==
+		if ($self->ra->check_path($self->{path}, $r) ==
 		    $SVN::Node::dir) {
 			return 1;
 		}
@@ -3198,14 +3070,14 @@ sub find_parent_branch {
 	unless (defined $paths) {
 		my $err_handler = $SVN::Error::handler;
 		$SVN::Error::handler = \&Git::SVN::Ra::skip_unknown_revs;
-		$self->ra->get_log([$self->path], $rev, $rev, 0, 1, 1,
+		$self->ra->get_log([$self->{path}], $rev, $rev, 0, 1, 1,
 				   sub { $paths = $_[0] });
 		$SVN::Error::handler = $err_handler;
 	}
 	return undef unless defined $paths;
 
 	# look for a parent from another branch:
-	my @b_path_components = split m#/#, $self->path;
+	my @b_path_components = split m#/#, $self->{path};
 	my @a_path_components;
 	my $i;
 	while (@b_path_components) {
@@ -3222,8 +3094,8 @@ sub find_parent_branch {
 	}
 	my $r = $i->{copyfrom_rev};
 	my $repos_root = $self->ra->{repos_root};
-	my $url = $self->ra->url;
-	my $new_url = ::canonicalize_url( ::add_path_to_url( $url, $branch_from ) );
+	my $url = $self->ra->{url};
+	my $new_url = $url . $branch_from;
 	print STDERR  "Found possible branch point: ",
 	              "$new_url => ", $self->full_url, ", $r\n"
 	              unless $::_q > 1;
@@ -3237,7 +3109,7 @@ sub find_parent_branch {
 			($base, $head) = parse_revision_argument(0, $r);
 		} else {
 			if ($r0 < $r) {
-				$gs->ra->get_log([$gs->path], $r0 + 1, $r, 1,
+				$gs->ra->get_log([$gs->{path}], $r0 + 1, $r, 1,
 					0, 1, sub { $base = $_[1] - 1 });
 			}
 		}
@@ -3259,7 +3131,7 @@ sub find_parent_branch {
 			# at the moment), so we can't rely on it
 			$self->{last_rev} = $r0;
 			$self->{last_commit} = $parent;
-			$ed = SVN::Git::Fetcher->new($self, $gs->path);
+			$ed = SVN::Git::Fetcher->new($self, $gs->{path});
 			$gs->ra->gs_do_switch($r0, $rev, $gs,
 					      $self->full_url, $ed)
 			  or die "SVN connection failed somewhere...\n";
@@ -3358,7 +3230,7 @@ sub mkemptydirs {
 		close $fh;
 	}
 
-	my $strip = qr/\A\Q@{[$self->path]}\E(?:\/|$)/;
+	my $strip = qr/\A\Q$self->{path}\E(?:\/|$)/;
 	foreach my $d (sort keys %empty_dirs) {
 		$d = uri_decode($d);
 		$d =~ s/$strip//;
@@ -3552,11 +3424,12 @@ sub find_extra_svk_parents {
 	for my $ticket ( @tickets ) {
 		my ($uuid, $path, $rev) = split /:/, $ticket;
 		if ( $uuid eq $self->ra_uuid ) {
-			my $repos_root = $self->url;
+			my $url = $self->{url};
+			my $repos_root = $url;
 			my $branch_from = $path;
 			$branch_from =~ s{^/}{};
-			my $gs = $self->other_gs(::add_path_to_url( $repos_root, $branch_from ),
-			                         $repos_root,
+			my $gs = $self->other_gs($repos_root."/".$branch_from,
+			                         $url,
 			                         $branch_from,
 			                         $rev,
 			                         $self->{ref_id});
@@ -3680,17 +3553,6 @@ sub has_no_changes {
 		command_oneline("rev-parse", "$commit~1^{tree}"));
 }
 
-sub tie_for_persistent_memoization {
-	my $hash = shift;
-	my $path = shift;
-
-	if ($can_use_yaml) {
-		tie %$hash => 'Git::SVN::Memoize::YAML', "$path.yaml";
-	} else {
-		tie %$hash => 'Memoize::Storable', "$path.db", 'nstore';
-	}
-}
-
 # The GIT_DIR environment variable is not always set until after the command
 # line arguments are processed, so we can't memoize in a BEGIN block.
 {
@@ -3703,26 +3565,22 @@ sub tie_for_persistent_memoization {
 		my $cache_path = "$ENV{GIT_DIR}/svn/.caches/";
 		mkpath([$cache_path]) unless -d $cache_path;
 
-		my %lookup_svn_merge_cache;
-		my %check_cherry_pick_cache;
-		my %has_no_changes_cache;
-
-		tie_for_persistent_memoization(\%lookup_svn_merge_cache,
-		    "$cache_path/lookup_svn_merge");
+		tie my %lookup_svn_merge_cache => 'Memoize::Storable',
+		    "$cache_path/lookup_svn_merge.db", 'nstore';
 		memoize 'lookup_svn_merge',
 			SCALAR_CACHE => 'FAULT',
 			LIST_CACHE => ['HASH' => \%lookup_svn_merge_cache],
 		;
 
-		tie_for_persistent_memoization(\%check_cherry_pick_cache,
-		    "$cache_path/check_cherry_pick");
+		tie my %check_cherry_pick_cache => 'Memoize::Storable',
+		    "$cache_path/check_cherry_pick.db", 'nstore';
 		memoize 'check_cherry_pick',
 			SCALAR_CACHE => 'FAULT',
 			LIST_CACHE => ['HASH' => \%check_cherry_pick_cache],
 		;
 
-		tie_for_persistent_memoization(\%has_no_changes_cache,
-		    "$cache_path/has_no_changes");
+		tie my %has_no_changes_cache => 'Memoize::Storable',
+		    "$cache_path/has_no_changes.db", 'nstore';
 		memoize 'has_no_changes',
 			SCALAR_CACHE => ['HASH' => \%has_no_changes_cache],
 			LIST_CACHE => 'FAULT',
@@ -3797,7 +3655,7 @@ sub find_extra_svn_parents {
 	# are now marked as merge, we can add the tip as a parent.
 	my @merges = split "\n", $mergeinfo;
 	my @merge_tips;
-	my $url = $self->url;
+	my $url = $self->{url};
 	my $uuid = $self->ra_uuid;
 	my %ranges;
 	for my $merge ( @merges ) {
@@ -3979,9 +3837,8 @@ sub make_log_entry {
 		$email ||= "$author\@$uuid";
 		$commit_email ||= "$author\@$uuid";
 	} elsif ($self->use_svnsync_props) {
-		my $full_url = ::canonicalize_url(
-			::add_path_to_url( $self->svnsync->{url}, $self->path )
-		);
+		my $full_url = $self->svnsync->{url};
+		$full_url .= "/$self->{path}" if length $self->{path};
 		remove_username($full_url);
 		my $uuid = $self->svnsync->{uuid};
 		$log_entry{metadata} = "$full_url\@$rev $uuid";
@@ -4028,7 +3885,7 @@ sub set_tree {
 	                tree_b => $tree,
 	                editor_cb => sub {
 			       $self->set_tree_cb($log_entry, $tree, @_) },
-	                svn_path => $self->path );
+	                svn_path => $self->{path} );
 	if (!SVN::Git::Editor->new(\%ed_opts)->apply_diff) {
 		print "No changes\nr$self->{last_rev} = $tree\n";
 	}
@@ -4396,39 +4253,10 @@ sub _new {
 
 	$_[3] = $path = '' unless (defined $path);
 	mkpath([$dir]);
-	my $obj = bless {
+	bless {
 		ref_id => $ref_id, dir => $dir, index => "$dir/index",
-	        config => "$ENV{GIT_DIR}/svn/config",
+	        path => $path, config => "$ENV{GIT_DIR}/svn/config",
 	        map_root => "$dir/.rev_map", repo_id => $repo_id }, $class;
-
-	# Ensure it gets canonicalized
-	$obj->path($path);
-
-	return $obj;
-}
-
-sub path {
-	my $self = shift;
-
-	if (@_) {
-		my $path = shift;
-		$self->{path} = ::canonicalize_path($path);
-		return;
-	}
-
-	return $self->{path};
-}
-
-sub url {
-	my $self = shift;
-
-	if (@_) {
-		my $url = shift;
-		$self->{url} = ::canonicalize_url($url);
-		return;
-	}
-
-	return $self->{url};
 }
 
 # for read-only access of old .rev_db formats
@@ -4693,7 +4521,7 @@ sub _mark_empty_symlinks {
 	chomp(my $empty_blob = `git hash-object -t blob --stdin < /dev/null`);
 	my ($ls, $ctx) = command_output_pipe(qw/ls-tree -r -z/, $cmt);
 	local $/ = "\0";
-	my $pfx = defined($switch_path) ? $switch_path : $git_svn->path;
+	my $pfx = defined($switch_path) ? $switch_path : $git_svn->{path};
 	$pfx .= '/' if length($pfx);
 	while (<$ls>) {
 		chomp;
@@ -5458,30 +5286,7 @@ sub M {
 	$self->close_file($fbat,undef,$self->{pool});
 }
 
-sub T {
-	my ($self, $m, $deletions) = @_;
-
-	# Work around subversion issue 4091: toggling the "is a
-	# symlink" property requires removing and re-adding a
-	# file or else "svn up" on affected clients trips an
-	# assertion and aborts.
-	if (($m->{mode_b} =~ /^120/ && $m->{mode_a} !~ /^120/) ||
-	    ($m->{mode_b} !~ /^120/ && $m->{mode_a} =~ /^120/)) {
-		$self->D({
-			mode_a => $m->{mode_a}, mode_b => '000000',
-			sha1_a => $m->{sha1_a}, sha1_b => '0' x 40,
-			chg => 'D', file_b => $m->{file_b}
-		});
-		$self->A({
-			mode_a => '000000', mode_b => $m->{mode_b},
-			sha1_a => '0' x 40, sha1_b => $m->{sha1_b},
-			chg => 'A', file_b => $m->{file_b}
-		});
-		return;
-	}
-
-	$self->M($m, $deletions);
-}
+sub T { shift->M(@_) }
 
 sub change_file_prop {
 	my ($self, $fbat, $pname, $pval) = @_;
@@ -5650,11 +5455,29 @@ sub _auth_providers () {
 	]
 }
 
+sub escape_uri_only {
+	my ($uri) = @_;
+	my @tmp;
+	foreach (split m{/}, $uri) {
+		s/([^~\w.%+-]|%(?![a-fA-F0-9]{2}))/sprintf("%%%02X",ord($1))/eg;
+		push @tmp, $_;
+	}
+	join('/', @tmp);
+}
+
+sub escape_url {
+	my ($url) = @_;
+	if ($url =~ m#^(https?)://([^/]+)(.*)$#) {
+		my ($scheme, $domain, $uri) = ($1, $2, escape_uri_only($3));
+		$url = "$scheme://$domain$uri";
+	}
+	$url;
+}
 
 sub new {
 	my ($class, $url) = @_;
-	$url = ::canonicalize_url($url);
-	return $RA if ($RA && $RA->url eq $url);
+	$url =~ s!/+$!!;
+	return $RA if ($RA && $RA->{url} eq $url);
 
 	::_req_svn();
 
@@ -5685,34 +5508,17 @@ sub new {
 			$Git::SVN::Prompt::_no_auth_cache = 1;
 		}
 	} # no warnings 'once'
-
-	my $self = SVN::Ra->new(url => $url, auth => $baton,
+	my $self = SVN::Ra->new(url => escape_url($url), auth => $baton,
 	                      config => $config,
 			      pool => SVN::Pool->new,
 	                      auth_provider_callbacks => $callbacks);
-	$RA = bless $self, $class;
-
-	# Make sure its canonicalized
-	$self->url($url);
+	$self->{url} = $url;
 	$self->{svn_path} = $url;
 	$self->{repos_root} = $self->get_repos_root;
 	$self->{svn_path} =~ s#^\Q$self->{repos_root}\E(/|$)##;
 	$self->{cache} = { check_path => { r => 0, data => {} },
 	                   get_dir => { r => 0, data => {} } };
-
-	return $RA;
-}
-
-sub url {
-	my $self = shift;
-
-	if (@_) {
-		my $url = shift;
-		$self->{url} = ::canonicalize_url($url);
-		return;
-	}
-
-	return $self->{url};
+	$RA = bless $self, $class;
 }
 
 sub check_path {
@@ -5782,7 +5588,6 @@ sub get_log {
 				qw/copyfrom_path copyfrom_rev action/;
 			if ($s{'copyfrom_path'}) {
 				$s{'copyfrom_path'} =~ s/$prefix_regex//;
-				$s{'copyfrom_path'} = ::canonicalize_path($s{'copyfrom_path'});
 			}
 			$_[0]{$p} = \%s;
 		}
@@ -5833,7 +5638,7 @@ sub get_commit_editor {
 sub gs_do_update {
 	my ($self, $rev_a, $rev_b, $gs, $editor) = @_;
 	my $new = ($rev_a == $rev_b);
-	my $path = $gs->path;
+	my $path = $gs->{path};
 
 	if ($new && -e $gs->{index}) {
 		unlink $gs->{index} or die
@@ -5869,33 +5674,30 @@ sub gs_do_update {
 # svn_ra_reparent didn't work before 1.4)
 sub gs_do_switch {
 	my ($self, $rev_a, $rev_b, $gs, $url_b, $editor) = @_;
-	my $path = $gs->path;
+	my $path = $gs->{path};
 	my $pool = SVN::Pool->new;
 
-	my $old_url = $self->url;
-	my $full_url = ::add_path_to_url( $self->url, $path );
+	my $full_url = $self->{url};
+	my $old_url = $full_url;
+	$full_url .= '/' . $path if length $path;
 	my ($ra, $reparented);
 
 	if ($old_url =~ m#^svn(\+ssh)?://# ||
 	    ($full_url =~ m#^https?://# &&
-	     ::canonicalize_url($full_url) ne $full_url)) {
+	     escape_url($full_url) ne $full_url)) {
 		$_[0] = undef;
 		$self = undef;
 		$RA = undef;
 		$ra = Git::SVN::Ra->new($full_url);
 		$ra_invalid = 1;
 	} elsif ($old_url ne $full_url) {
-		SVN::_Ra::svn_ra_reparent(
-			$self->{session},
-			::canonicalize_url($full_url),
-			$pool
-		);
-		$self->url($full_url);
+		SVN::_Ra::svn_ra_reparent($self->{session}, $full_url, $pool);
+		$self->{url} = $full_url;
 		$reparented = 1;
 	}
 
 	$ra ||= $self;
-	$url_b = ::canonicalize_url($url_b);
+	$url_b = escape_url($url_b);
 	my $reporter = $ra->do_switch($rev_b, '', 1, $url_b, $editor, $pool);
 	my @lock = $SVN::Core::VERSION ge '1.2.0' ? (undef) : ();
 	$reporter->set_path('', $rev_a, 0, @lock, $pool);
@@ -5903,7 +5705,7 @@ sub gs_do_switch {
 
 	if ($reparented) {
 		SVN::_Ra::svn_ra_reparent($self->{session}, $old_url, $pool);
-		$self->url($old_url);
+		$self->{url} = $old_url;
 	}
 
 	$pool->clear;
@@ -5916,7 +5718,7 @@ sub longest_common_path {
 	my $common_max = scalar @$gsv;
 
 	foreach my $gs (@$gsv) {
-		my @tmp = split m#/#, $gs->path;
+		my @tmp = split m#/#, $gs->{path};
 		my $p = '';
 		foreach (@tmp) {
 			$p .= length($p) ? "/$_" : $_;
@@ -5952,7 +5754,7 @@ sub gs_fetch_loop_common {
 	my $inc = $_log_window_size;
 	my ($min, $max) = ($base, $head < $base + $inc ? $head : $base + $inc);
 	my $longest_path = longest_common_path($gsv, $globs);
-	my $ra_url = $self->url;
+	my $ra_url = $self->{url};
 	my $find_trailing_edge;
 	while (1) {
 		my %revs;
@@ -6098,7 +5900,7 @@ sub match_globs {
 				 ($self->check_path($p, $r) !=
 				  $SVN::Node::dir));
 			next unless $p =~ /$g->{path}->{regex}/;
-			$exists->{$p} = Git::SVN->init($self->url, $p, undef,
+			$exists->{$p} = Git::SVN->init($self->{url}, $p, undef,
 					 $g->{ref}->full_path($de), 1);
 		}
 	}
@@ -6122,7 +5924,7 @@ sub match_globs {
 			next if ($self->check_path($pathname, $r) !=
 			         $SVN::Node::dir);
 			$exists->{$pathname} = Git::SVN->init(
-			                      $self->url, $pathname, undef,
+			                      $self->{url}, $pathname, undef,
 			                      $g->{ref}->full_path($p), 1);
 		}
 		my $c = '';
@@ -6138,20 +5940,19 @@ sub match_globs {
 
 sub minimize_url {
 	my ($self) = @_;
-	return $self->url if ($self->url eq $self->{repos_root});
+	return $self->{url} if ($self->{url} eq $self->{repos_root});
 	my $url = $self->{repos_root};
 	my @components = split(m!/!, $self->{svn_path});
 	my $c = '';
 	do {
-		$url = ::add_path_to_url($url, $c);
+		$url .= "/$c" if length $c;
 		eval {
 			my $ra = (ref $self)->new($url);
 			my $latest = $ra->get_latest_revnum;
 			$ra->get_log("", $latest, 0, 1, 0, 1, sub {});
 		};
 	} while ($@ && ($c = shift @components));
-
-	return ::canonicalize_url($url);
+	$url;
 }
 
 sub can_do_switch {
@@ -6159,7 +5960,7 @@ sub can_do_switch {
 	unless (defined $can_do_switch) {
 		my $pool = SVN::Pool->new;
 		my $rep = eval {
-			$self->do_switch(1, '', 0, $self->url,
+			$self->do_switch(1, '', 0, $self->{url},
 			                 SVN::Delta::Editor->new, $pool);
 		};
 		if ($@) {
@@ -6759,14 +6560,14 @@ sub minimize_connections {
 		my $ra = Git::SVN::Ra->new($url);
 
 		# skip existing cases where we already connect to the root
-		if (($ra->url eq $ra->{repos_root}) ||
+		if (($ra->{url} eq $ra->{repos_root}) ||
 		    ($ra->{repos_root} eq $repo_id)) {
-			$root_repos->{$ra->url} = $repo_id;
+			$root_repos->{$ra->{url}} = $repo_id;
 			next;
 		}
 
 		my $root_ra = Git::SVN::Ra->new($ra->{repos_root});
-		my $root_path = $ra->url;
+		my $root_path = $ra->{url};
 		$root_path =~ s#^\Q$ra->{repos_root}\E(/|$)##;
 		foreach my $path (keys %$fetch) {
 			my $ref_id = $fetch->{$path};

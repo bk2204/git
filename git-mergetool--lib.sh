@@ -1,4 +1,5 @@
-# git-mergetool--lib is a shell library for common merge tool functions
+#!/bin/sh
+# git-mergetool--lib is a library for common merge tool functions
 diff_mode() {
 	test "$TOOL_MODE" = diff
 }

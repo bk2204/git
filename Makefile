@@ -151,10 +151,6 @@ all::
 # Notably on Solaris hstrerror resides in libresolv and on Solaris 7
 # inet_ntop and inet_pton additionally reside there.
 #
-# Define USE_SRV_RR if you want git to pay attention to SRV resource records
-# when looking up servers to contact over git protocol.  This implies
-# NEEDS_RESOLV.
-#
 # Define NO_MMAP if you want to avoid mmap.
 #
 # Define NO_PTHREADS if you do not have or do not want to use Pthreads.
@@ -250,10 +246,6 @@ all::
 #
 # Define NO_CROSS_DIRECTORY_HARDLINKS if you plan to distribute the installed
 # programs as a tar, where bin/ and libexec/ might be on different file systems.
-#
-# Define NO_HARDLINKS if you plan to distribute the installed programs as a tar
-# that might be extracted on a filesystem like btrfs that does not cope well
-# with many links to one inode in one directory.
 #
 # Define USE_NED_ALLOCATOR if you want to replace the platforms default
 # memory allocators with the nedmalloc allocator written by Niall Douglas.
@@ -749,7 +741,6 @@ LIB_OBJS += string-list.o
 LIB_OBJS += submodule.o
 LIB_OBJS += symlinks.o
 LIB_OBJS += tag.o
-LIB_OBJS += tcp.o
 LIB_OBJS += trace.o
 LIB_OBJS += transport.o
 LIB_OBJS += transport-helper.o
@@ -1503,11 +1494,6 @@ endif
 ifdef NEEDS_NSL
 	EXTLIBS += -lnsl
 endif
-ifdef USE_SRV_RR
-	BASIC_CFLAGS += -DUSE_SRV_RR
-	LIB_OBJS += srv.o
-	NEEDS_RESOLV = YesPlease
-endif
 ifdef NEEDS_RESOLV
 	EXTLIBS += -lresolv
 endif
@@ -1631,11 +1617,6 @@ ifdef NO_TRUSTABLE_FILEMODE
 endif
 ifdef NO_IPV6
 	BASIC_CFLAGS += -DNO_IPV6
-	LIB_OBJS += dns-ipv4.o
-	LIB_H += dns-ipv4.h
-else
-	LIB_OBJS += dns-ipv6.o
-	LIB_H += dns-ipv6.h
 endif
 ifdef NO_UINTMAX_T
 	BASIC_CFLAGS += -Duintmax_t=uint32_t
@@ -2186,8 +2167,6 @@ builtin/prune.o builtin/reflog.o reachable.o: reachable.h
 builtin/commit.o builtin/revert.o wt-status.o: wt-status.h
 builtin/tar-tree.o archive-tar.o: tar.h
 connect.o transport.o url.o http-backend.o: url.h
-connect.o daemon.o tcp.o: tcp.h
-tcp.o srv.o: srv.h
 http-fetch.o http-walker.o remote-curl.o transport.o walker.o: walker.h
 http.o http-walker.o http-push.o http-fetch.o remote-curl.o: http.h url.h
 
@@ -2556,14 +2535,12 @@ endif
 	} && \
 	for p in $(filter $(install_bindir_programs),$(BUILT_INS)); do \
 		$(RM) "$$bindir/$$p" && \
-		test -z "$(NO_HARDLINKS)" && \
 		ln "$$bindir/git$X" "$$bindir/$$p" 2>/dev/null || \
 		ln -s "git$X" "$$bindir/$$p" 2>/dev/null || \
 		cp "$$bindir/git$X" "$$bindir/$$p" || exit; \
 	done && \
 	for p in $(BUILT_INS); do \
 		$(RM) "$$execdir/$$p" && \
-		test -z "$(NO_HARDLINKS)" && \
 		ln "$$execdir/git$X" "$$execdir/$$p" 2>/dev/null || \
 		ln -s "git$X" "$$execdir/$$p" 2>/dev/null || \
 		cp "$$execdir/git$X" "$$execdir/$$p" || exit; \
@@ -2571,7 +2548,6 @@ endif
 	remote_curl_aliases="$(REMOTE_CURL_ALIASES)" && \
 	for p in $$remote_curl_aliases; do \
 		$(RM) "$$execdir/$$p" && \
-		test -z "$(NO_HARDLINKS)" && \
 		ln "$$execdir/git-remote-http$X" "$$execdir/$$p" 2>/dev/null || \
 		ln -s "git-remote-http$X" "$$execdir/$$p" 2>/dev/null || \
 		cp "$$execdir/git-remote-http$X" "$$execdir/$$p" || exit; \

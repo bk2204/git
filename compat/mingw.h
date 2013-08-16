@@ -22,9 +22,10 @@ typedef int socklen_t;
 #define S_IWOTH 0
 #define S_IXOTH 0
 #define S_IRWXO (S_IROTH | S_IWOTH | S_IXOTH)
-#define S_ISUID 0
-#define S_ISGID 0
-#define S_ISVTX 0
+
+#define S_ISUID 0004000
+#define S_ISGID 0002000
+#define S_ISVTX 0001000
 
 #define WIFEXITED(x) 1
 #define WIFSIGNALED(x) 0
@@ -53,8 +54,6 @@ struct passwd {
 	char *pw_gecos;
 	char *pw_dir;
 };
-
-extern char *getpass(const char *prompt);
 
 typedef void (__cdecl *sig_handler_t)(int);
 struct sigaction {
@@ -178,11 +177,17 @@ int mingw_open (const char *filename, int oflags, ...);
 ssize_t mingw_write(int fd, const void *buf, size_t count);
 #define write mingw_write
 
+int mingw_fgetc(FILE *stream);
+#define fgetc mingw_fgetc
+
 FILE *mingw_fopen (const char *filename, const char *otype);
 #define fopen mingw_fopen
 
 FILE *mingw_freopen (const char *filename, const char *otype, FILE *stream);
 #define freopen mingw_freopen
+
+int mingw_fflush(FILE *stream);
+#define fflush mingw_fflush
 
 char *mingw_getcwd(char *pointer, int len);
 #define getcwd mingw_getcwd
@@ -286,6 +291,9 @@ static inline unsigned int git_ntohl(unsigned int x)
 sig_handler_t mingw_signal(int sig, sig_handler_t handler);
 #define signal mingw_signal
 
+int mingw_raise(int sig);
+#define raise mingw_raise
+
 /*
  * ANSI emulation wrappers
  */
@@ -326,13 +334,20 @@ char **make_augmented_environ(const char *const *vars);
 void free_environ(char **env);
 
 /*
+ * A critical section used in the implementation of the spawn
+ * functions (mingw_spawnv[p]e()) and waitpid(). Intialised in
+ * the replacement main() macro below.
+ */
+extern CRITICAL_SECTION pinfo_cs;
+
+/*
  * A replacement of main() that ensures that argv[0] has a path
  * and that default fmode and std(in|out|err) are in binary mode
  */
 
 #define main(c,v) dummy_decl_mingw_main(); \
-static int mingw_main(); \
-int main(int argc, const char **argv) \
+static int mingw_main(c,v); \
+int main(int argc, char **argv) \
 { \
 	extern CRITICAL_SECTION pinfo_cs; \
 	_fmode = _O_BINARY; \

@@ -5,7 +5,8 @@ test_description='git filter-branch'
 
 test_expect_success 'setup' '
 	test_commit A &&
-	test_commit B &&
+	GIT_COMMITTER_DATE="@0 +0000" GIT_AUTHOR_DATE="@0 +0000" &&
+	test_commit --notick B &&
 	git checkout -b branch B &&
 	test_commit D &&
 	mkdir dir &&
@@ -61,6 +62,20 @@ test_expect_success 'correct GIT_DIR while using -d' '
 		--index-filter "cp \"$TRASHDIR\"/dfoo/backup-refs \"$TRASHDIR\"" \
 	) &&
 	grep drepo "$TRASHDIR/backup-refs"
+'
+
+test_expect_success 'tree-filter works with -d' '
+	git init drepo-tree &&
+	(
+		cd drepo-tree &&
+		test_commit one &&
+		git filter-branch -d "$TRASHDIR/dfoo" \
+			--tree-filter "echo changed >one.t" &&
+		echo changed >expect &&
+		git cat-file blob HEAD:one.t >actual &&
+		test_cmp expect actual &&
+		test_cmp one.t actual
+	)
 '
 
 test_expect_success 'Fail if commit filter fails' '
@@ -166,10 +181,11 @@ test_expect_success 'author information is preserved' '
 	test_tick &&
 	GIT_AUTHOR_NAME="B V Uips" git commit -m bvuips &&
 	git branch preserved-author &&
-	git filter-branch -f --msg-filter "cat; \
+	(sane_unset GIT_AUTHOR_NAME &&
+	 git filter-branch -f --msg-filter "cat; \
 			test \$GIT_COMMIT != $(git rev-parse master) || \
 			echo Hallo" \
-		preserved-author &&
+		preserved-author) &&
 	test 1 = $(git rev-list --author="B V Uips" preserved-author | wc -l)
 '
 

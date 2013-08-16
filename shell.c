@@ -6,6 +6,7 @@
 
 #define COMMAND_DIR "git-shell-commands"
 #define HELP_COMMAND COMMAND_DIR "/help"
+#define NOLOGIN_COMMAND COMMAND_DIR "/no-interactive-login"
 
 static int do_generic_cmd(const char *me, char *arg)
 {
@@ -65,6 +66,18 @@ static void run_shell(void)
 {
 	int done = 0;
 	static const char *help_argv[] = { HELP_COMMAND, NULL };
+
+	if (!access(NOLOGIN_COMMAND, F_OK)) {
+		/* Interactive login disabled. */
+		const char *argv[] = { NOLOGIN_COMMAND, NULL };
+		int status;
+
+		status = run_command_v_opt(argv, 0);
+		if (status < 0)
+			exit(127);
+		exit(status);
+	}
+
 	/* Print help if enabled */
 	run_command_v_opt(help_argv, RUN_SILENT_EXEC_FAILURE);
 
@@ -134,7 +147,6 @@ int main(int argc, char **argv)
 	char *prog;
 	const char **user_argv;
 	struct commands *cmd;
-	int devnull_fd;
 	int count;
 
 	git_setup_gettext();
@@ -143,15 +155,10 @@ int main(int argc, char **argv)
 
 	/*
 	 * Always open file descriptors 0/1/2 to avoid clobbering files
-	 * in die().  It also avoids not messing up when the pipes are
-	 * dup'ed onto stdin/stdout/stderr in the child processes we spawn.
+	 * in die().  It also avoids messing up when the pipes are dup'ed
+	 * onto stdin/stdout/stderr in the child processes we spawn.
 	 */
-	devnull_fd = open("/dev/null", O_RDWR);
-	while (devnull_fd >= 0 && devnull_fd <= 2)
-		devnull_fd = dup(devnull_fd);
-	if (devnull_fd == -1)
-		die_errno("opening /dev/null failed");
-	close (devnull_fd);
+	sanitize_stdfds();
 
 	/*
 	 * Special hack to pretend to be a CVS server

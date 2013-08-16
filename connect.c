@@ -5,6 +5,7 @@
 #include "refs.h"
 #include "run-command.h"
 #include "remote.h"
+#include "connect.h"
 #include "url.h"
 
 static char *server_capabilities;
@@ -49,26 +50,42 @@ static void add_extra_have(struct extra_have_objects *extra, unsigned char *sha1
 	extra->nr++;
 }
 
+static void die_initial_contact(int got_at_least_one_head)
+{
+	if (got_at_least_one_head)
+		die("The remote end hung up upon initial contact");
+	else
+		die("Could not read from remote repository.\n\n"
+		    "Please make sure you have the correct access rights\n"
+		    "and the repository exists.");
+}
+
 /*
  * Read all the refs from the other end
  */
-struct ref **get_remote_heads(int in, struct ref **list,
-			      unsigned int flags,
+struct ref **get_remote_heads(int in, char *src_buf, size_t src_len,
+			      struct ref **list, unsigned int flags,
 			      struct extra_have_objects *extra_have)
 {
+	int got_at_least_one_head = 0;
+
 	*list = NULL;
 	for (;;) {
 		struct ref *ref;
 		unsigned char old_sha1[20];
-		static char buffer[1000];
 		char *name;
 		int len, name_len;
+		char *buffer = packet_buffer;
 
-		len = packet_read_line(in, buffer, sizeof(buffer));
+		len = packet_read(in, &src_buf, &src_len,
+				  packet_buffer, sizeof(packet_buffer),
+				  PACKET_READ_GENTLE_ON_EOF |
+				  PACKET_READ_CHOMP_NEWLINE);
+		if (len < 0)
+			die_initial_contact(got_at_least_one_head);
+
 		if (!len)
 			break;
-		if (buffer[len-1] == '\n')
-			buffer[--len] = 0;
 
 		if (len > 4 && !prefixcmp(buffer, "ERR "))
 			die("remote error: %s", buffer + 4);
@@ -95,16 +112,12 @@ struct ref **get_remote_heads(int in, struct ref **list,
 		hashcpy(ref->old_sha1, old_sha1);
 		*list = ref;
 		list = &ref->next;
+		got_at_least_one_head = 1;
 	}
 	return list;
 }
 
-int server_supports(const char *feature)
-{
-	return !!parse_feature_request(server_capabilities, feature);
-}
-
-const char *parse_feature_request(const char *feature_list, const char *feature)
+const char *parse_feature_value(const char *feature_list, const char *feature, int *lenp)
 {
 	int len;
 
@@ -116,12 +129,44 @@ const char *parse_feature_request(const char *feature_list, const char *feature)
 		const char *found = strstr(feature_list, feature);
 		if (!found)
 			return NULL;
-		if ((feature_list == found || isspace(found[-1])) &&
-		    (!found[len] || isspace(found[len]) || found[len] == '='))
-			return found;
+		if (feature_list == found || isspace(found[-1])) {
+			const char *value = found + len;
+			/* feature with no value (e.g., "thin-pack") */
+			if (!*value || isspace(*value)) {
+				if (lenp)
+					*lenp = 0;
+				return value;
+			}
+			/* feature with a value (e.g., "agent=git/1.2.3") */
+			else if (*value == '=') {
+				value++;
+				if (lenp)
+					*lenp = strcspn(value, " \t\n");
+				return value;
+			}
+			/*
+			 * otherwise we matched a substring of another feature;
+			 * keep looking
+			 */
+		}
 		feature_list = found + 1;
 	}
 	return NULL;
+}
+
+int parse_feature_request(const char *feature_list, const char *feature)
+{
+	return !!parse_feature_value(feature_list, feature, NULL);
+}
+
+const char *server_feature_value(const char *feature, int *len)
+{
+	return parse_feature_value(server_capabilities, feature, len);
+}
+
+int server_supports(const char *feature)
+{
+	return !!server_feature_value(feature, NULL);
 }
 
 enum protocol {
@@ -507,8 +552,11 @@ struct child_process *git_connect(int fd[2], const char *url_orig,
 	path = strchr(end, c);
 	if (path && !has_dos_drive_prefix(end)) {
 		if (c == ':') {
-			protocol = PROTO_SSH;
-			*path++ = '\0';
+			if (path < strchrnul(host, '/')) {
+				protocol = PROTO_SSH;
+				*path++ = '\0';
+			} else /* '/' in the host part, assume local path */
+				path = end;
 		}
 	} else
 		path = end;
@@ -536,7 +584,7 @@ struct child_process *git_connect(int fd[2], const char *url_orig,
 	 * Add support for ssh port: ssh://host.xy:<port>/...
 	 */
 	if (protocol == PROTO_SSH && host != url)
-		port = get_port(host);
+		port = get_port(end);
 
 	if (protocol == PROTO_GIT) {
 		/* These underlying connection commands die() if they

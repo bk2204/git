@@ -5,44 +5,27 @@
 #include "strbuf.h"
 #include "cache.h"
 #include "commit.h"
-#include "notes.h"
 
 #define DEFAULT_MERGE_LOG_LEN 20
 
-extern const char git_version_string[];
 extern const char git_usage_string[];
 extern const char git_more_info_string[];
+
+#define PRUNE_PACKED_DRY_RUN 01
+#define PRUNE_PACKED_VERBOSE 02
 
 extern void prune_packed_objects(int);
 
 struct fmt_merge_msg_opts {
-	unsigned add_title:1;
+	unsigned add_title:1,
+		credit_people:1;
 	int shortlog_len;
 };
 
 extern int fmt_merge_msg(struct strbuf *in, struct strbuf *out,
 			 struct fmt_merge_msg_opts *);
-extern void commit_notes(struct notes_tree *t, const char *msg);
 
-struct notes_rewrite_cfg {
-	struct notes_tree **trees;
-	const char *cmd;
-	int enabled;
-	combine_notes_fn combine;
-	struct string_list *refs;
-	int refs_from_env;
-	int mode_from_env;
-};
-
-combine_notes_fn parse_combine_notes_fn(const char *v);
-struct notes_rewrite_cfg *init_copy_notes_for_rewrite(const char *cmd);
-int copy_note_for_rewrite(struct notes_rewrite_cfg *c,
-			  const unsigned char *from_obj, const unsigned char *to_obj);
-void finish_copy_notes_for_rewrite(struct notes_rewrite_cfg *c);
-
-extern int check_pager_config(const char *cmd);
-
-extern int textconv_object(const char *path, unsigned mode, const unsigned char *sha1, char **buf, unsigned long *buf_size);
+extern int textconv_object(const char *path, unsigned mode, const unsigned char *sha1, int sha1_valid, char **buf, unsigned long *buf_size);
 
 extern int cmd_add(int argc, const char **argv, const char *prefix);
 extern int cmd_annotate(int argc, const char **argv, const char *prefix);
@@ -56,15 +39,19 @@ extern int cmd_cat_file(int argc, const char **argv, const char *prefix);
 extern int cmd_checkout(int argc, const char **argv, const char *prefix);
 extern int cmd_checkout_index(int argc, const char **argv, const char *prefix);
 extern int cmd_check_attr(int argc, const char **argv, const char *prefix);
+extern int cmd_check_ignore(int argc, const char **argv, const char *prefix);
+extern int cmd_check_mailmap(int argc, const char **argv, const char *prefix);
 extern int cmd_check_ref_format(int argc, const char **argv, const char *prefix);
 extern int cmd_cherry(int argc, const char **argv, const char *prefix);
 extern int cmd_cherry_pick(int argc, const char **argv, const char *prefix);
 extern int cmd_clone(int argc, const char **argv, const char *prefix);
 extern int cmd_clean(int argc, const char **argv, const char *prefix);
+extern int cmd_column(int argc, const char **argv, const char *prefix);
 extern int cmd_commit(int argc, const char **argv, const char *prefix);
 extern int cmd_commit_tree(int argc, const char **argv, const char *prefix);
 extern int cmd_config(int argc, const char **argv, const char *prefix);
 extern int cmd_count_objects(int argc, const char **argv, const char *prefix);
+extern int cmd_credential(int argc, const char **argv, const char *prefix);
 extern int cmd_describe(int argc, const char **argv, const char *prefix);
 extern int cmd_diff_files(int argc, const char **argv, const char *prefix);
 extern int cmd_diff_index(int argc, const char **argv, const char *prefix);
@@ -82,7 +69,6 @@ extern int cmd_get_tar_commit_id(int argc, const char **argv, const char *prefix
 extern int cmd_grep(int argc, const char **argv, const char *prefix);
 extern int cmd_hash_object(int argc, const char **argv, const char *prefix);
 extern int cmd_help(int argc, const char **argv, const char *prefix);
-extern int cmd_http_fetch(int argc, const char **argv, const char *prefix);
 extern int cmd_index_pack(int argc, const char **argv, const char *prefix);
 extern int cmd_init_db(int argc, const char **argv, const char *prefix);
 extern int cmd_log(int argc, const char **argv, const char *prefix);
@@ -107,7 +93,6 @@ extern int cmd_notes(int argc, const char **argv, const char *prefix);
 extern int cmd_pack_objects(int argc, const char **argv, const char *prefix);
 extern int cmd_pack_redundant(int argc, const char **argv, const char *prefix);
 extern int cmd_patch_id(int argc, const char **argv, const char *prefix);
-extern int cmd_pickaxe(int argc, const char **argv, const char *prefix);
 extern int cmd_prune(int argc, const char **argv, const char *prefix);
 extern int cmd_prune_packed(int argc, const char **argv, const char *prefix);
 extern int cmd_push(int argc, const char **argv, const char *prefix);
@@ -140,7 +125,6 @@ extern int cmd_update_ref(int argc, const char **argv, const char *prefix);
 extern int cmd_update_server_info(int argc, const char **argv, const char *prefix);
 extern int cmd_upload_archive(int argc, const char **argv, const char *prefix);
 extern int cmd_upload_archive_writer(int argc, const char **argv, const char *prefix);
-extern int cmd_upload_tar(int argc, const char **argv, const char *prefix);
 extern int cmd_var(int argc, const char **argv, const char *prefix);
 extern int cmd_verify_tag(int argc, const char **argv, const char *prefix);
 extern int cmd_version(int argc, const char **argv, const char *prefix);

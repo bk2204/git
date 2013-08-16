@@ -87,17 +87,15 @@ test_expect_success 'use branch.<name>.remote if possible' '
 test_expect_success 'confuses pattern as remote when no remote specified' '
 	cat >exp <<-\EOF &&
 	fatal: '\''refs*master'\'' does not appear to be a git repository
-	fatal: The remote end hung up unexpectedly
+	fatal: Could not read from remote repository.
+
+	Please make sure you have the correct access rights
+	and the repository exists.
 	EOF
 	#
-	# Do not expect "git ls-remote <pattern>" to work; ls-remote, correctly,
-	# confuses <pattern> for <remote>. Although ugly, this behaviour is akin
-	# to the confusion of refspecs for remotes by git-fetch and git-push,
-	# eg:
-	#
-	#   $ git fetch branch
-	#
-
+	# Do not expect "git ls-remote <pattern>" to work; ls-remote needs
+	# <remote> if you want to feed <pattern>, just like you cannot say
+	# fetch <branch>.
 	# We could just as easily have used "master"; the "*" emphasizes its
 	# role as a pattern.
 	test_must_fail git ls-remote refs*master >actual 2>&1 &&
@@ -127,5 +125,17 @@ test_expect_success 'Report match with --exit-code' '
 	git ls-remote . tags/mark >expect &&
 	test_cmp expect actual
 '
+
+for configsection in transfer uploadpack
+do
+	test_expect_success "Hide some refs with $configsection.hiderefs" '
+		test_config $configsection.hiderefs refs/tags &&
+		git ls-remote . >actual &&
+		test_unconfig $configsection.hiderefs &&
+		git ls-remote . |
+		sed -e "/	refs\/tags\//d" >expect &&
+		test_cmp expect actual
+	'
+done
 
 test_done

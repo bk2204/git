@@ -8,6 +8,7 @@ test_description='git status'
 . ./test-lib.sh
 
 test_expect_success 'status -h in broken repository' '
+	git config --global advice.statusuoption false &&
 	mkdir broken &&
 	test_when_finished "rm -fr broken" &&
 	(
@@ -59,6 +60,30 @@ test_expect_success 'status (1)' '
 	test_i18ngrep "use \"git rm --cached <file>\.\.\.\" to unstage" output
 '
 
+test_expect_success 'status --column' '
+	COLUMNS=50 git status --column="column dense" >output &&
+	cat >expect <<\EOF &&
+# On branch master
+# Changes to be committed:
+#   (use "git reset HEAD <file>..." to unstage)
+#
+#	new file:   dir2/added
+#
+# Changes not staged for commit:
+#   (use "git add <file>..." to update what will be committed)
+#   (use "git checkout -- <file>..." to discard changes in working directory)
+#
+#	modified:   dir1/modified
+#
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#	dir1/untracked dir2/untracked untracked
+#	dir2/modified  output
+EOF
+	test_i18ncmp expect output
+'
+
 cat >expect <<\EOF
 # On branch master
 # Changes to be committed:
@@ -106,8 +131,7 @@ cat >expect <<\EOF
 EOF
 
 test_expect_success 'status (advice.statusHints false)' '
-	test_when_finished "git config --unset advice.statusHints" &&
-	git config advice.statusHints false &&
+	test_config advice.statusHints false &&
 	git status >output &&
 	test_i18ncmp expect output
 
@@ -307,8 +331,7 @@ test_expect_success 'status -uno' '
 '
 
 test_expect_success 'status (status.showUntrackedFiles no)' '
-	git config status.showuntrackedfiles no
-	test_when_finished "git config --unset status.showuntrackedfiles" &&
+	test_config status.showuntrackedfiles no &&
 	git status >output &&
 	test_i18ncmp expect output
 '
@@ -323,12 +346,11 @@ cat >expect <<EOF
 #
 # Untracked files not listed
 EOF
-git config advice.statusHints false
 test_expect_success 'status -uno (advice.statusHints false)' '
+	test_config advice.statusHints false &&
 	git status -uno >output &&
 	test_i18ncmp expect output
 '
-git config --unset advice.statusHints
 
 cat >expect << EOF
  M dir1/modified
@@ -375,8 +397,7 @@ test_expect_success 'status -unormal' '
 '
 
 test_expect_success 'status (status.showUntrackedFiles normal)' '
-	git config status.showuntrackedfiles normal
-	test_when_finished "git config --unset status.showuntrackedfiles" &&
+	test_config status.showuntrackedfiles normal
 	git status >output &&
 	test_i18ncmp expect output
 '
@@ -434,8 +455,7 @@ test_expect_success 'status -uall' '
 '
 
 test_expect_success 'status (status.showUntrackedFiles all)' '
-	git config status.showuntrackedfiles all
-	test_when_finished "git config --unset status.showuntrackedfiles" &&
+	test_config status.showuntrackedfiles all
 	git status >output &&
 	test_i18ncmp expect output
 '
@@ -460,10 +480,9 @@ test_expect_success 'status -s -uall' '
 	test_cmp expect output
 '
 test_expect_success 'status -s (status.showUntrackedFiles all)' '
-	git config status.showuntrackedfiles all
+	test_config status.showuntrackedfiles all &&
 	git status -s >output &&
 	rm -rf dir3 &&
-	git config --unset status.showuntrackedfiles &&
 	test_cmp expect output
 '
 
@@ -563,15 +582,13 @@ cat >expect <<\EOF
 EOF
 
 test_expect_success 'status with color.ui' '
-	git config color.ui always &&
-	test_when_finished "git config --unset color.ui" &&
+	test_config color.ui always &&
 	git status | test_decode_color >output &&
 	test_i18ncmp expect output
 '
 
 test_expect_success 'status with color.status' '
-	git config color.status always &&
-	test_when_finished "git config --unset color.status" &&
+	test_config color.status always &&
 	git status | test_decode_color >output &&
 	test_i18ncmp expect output
 '
@@ -695,8 +712,7 @@ EOF
 
 test_expect_success 'status without relative paths' '
 
-	git config status.relativePaths false &&
-	test_when_finished "git config --unset status.relativePaths" &&
+	test_config status.relativePaths false &&
 	(cd dir1 && git status) >output &&
 	test_i18ncmp expect output
 
@@ -715,8 +731,7 @@ EOF
 
 test_expect_success 'status -s without relative paths' '
 
-	git config status.relativePaths false &&
-	test_when_finished "git config --unset status.relativePaths" &&
+	test_config status.relativePaths false &&
 	(cd dir1 && git status -s) >output &&
 	test_cmp expect output
 
@@ -917,7 +932,7 @@ test_expect_success 'status -s submodule summary (clean submodule)' '
 
 test_expect_success 'status -z implies porcelain' '
 	git status --porcelain |
-	perl -pe "s/\012/\000/g" >expect &&
+	"$PERL_PATH" -pe "s/\012/\000/g" >expect &&
 	git status -z >output &&
 	test_cmp expect output
 '
@@ -1013,15 +1028,14 @@ test_expect_success '--ignore-submodules=untracked suppresses submodules with un
 '
 
 test_expect_success '.gitmodules ignore=untracked suppresses submodules with untracked content' '
-	git config diff.ignoreSubmodules dirty &&
+	test_config diff.ignoreSubmodules dirty &&
 	git status >output &&
 	test_i18ncmp expect output &&
 	git config --add -f .gitmodules submodule.subname.ignore untracked &&
 	git config --add -f .gitmodules submodule.subname.path sm &&
 	git status >output &&
 	test_i18ncmp expect output &&
-	git config -f .gitmodules  --remove-section submodule.subname &&
-	git config --unset diff.ignoreSubmodules
+	git config -f .gitmodules  --remove-section submodule.subname
 '
 
 test_expect_success '.git/config ignore=untracked suppresses submodules with untracked content' '
@@ -1041,15 +1055,14 @@ test_expect_success '--ignore-submodules=dirty suppresses submodules with untrac
 '
 
 test_expect_success '.gitmodules ignore=dirty suppresses submodules with untracked content' '
-	git config diff.ignoreSubmodules dirty &&
+	test_config diff.ignoreSubmodules dirty &&
 	git status >output &&
 	! test -s actual &&
 	git config --add -f .gitmodules submodule.subname.ignore dirty &&
 	git config --add -f .gitmodules submodule.subname.path sm &&
 	git status >output &&
 	test_i18ncmp expect output &&
-	git config -f .gitmodules  --remove-section submodule.subname &&
-	git config --unset diff.ignoreSubmodules
+	git config -f .gitmodules  --remove-section submodule.subname
 '
 
 test_expect_success '.git/config ignore=dirty suppresses submodules with untracked content' '
@@ -1230,6 +1243,54 @@ test_expect_success ".git/config ignore=dirty doesn't suppress submodule summary
 '
 
 cat > expect << EOF
+; On branch master
+; Changes to be committed:
+;   (use "git reset HEAD <file>..." to unstage)
+;
+;	modified:   sm
+;
+; Changes not staged for commit:
+;   (use "git add <file>..." to update what will be committed)
+;   (use "git checkout -- <file>..." to discard changes in working directory)
+;
+;	modified:   dir1/modified
+;	modified:   sm (new commits)
+;
+; Submodule changes to be committed:
+;
+; * sm $head...$new_head (1):
+;   > Add bar
+;
+; Submodules changed but not updated:
+;
+; * sm $new_head...$head2 (1):
+;   > 2nd commit
+;
+; Untracked files:
+;   (use "git add <file>..." to include in what will be committed)
+;
+;	.gitmodules
+;	dir1/untracked
+;	dir2/modified
+;	dir2/untracked
+;	expect
+;	output
+;	untracked
+EOF
+
+test_expect_success "status (core.commentchar with submodule summary)" '
+	test_config core.commentchar ";" &&
+	git status >output &&
+	test_i18ncmp expect output
+'
+
+test_expect_success "status (core.commentchar with two chars with submodule summary)" '
+	test_config core.commentchar ";;" &&
+	git status >output &&
+	test_i18ncmp expect output
+'
+
+cat > expect << EOF
 # On branch master
 # Changes not staged for commit:
 #   (use "git add <file>..." to update what will be committed)
@@ -1255,7 +1316,7 @@ test_expect_success "--ignore-submodules=all suppresses submodule summary" '
 	test_i18ncmp expect output
 '
 
-test_expect_failure '.gitmodules ignore=all suppresses submodule summary' '
+test_expect_success '.gitmodules ignore=all suppresses submodule summary' '
 	git config --add -f .gitmodules submodule.subname.ignore all &&
 	git config --add -f .gitmodules submodule.subname.path sm &&
 	git status > output &&
@@ -1263,7 +1324,7 @@ test_expect_failure '.gitmodules ignore=all suppresses submodule summary' '
 	git config -f .gitmodules  --remove-section submodule.subname
 '
 
-test_expect_failure '.git/config ignore=all suppresses submodule summary' '
+test_expect_success '.git/config ignore=all suppresses submodule summary' '
 	git config --add -f .gitmodules submodule.subname.ignore none &&
 	git config --add -f .gitmodules submodule.subname.path sm &&
 	git config --add submodule.subname.ignore all &&
@@ -1272,6 +1333,68 @@ test_expect_failure '.git/config ignore=all suppresses submodule summary' '
 	test_cmp expect output &&
 	git config --remove-section submodule.subname &&
 	git config -f .gitmodules  --remove-section submodule.subname
+'
+
+test_expect_success 'setup of test environment' '
+	git config status.showUntrackedFiles no &&
+	git status -s >expected_short &&
+	git status --no-short >expected_noshort
+'
+
+test_expect_success '"status.short=true" same as "-s"' '
+	git -c status.short=true status >actual &&
+	test_cmp expected_short actual
+'
+
+test_expect_success '"status.short=true" weaker than "--no-short"' '
+	git -c status.short=true status --no-short >actual &&
+	test_cmp expected_noshort actual
+'
+
+test_expect_success '"status.short=false" same as "--no-short"' '
+	git -c status.short=false status >actual &&
+	test_cmp expected_noshort actual
+'
+
+test_expect_success '"status.short=false" weaker than "-s"' '
+	git -c status.short=false status -s >actual &&
+	test_cmp expected_short actual
+'
+
+test_expect_success '"status.branch=true" same as "-b"' '
+	git status -sb >expected_branch &&
+	git -c status.branch=true status -s >actual &&
+	test_cmp expected_branch actual
+'
+
+test_expect_success '"status.branch=true" different from "--no-branch"' '
+	git status -s --no-branch  >expected_nobranch &&
+	git -c status.branch=true status -s >actual &&
+	test_must_fail test_cmp expected_nobranch actual
+'
+
+test_expect_success '"status.branch=true" weaker than "--no-branch"' '
+	git -c status.branch=true status -s --no-branch >actual &&
+	test_cmp expected_nobranch actual
+'
+
+test_expect_success '"status.branch=true" weaker than "--porcelain"' '
+       git -c status.branch=true status --porcelain >actual &&
+       test_cmp expected_nobranch actual
+'
+
+test_expect_success '"status.branch=false" same as "--no-branch"' '
+	git -c status.branch=false status -s >actual &&
+	test_cmp expected_nobranch actual
+'
+
+test_expect_success '"status.branch=false" weaker than "-b"' '
+	git -c status.branch=false status -sb >actual &&
+	test_cmp expected_branch actual
+'
+
+test_expect_success 'Restore default test environment' '
+	git config --unset status.showUntrackedFiles
 '
 
 test_done

@@ -7,12 +7,14 @@
 #include "dir.h"
 #include "tag.h"
 #include "string-list.h"
+#include "mergesort.h"
 
 enum map_direction { FROM_SRC, FROM_DST };
 
 static struct refspec s_tag_refspec = {
 	0,
 	1,
+	0,
 	0,
 	"refs/tags/*",
 	"refs/tags/*"
@@ -47,6 +49,7 @@ static int branches_nr;
 
 static struct branch *current_branch;
 static const char *default_remote_name;
+static const char *pushremote_name;
 static int explicit_default_remote_name;
 
 static struct rewrites rewrites;
@@ -145,6 +148,7 @@ static struct remote *make_remote(const char *name, int len)
 	}
 
 	ret = xcalloc(1, sizeof(struct remote));
+	ret->prune = -1;  /* unspecified */
 	ALLOC_GROW(remotes, remotes_nr + 1, remotes_alloc);
 	remotes[remotes_nr++] = ret;
 	if (len)
@@ -273,10 +277,9 @@ static void read_remotes_file(struct remote *remote)
 
 static void read_branches_file(struct remote *remote)
 {
-	const char *slash = strchr(remote->name, '/');
 	char *frag;
 	struct strbuf branch = STRBUF_INIT;
-	int n = slash ? slash - remote->name : 1000;
+	int n = 1000;
 	FILE *f = fopen(git_path("branches/%.*s", n, remote->name), "r");
 	char *s, *p;
 	int len;
@@ -296,21 +299,11 @@ static void read_branches_file(struct remote *remote)
 	while (isspace(p[-1]))
 		*--p = 0;
 	len = p - s;
-	if (slash)
-		len += strlen(slash);
 	p = xmalloc(len + 1);
 	strcpy(p, s);
-	if (slash)
-		strcat(p, slash);
 
 	/*
-	 * With "slash", e.g. "git fetch jgarzik/netdev-2.6" when
-	 * reading from $GIT_DIR/branches/jgarzik fetches "HEAD" from
-	 * the partial URL obtained from the branches file plus
-	 * "/netdev-2.6" and does not store it in any tracking ref.
-	 * #branch specifier in the file is ignored.
-	 *
-	 * Otherwise, the branches file would have URL and optionally
+	 * The branches file would have URL and optionally
 	 * #branch specified.  The "master" (or specified) branch is
 	 * fetched and stored in the local branch of the same name.
 	 */
@@ -320,12 +313,8 @@ static void read_branches_file(struct remote *remote)
 		strbuf_addf(&branch, "refs/heads/%s", frag);
 	} else
 		strbuf_addstr(&branch, "refs/heads/master");
-	if (!slash) {
-		strbuf_addf(&branch, ":refs/heads/%s", remote->name);
-	} else {
-		strbuf_reset(&branch);
-		strbuf_addstr(&branch, "HEAD:");
-	}
+
+	strbuf_addf(&branch, ":refs/heads/%s", remote->name);
 	add_url_alias(remote, p);
 	add_fetch_refspec(remote, strbuf_detach(&branch, NULL));
 	/*
@@ -355,13 +344,16 @@ static int handle_config(const char *key, const char *value, void *cb)
 			return 0;
 		branch = make_branch(name, subkey - name);
 		if (!strcmp(subkey, ".remote")) {
-			if (!value)
-				return config_error_nonbool(key);
-			branch->remote_name = xstrdup(value);
+			if (git_config_string(&branch->remote_name, key, value))
+				return -1;
 			if (branch == current_branch) {
 				default_remote_name = branch->remote_name;
 				explicit_default_remote_name = 1;
 			}
+		} else if (!strcmp(subkey, ".pushremote")) {
+			if (branch == current_branch)
+				if (git_config_string(&pushremote_name, key, value))
+					return -1;
 		} else if (!strcmp(subkey, ".merge")) {
 			if (!value)
 				return config_error_nonbool(key);
@@ -387,9 +379,16 @@ static int handle_config(const char *key, const char *value, void *cb)
 			add_instead_of(rewrite, xstrdup(value));
 		}
 	}
+
 	if (prefixcmp(key,  "remote."))
 		return 0;
 	name = key + 7;
+
+	/* Handle remote.* variables */
+	if (!strcmp(name, "pushdefault"))
+		return git_config_string(&pushremote_name, key, value);
+
+	/* Handle remote.<name>.* variables */
 	if (*name == '/') {
 		warning("Config remote shorthand cannot begin with '/': %s",
 			name);
@@ -406,6 +405,8 @@ static int handle_config(const char *key, const char *value, void *cb)
 		remote->skip_default_update = git_config_bool(key, value);
 	else if (!strcmp(subkey, ".skipfetchall"))
 		remote->skip_default_update = git_config_bool(key, value);
+	else if (!strcmp(subkey, ".prune"))
+		remote->prune = git_config_bool(key, value);
 	else if (!strcmp(subkey, ".url")) {
 		const char *v;
 		if (git_config_string(&v, key, value))
@@ -537,7 +538,7 @@ static struct refspec *parse_refspec_internal(int nr_refspec, const char **refsp
 
 		/*
 		 * Before going on, special case ":" (or "+:") as a refspec
-		 * for matching refs.
+		 * for pushing matching refs.
 		 */
 		if (!fetch && rhs == lhs && rhs[1] == '\0') {
 			rs[i].matching = 1;
@@ -564,26 +565,25 @@ static struct refspec *parse_refspec_internal(int nr_refspec, const char **refsp
 		flags = REFNAME_ALLOW_ONELEVEL | (is_glob ? REFNAME_REFSPEC_PATTERN : 0);
 
 		if (fetch) {
-			/*
-			 * LHS
-			 * - empty is allowed; it means HEAD.
-			 * - otherwise it must be a valid looking ref.
-			 */
+			unsigned char unused[40];
+
+			/* LHS */
 			if (!*rs[i].src)
-				; /* empty is ok */
-			else if (check_refname_format(rs[i].src, flags))
+				; /* empty is ok; it means "HEAD" */
+			else if (llen == 40 && !get_sha1_hex(rs[i].src, unused))
+				rs[i].exact_sha1 = 1; /* ok */
+			else if (!check_refname_format(rs[i].src, flags))
+				; /* valid looking ref is ok */
+			else
 				goto invalid;
-			/*
-			 * RHS
-			 * - missing is ok, and is same as empty.
-			 * - empty is ok; it means not to store.
-			 * - otherwise it must be a valid looking ref.
-			 */
+			/* RHS */
 			if (!rs[i].dst)
-				; /* ok */
+				; /* missing is ok; it is the same as empty */
 			else if (!*rs[i].dst)
-				; /* ok */
-			else if (check_refname_format(rs[i].dst, flags))
+				; /* empty is ok; it means "do not store" */
+			else if (!check_refname_format(rs[i].dst, flags))
+				; /* valid looking ref is ok */
+			else
 				goto invalid;
 		} else {
 			/*
@@ -670,17 +670,21 @@ static int valid_remote_nick(const char *name)
 	return !strchr(name, '/'); /* no slash */
 }
 
-struct remote *remote_get(const char *name)
+static struct remote *remote_get_1(const char *name, const char *pushremote_name)
 {
 	struct remote *ret;
 	int name_given = 0;
 
-	read_config();
 	if (name)
 		name_given = 1;
 	else {
-		name = default_remote_name;
-		name_given = explicit_default_remote_name;
+		if (pushremote_name) {
+			name = pushremote_name;
+			name_given = 1;
+		} else {
+			name = default_remote_name;
+			name_given = explicit_default_remote_name;
+		}
 	}
 
 	ret = make_remote(name, 0);
@@ -697,6 +701,18 @@ struct remote *remote_get(const char *name)
 	ret->fetch = parse_fetch_refspec(ret->fetch_refspec_nr, ret->fetch_refspec);
 	ret->push = parse_push_refspec(ret->push_refspec_nr, ret->push_refspec);
 	return ret;
+}
+
+struct remote *remote_get(const char *name)
+{
+	read_config();
+	return remote_get_1(name, NULL);
+}
+
+struct remote *pushremote_get(const char *name)
+{
+	read_config();
+	return remote_get_1(name, pushremote_name);
 }
 
 int remote_is_configured(const char *name)
@@ -918,6 +934,27 @@ void free_refs(struct ref *ref)
 	}
 }
 
+int ref_compare_name(const void *va, const void *vb)
+{
+	const struct ref *a = va, *b = vb;
+	return strcmp(a->name, b->name);
+}
+
+static void *ref_list_get_next(const void *a)
+{
+	return ((const struct ref *)a)->next;
+}
+
+static void ref_list_set_next(void *a, void *next)
+{
+	((struct ref *)a)->next = next;
+}
+
+void sort_ref_list(struct ref **l, int (*cmp)(const void *, const void *))
+{
+	*l = llist_mergesort(*l, ref_list_get_next, ref_list_set_next, cmp);
+}
+
 static int count_refspec_match(const char *pattern,
 			       struct ref *refs,
 			       struct ref **matched_ref)
@@ -1078,6 +1115,9 @@ static int match_explicit(struct ref *src, struct ref *dst,
 	case 0:
 		if (!memcmp(dst_value, "refs/", 5))
 			matched_dst = make_linked_ref(dst_value, dst_tail);
+		else if (is_null_sha1(matched_src->new_sha1))
+			error("unable to delete '%s': remote ref does not exist",
+			      dst_value);
 		else if ((dst_guess = guess_ref(dst_value, matched_src)))
 			matched_dst = make_linked_ref(dst_guess, dst_tail);
 		else
@@ -1170,6 +1210,117 @@ static struct ref **tail_ref(struct ref **head)
 	return tail;
 }
 
+struct tips {
+	struct commit **tip;
+	int nr, alloc;
+};
+
+static void add_to_tips(struct tips *tips, const unsigned char *sha1)
+{
+	struct commit *commit;
+
+	if (is_null_sha1(sha1))
+		return;
+	commit = lookup_commit_reference_gently(sha1, 1);
+	if (!commit || (commit->object.flags & TMP_MARK))
+		return;
+	commit->object.flags |= TMP_MARK;
+	ALLOC_GROW(tips->tip, tips->nr + 1, tips->alloc);
+	tips->tip[tips->nr++] = commit;
+}
+
+static void add_missing_tags(struct ref *src, struct ref **dst, struct ref ***dst_tail)
+{
+	struct string_list dst_tag = STRING_LIST_INIT_NODUP;
+	struct string_list src_tag = STRING_LIST_INIT_NODUP;
+	struct string_list_item *item;
+	struct ref *ref;
+	struct tips sent_tips;
+
+	/*
+	 * Collect everything we know they would have at the end of
+	 * this push, and collect all tags they have.
+	 */
+	memset(&sent_tips, 0, sizeof(sent_tips));
+	for (ref = *dst; ref; ref = ref->next) {
+		if (ref->peer_ref &&
+		    !is_null_sha1(ref->peer_ref->new_sha1))
+			add_to_tips(&sent_tips, ref->peer_ref->new_sha1);
+		else
+			add_to_tips(&sent_tips, ref->old_sha1);
+		if (!prefixcmp(ref->name, "refs/tags/"))
+			string_list_append(&dst_tag, ref->name);
+	}
+	clear_commit_marks_many(sent_tips.nr, sent_tips.tip, TMP_MARK);
+
+	sort_string_list(&dst_tag);
+
+	/* Collect tags they do not have. */
+	for (ref = src; ref; ref = ref->next) {
+		if (prefixcmp(ref->name, "refs/tags/"))
+			continue; /* not a tag */
+		if (string_list_has_string(&dst_tag, ref->name))
+			continue; /* they already have it */
+		if (sha1_object_info(ref->new_sha1, NULL) != OBJ_TAG)
+			continue; /* be conservative */
+		item = string_list_append(&src_tag, ref->name);
+		item->util = ref;
+	}
+	string_list_clear(&dst_tag, 0);
+
+	/*
+	 * At this point, src_tag lists tags that are missing from
+	 * dst, and sent_tips lists the tips we are pushing or those
+	 * that we know they already have. An element in the src_tag
+	 * that is an ancestor of any of the sent_tips needs to be
+	 * sent to the other side.
+	 */
+	if (sent_tips.nr) {
+		for_each_string_list_item(item, &src_tag) {
+			struct ref *ref = item->util;
+			struct ref *dst_ref;
+			struct commit *commit;
+
+			if (is_null_sha1(ref->new_sha1))
+				continue;
+			commit = lookup_commit_reference_gently(ref->new_sha1, 1);
+			if (!commit)
+				/* not pushing a commit, which is not an error */
+				continue;
+
+			/*
+			 * Is this tag, which they do not have, reachable from
+			 * any of the commits we are sending?
+			 */
+			if (!in_merge_bases_many(commit, sent_tips.nr, sent_tips.tip))
+				continue;
+
+			/* Add it in */
+			dst_ref = make_linked_ref(ref->name, dst_tail);
+			hashcpy(dst_ref->new_sha1, ref->new_sha1);
+			dst_ref->peer_ref = copy_ref(ref);
+		}
+	}
+	string_list_clear(&src_tag, 0);
+	free(sent_tips.tip);
+}
+
+struct ref *find_ref_by_name(const struct ref *list, const char *name)
+{
+	for ( ; list; list = list->next)
+		if (!strcmp(list->name, name))
+			return (struct ref *)list;
+	return NULL;
+}
+
+static void prepare_ref_index(struct string_list *ref_index, struct ref *ref)
+{
+	for ( ; ref; ref = ref->next)
+		string_list_append_nodup(ref_index, ref->name)->util = ref;
+
+	sort_string_list(ref_index);
+}
+
 /*
  * Given the set of refs the local repository has, the set of refs the
  * remote repository has, and the refspec used for push, determine
@@ -1188,6 +1339,7 @@ int match_push_refs(struct ref *src, struct ref **dst,
 	int errs;
 	static const char *default_refspec[] = { ":", NULL };
 	struct ref *ref, **dst_tail = tail_ref(dst);
+	struct string_list dst_ref_index = STRING_LIST_INIT_NODUP;
 
 	if (!nr_refspec) {
 		nr_refspec = 1;
@@ -1198,18 +1350,20 @@ int match_push_refs(struct ref *src, struct ref **dst,
 
 	/* pick the remainder */
 	for (ref = src; ref; ref = ref->next) {
+		struct string_list_item *dst_item;
 		struct ref *dst_peer;
 		const struct refspec *pat = NULL;
 		char *dst_name;
-
-		if (ref->peer_ref)
-			continue;
 
 		dst_name = get_ref_match(rs, nr_refspec, ref, send_mirror, FROM_SRC, &pat);
 		if (!dst_name)
 			continue;
 
-		dst_peer = find_ref_by_name(*dst, dst_name);
+		if (!dst_ref_index.nr)
+			prepare_ref_index(&dst_ref_index, *dst);
+
+		dst_item = string_list_lookup(&dst_ref_index, dst_name);
+		dst_peer = dst_item ? dst_item->util : NULL;
 		if (dst_peer) {
 			if (dst_peer->peer_ref)
 				/* We're already sending something to this ref. */
@@ -1226,13 +1380,22 @@ int match_push_refs(struct ref *src, struct ref **dst,
 			/* Create a new one and link it */
 			dst_peer = make_linked_ref(dst_name, &dst_tail);
 			hashcpy(dst_peer->new_sha1, ref->new_sha1);
+			string_list_insert(&dst_ref_index,
+				dst_peer->name)->util = dst_peer;
 		}
 		dst_peer->peer_ref = copy_ref(ref);
 		dst_peer->force = pat->force;
 	free_name:
 		free(dst_name);
 	}
+
+	string_list_clear(&dst_ref_index, 0);
+
+	if (flags & MATCH_REFS_FOLLOW_TAGS)
+		add_missing_tags(src, dst, &dst_tail);
+
 	if (send_prune) {
+		struct string_list src_ref_index = STRING_LIST_INIT_NODUP;
 		/* check for missing refs on the remote */
 		for (ref = *dst; ref; ref = ref->next) {
 			char *src_name;
@@ -1243,11 +1406,15 @@ int match_push_refs(struct ref *src, struct ref **dst,
 
 			src_name = get_ref_match(rs, nr_refspec, ref, send_mirror, FROM_DST, NULL);
 			if (src_name) {
-				if (!find_ref_by_name(src, src_name))
+				if (!src_ref_index.nr)
+					prepare_ref_index(&src_ref_index, src);
+				if (!string_list_has_string(&src_ref_index,
+					    src_name))
 					ref->peer_ref = alloc_delete_ref();
 				free(src_name);
 			}
 		}
+		string_list_clear(&src_ref_index, 0);
 	}
 	if (errs)
 		return -1;
@@ -1255,11 +1422,14 @@ int match_push_refs(struct ref *src, struct ref **dst,
 }
 
 void set_ref_status_for_push(struct ref *remote_refs, int send_mirror,
-	int force_update)
+			     int force_update)
 {
 	struct ref *ref;
 
 	for (ref = remote_refs; ref; ref = ref->next) {
+		int force_ref_update = ref->force || force_update;
+		int reject_reason = 0;
+
 		if (ref->peer_ref)
 			hashcpy(ref->new_sha1, ref->peer_ref->new_sha1);
 		else if (!send_mirror)
@@ -1272,35 +1442,64 @@ void set_ref_status_for_push(struct ref *remote_refs, int send_mirror,
 			continue;
 		}
 
-		/* This part determines what can overwrite what.
-		 * The rules are:
+		/*
+		 * Bypass the usual "must fast-forward" check but
+		 * replace it with a weaker "the old value must be
+		 * this value we observed".  If the remote ref has
+		 * moved and is now different from what we expect,
+		 * reject any push.
 		 *
-		 * (0) you can always use --force or +A:B notation to
-		 *     selectively force individual ref pairs.
+		 * It also is an error if the user told us to check
+		 * with the remote-tracking branch to find the value
+		 * to expect, but we did not have such a tracking
+		 * branch.
+		 */
+		if (ref->expect_old_sha1) {
+			if (ref->expect_old_no_trackback ||
+			    hashcmp(ref->old_sha1, ref->old_sha1_expect))
+				reject_reason = REF_STATUS_REJECT_STALE;
+		}
+
+		/*
+		 * The usual "must fast-forward" rules.
 		 *
-		 * (1) if the old thing does not exist, it is OK.
+		 * Decide whether an individual refspec A:B can be
+		 * pushed.  The push will succeed if any of the
+		 * following are true:
 		 *
-		 * (2) if you do not have the old thing, you are not allowed
-		 *     to overwrite it; you would not know what you are losing
-		 *     otherwise.
+		 * (1) the remote reference B does not exist
 		 *
-		 * (3) if both new and old are commit-ish, and new is a
-		 *     descendant of old, it is OK.
+		 * (2) the remote reference B is being removed (i.e.,
+		 *     pushing :B where no source is specified)
 		 *
-		 * (4) regardless of all of the above, removing :B is
-		 *     always allowed.
+		 * (3) the destination is not under refs/tags/, and
+		 *     if the old and new value is a commit, the new
+		 *     is a descendant of the old.
+		 *
+		 * (4) it is forced using the +A:B notation, or by
+		 *     passing the --force argument
 		 */
 
-		ref->nonfastforward =
-			!ref->deletion &&
-			!is_null_sha1(ref->old_sha1) &&
-			(!has_sha1_file(ref->old_sha1)
-			  || !ref_newer(ref->new_sha1, ref->old_sha1));
-
-		if (ref->nonfastforward && !ref->force && !force_update) {
-			ref->status = REF_STATUS_REJECT_NONFASTFORWARD;
-			continue;
+		else if (!ref->deletion && !is_null_sha1(ref->old_sha1)) {
+			if (!prefixcmp(ref->name, "refs/tags/"))
+				reject_reason = REF_STATUS_REJECT_ALREADY_EXISTS;
+			else if (!has_sha1_file(ref->old_sha1))
+				reject_reason = REF_STATUS_REJECT_FETCH_FIRST;
+			else if (!lookup_commit_reference_gently(ref->old_sha1, 1) ||
+				 !lookup_commit_reference_gently(ref->new_sha1, 1))
+				reject_reason = REF_STATUS_REJECT_NEEDS_FORCE;
+			else if (!ref_newer(ref->new_sha1, ref->old_sha1))
+				reject_reason = REF_STATUS_REJECT_NONFASTFORWARD;
 		}
+
+		/*
+		 * "--force" will defeat any rejection implemented
+		 * by the rules above.
+		 */
+		if (!force_ref_update)
+			ref->status = reject_reason;
+		else if (reject_reason)
+			ref->forced_update = 1;
 	}
 }
 
@@ -1317,8 +1516,7 @@ struct branch *branch_get(const char *name)
 		ret->remote = remote_get(ret->remote_name);
 		if (ret->merge_nr) {
 			int i;
-			ret->merge = xcalloc(sizeof(*ret->merge),
-					     ret->merge_nr);
+			ret->merge = xcalloc(ret->merge_nr, sizeof(*ret->merge));
 			for (i = 0; i < ret->merge_nr; i++) {
 				ret->merge[i] = xcalloc(1, sizeof(**ret->merge));
 				ret->merge[i]->src = xstrdup(ret->merge_name[i]);
@@ -1345,6 +1543,16 @@ int branch_merge_matches(struct branch *branch,
 	return refname_match(branch->merge[i]->src, refname, ref_fetch_rules);
 }
 
+static int ignore_symref_update(const char *refname)
+{
+	unsigned char sha1[20];
+	int flag;
+
+	if (!resolve_ref_unsafe(refname, sha1, 0, &flag))
+		return 0; /* non-existing refs are OK */
+	return (flag & REF_ISSYMREF);
+}
+
 static struct ref *get_expanded_map(const struct ref *remote_refs,
 				    const struct refspec *refspec)
 {
@@ -1358,7 +1566,8 @@ static struct ref *get_expanded_map(const struct ref *remote_refs,
 		if (strchr(ref->name, '^'))
 			continue; /* a dereference item */
 		if (match_name_with_pattern(refspec->src, ref->name,
-					    refspec->dst, &expn_name)) {
+					    refspec->dst, &expn_name) &&
+		    !ignore_symref_update(expn_name)) {
 			struct ref *cpy = copy_ref(ref);
 
 			cpy->peer_ref = alloc_ref(expn_name);
@@ -1421,7 +1630,12 @@ int get_fetch_map(const struct ref *remote_refs,
 	} else {
 		const char *name = refspec->src[0] ? refspec->src : "HEAD";
 
-		ref_map = get_remote_ref(remote_refs, name);
+		if (refspec->exact_sha1) {
+			ref_map = alloc_ref(name);
+			get_sha1_hex(name, ref_map->old_sha1);
+		} else {
+			ref_map = get_remote_ref(remote_refs, name);
+		}
 		if (!missing_ok && !ref_map)
 			die("Couldn't find remote ref %s", name);
 		if (ref_map) {
@@ -1433,8 +1647,8 @@ int get_fetch_map(const struct ref *remote_refs,
 
 	for (rmp = &ref_map; *rmp; ) {
 		if ((*rmp)->peer_ref) {
-			if (check_refname_format((*rmp)->peer_ref->name + 5,
-				REFNAME_ALLOW_ONELEVEL)) {
+			if (prefixcmp((*rmp)->peer_ref->name, "refs/") ||
+			    check_refname_format((*rmp)->peer_ref->name, 0)) {
 				struct ref *ignore = *rmp;
 				error("* Ignoring funny ref '%s' locally",
 				      (*rmp)->peer_ref->name);
@@ -1482,7 +1696,8 @@ int ref_newer(const unsigned char *new_sha1, const unsigned char *old_sha1)
 	struct commit_list *list, *used;
 	int found = 0;
 
-	/* Both new and old must be commit-ish and new is descendant of
+	/*
+	 * Both new and old must be commit-ish and new is descendant of
 	 * old.  Otherwise we require --force.
 	 */
 	o = deref_tag(parse_object(old_sha1), NULL, 0);
@@ -1602,13 +1817,16 @@ int format_tracking_info(struct branch *branch, struct strbuf *sb)
 
 	base = branch->merge[0]->dst;
 	base = shorten_unambiguous_ref(base, 0);
-	if (!num_theirs)
+	if (!num_theirs) {
 		strbuf_addf(sb,
 			Q_("Your branch is ahead of '%s' by %d commit.\n",
 			   "Your branch is ahead of '%s' by %d commits.\n",
 			   num_ours),
 			base, num_ours);
-	else if (!num_ours)
+		if (advice_status_hints)
+			strbuf_addf(sb,
+				_("  (use \"git push\" to publish your local commits)\n"));
+	} else if (!num_ours) {
 		strbuf_addf(sb,
 			Q_("Your branch is behind '%s' by %d commit, "
 			       "and can be fast-forwarded.\n",
@@ -1616,7 +1834,10 @@ int format_tracking_info(struct branch *branch, struct strbuf *sb)
 			       "and can be fast-forwarded.\n",
 			   num_theirs),
 			base, num_theirs);
-	else
+		if (advice_status_hints)
+			strbuf_addf(sb,
+				_("  (use \"git pull\" to update your local branch)\n"));
+	} else {
 		strbuf_addf(sb,
 			Q_("Your branch and '%s' have diverged,\n"
 			       "and have %d and %d different commit each, "
@@ -1626,6 +1847,10 @@ int format_tracking_info(struct branch *branch, struct strbuf *sb)
 			       "respectively.\n",
 			   num_theirs),
 			base, num_ours, num_theirs);
+		if (advice_status_hints)
+			strbuf_addf(sb,
+				_("  (use \"git pull\" to merge the remote branch into yours)\n"));
+	}
 	return 1;
 }
 
@@ -1744,4 +1969,122 @@ struct ref *get_stale_heads(struct refspec *refs, int ref_count, struct ref *fet
 	for_each_ref(get_stale_heads_cb, &info);
 	string_list_clear(&ref_names, 0);
 	return stale_refs;
+}
+
+/*
+ * Compare-and-swap
+ */
+void clear_cas_option(struct push_cas_option *cas)
+{
+	int i;
+
+	for (i = 0; i < cas->nr; i++)
+		free(cas->entry[i].refname);
+	free(cas->entry);
+	memset(cas, 0, sizeof(*cas));
+}
+
+static struct push_cas *add_cas_entry(struct push_cas_option *cas,
+				      const char *refname,
+				      size_t refnamelen)
+{
+	struct push_cas *entry;
+	ALLOC_GROW(cas->entry, cas->nr + 1, cas->alloc);
+	entry = &cas->entry[cas->nr++];
+	memset(entry, 0, sizeof(*entry));
+	entry->refname = xmemdupz(refname, refnamelen);
+	return entry;
+}
+
+int parse_push_cas_option(struct push_cas_option *cas, const char *arg, int unset)
+{
+	const char *colon;
+	struct push_cas *entry;
+
+	if (unset) {
+		/* "--no-<option>" */
+		clear_cas_option(cas);
+		return 0;
+	}
+
+	if (!arg) {
+		/* just "--<option>" */
+		cas->use_tracking_for_rest = 1;
+		return 0;
+	}
+
+	/* "--<option>=refname" or "--<option>=refname:value" */
+	colon = strchrnul(arg, ':');
+	entry = add_cas_entry(cas, arg, colon - arg);
+	if (!*colon)
+		entry->use_tracking = 1;
+	else if (get_sha1(colon + 1, entry->expect))
+		return error("cannot parse expected object name '%s'", colon + 1);
+	return 0;
+}
+
+int parseopt_push_cas_option(const struct option *opt, const char *arg, int unset)
+{
+	return parse_push_cas_option(opt->value, arg, unset);
+}
+
+int is_empty_cas(const struct push_cas_option *cas)
+{
+	return !cas->use_tracking_for_rest && !cas->nr;
+}
+
+/*
+ * Look at remote.fetch refspec and see if we have a remote
+ * tracking branch for the refname there.  Fill its current
+ * value in sha1[].
+ * If we cannot do so, return negative to signal an error.
+ */
+static int remote_tracking(struct remote *remote, const char *refname,
+			   unsigned char sha1[20])
+{
+	char *dst;
+
+	dst = apply_refspecs(remote->fetch, remote->fetch_refspec_nr, refname);
+	if (!dst)
+		return -1; /* no tracking ref for refname at remote */
+	if (read_ref(dst, sha1))
+		return -1; /* we know what the tracking ref is but we cannot read it */
+	return 0;
+}
+
+static void apply_cas(struct push_cas_option *cas,
+		      struct remote *remote,
+		      struct ref *ref)
+{
+	int i;
+
+	/* Find an explicit --<option>=<name>[:<value>] entry */
+	for (i = 0; i < cas->nr; i++) {
+		struct push_cas *entry = &cas->entry[i];
+		if (!refname_match(entry->refname, ref->name, ref_rev_parse_rules))
+			continue;
+		ref->expect_old_sha1 = 1;
+		if (!entry->use_tracking)
+			hashcpy(ref->old_sha1_expect, cas->entry[i].expect);
+		else if (remote_tracking(remote, ref->name, ref->old_sha1_expect))
+			ref->expect_old_no_trackback = 1;
+		return;
+	}
+
+	/* Are we using "--<option>" to cover all? */
+	if (!cas->use_tracking_for_rest)
+		return;
+
+	ref->expect_old_sha1 = 1;
+	if (remote_tracking(remote, ref->name, ref->old_sha1_expect))
+		ref->expect_old_no_trackback = 1;
+}
+
+void apply_push_cas(struct push_cas_option *cas,
+		    struct remote *remote,
+		    struct ref *remote_refs)
+{
+	struct ref *ref;
+	for (ref = remote_refs; ref; ref = ref->next)
+		apply_cas(cas, remote, ref);
 }

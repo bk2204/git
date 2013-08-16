@@ -44,6 +44,8 @@ my ($diff_new_color) =
 
 my $normal_color = $repo->get_color("", "reset");
 
+my $diff_algorithm = $repo->config('diff.algorithm');
+
 my $use_readkey = 0;
 my $use_termcap = 0;
 my %term_escapes;
@@ -731,6 +733,9 @@ sub run_git_apply {
 sub parse_diff {
 	my ($path) = @_;
 	my @diff_cmd = split(" ", $patch_mode_flavour{DIFF});
+	if (defined $diff_algorithm) {
+		splice @diff_cmd, 1, 0, "--diff-algorithm=${diff_algorithm}";
+	}
 	if (defined $patch_mode_revision) {
 		push @diff_cmd, $patch_mode_revision;
 	}
@@ -1067,7 +1072,6 @@ EOF
 }
 
 sub diff_applies {
-	my $fh;
 	return run_git_apply($patch_mode_flavour{APPLY_CHECK} . ' --check',
 			     map { @{$_->{TEXT}} } @_);
 }
@@ -1248,7 +1252,7 @@ sub summarize_hunk {
 
 
 # Print a one-line summary of each hunk in the array ref in
-# the first argument, starting wih the index in the 2nd.
+# the first argument, starting with the index in the 2nd.
 sub display_hunks {
 	my ($hunks, $i) = @_;
 	my $ctr = 0;
@@ -1514,7 +1518,6 @@ sub patch_update_file {
 	}
 
 	if (@result) {
-		my $fh;
 		my @patch = reassemble_patch($head->{TEXT}, @result);
 		my $apply_routine = $patch_mode_flavour{APPLY};
 		&$apply_routine(@patch);

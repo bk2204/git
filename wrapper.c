@@ -9,6 +9,18 @@ static void do_nothing(size_t size)
 
 static void (*try_to_free_routine)(size_t size) = do_nothing;
 
+static void memory_limit_check(size_t size)
+{
+	static int limit = -1;
+	if (limit == -1) {
+		const char *env = getenv("GIT_ALLOC_LIMIT");
+		limit = env ? atoi(env) * 1024 : 0;
+	}
+	if (limit && size > limit)
+		die("attempting to allocate %"PRIuMAX" over limit %d",
+		    (intmax_t)size, limit);
+}
+
 try_to_free_t set_try_to_free_routine(try_to_free_t routine)
 {
 	try_to_free_t old = try_to_free_routine;
@@ -32,7 +44,10 @@ char *xstrdup(const char *str)
 
 void *xmalloc(size_t size)
 {
-	void *ret = malloc(size);
+	void *ret;
+
+	memory_limit_check(size);
+	ret = malloc(size);
 	if (!ret && !size)
 		ret = malloc(1);
 	if (!ret) {
@@ -79,7 +94,10 @@ char *xstrndup(const char *str, size_t len)
 
 void *xrealloc(void *ptr, size_t size)
 {
-	void *ret = realloc(ptr, size);
+	void *ret;
+
+	memory_limit_check(size);
+	ret = realloc(ptr, size);
 	if (!ret && !size)
 		ret = realloc(ptr, 1);
 	if (!ret) {
@@ -95,7 +113,10 @@ void *xrealloc(void *ptr, size_t size)
 
 void *xcalloc(size_t nmemb, size_t size)
 {
-	void *ret = calloc(nmemb, size);
+	void *ret;
+
+	memory_limit_check(size * nmemb);
+	ret = calloc(nmemb, size);
 	if (!ret && (!nmemb || !size))
 		ret = calloc(1, 1);
 	if (!ret) {
@@ -208,7 +229,7 @@ int xmkstemp(char *template)
 		int saved_errno = errno;
 		const char *nonrelative_template;
 
-		if (!template[0])
+		if (strlen(template) != strlen(origtemplate))
 			template = origtemplate;
 
 		nonrelative_template = absolute_path(template);
@@ -301,7 +322,7 @@ int git_mkstemps_mode(char *pattern, int suffix_len, int mode)
 		template[5] = letters[v % num_letters]; v /= num_letters;
 
 		fd = open(pattern, O_CREAT | O_EXCL | O_RDWR, mode);
-		if (fd > 0)
+		if (fd >= 0)
 			return fd;
 		/*
 		 * Fatal error (EPERM, ENOSPC etc).
@@ -380,4 +401,43 @@ int rmdir_or_warn(const char *file)
 int remove_or_warn(unsigned int mode, const char *file)
 {
 	return S_ISGITLINK(mode) ? rmdir_or_warn(file) : unlink_or_warn(file);
+}
+
+void warn_on_inaccessible(const char *path)
+{
+	warning(_("unable to access '%s': %s"), path, strerror(errno));
+}
+
+static int access_error_is_ok(int err, unsigned flag)
+{
+	return err == ENOENT || err == ENOTDIR ||
+		((flag & ACCESS_EACCES_OK) && err == EACCES);
+}
+
+int access_or_warn(const char *path, int mode, unsigned flag)
+{
+	int ret = access(path, mode);
+	if (ret && !access_error_is_ok(errno, flag))
+		warn_on_inaccessible(path);
+	return ret;
+}
+
+int access_or_die(const char *path, int mode, unsigned flag)
+{
+	int ret = access(path, mode);
+	if (ret && !access_error_is_ok(errno, flag))
+		die_errno(_("unable to access '%s'"), path);
+	return ret;
+}
+
+struct passwd *xgetpwuid_self(void)
+{
+	struct passwd *pw;
+
+	errno = 0;
+	pw = getpwuid(getuid());
+	if (!pw)
+		die(_("unable to look up current user in the passwd file: %s"),
+		    errno ? strerror(errno) : _("no such user"));
+	return pw;
 }

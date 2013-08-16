@@ -24,16 +24,14 @@ static int apply_delta(int argc, char *argv[])
 		die_errno("cannot open preimage");
 	if (buffer_init(&delta, argv[3]))
 		die_errno("cannot open delta");
-	if (svndiff0_apply(&delta, (off_t) strtoull(argv[4], NULL, 0),
+	if (svndiff0_apply(&delta, (off_t) strtoumax(argv[4], NULL, 0),
 					&preimage_view, stdout))
 		return 1;
 	if (buffer_deinit(&preimage))
 		die_errno("cannot close preimage");
 	if (buffer_deinit(&delta))
 		die_errno("cannot close delta");
-	buffer_reset(&preimage);
 	strbuf_release(&preimage_view.buf);
-	buffer_reset(&delta);
 	return 0;
 }
 
@@ -42,7 +40,7 @@ int main(int argc, char *argv[])
 	if (argc == 2) {
 		if (svndump_init(argv[1]))
 			return 1;
-		svndump_read(NULL);
+		svndump_read(NULL, "refs/heads/master", "refs/notes/svn/revs");
 		svndump_deinit();
 		svndump_reset();
 		return 0;

@@ -3,46 +3,25 @@
 # Copyright (c) 2005 Junio C Hamano.
 #
 
-USAGE='[--interactive | -i] [-v] [--force-rebase | -f] [--no-ff] [--onto <newbase>] [<upstream>|--root] [<branch>] [--quiet | -q]'
-LONG_USAGE='git-rebase replaces <branch> with a new branch of the
-same name.  When the --onto option is provided the new branch starts
-out with a HEAD equal to <newbase>, otherwise it is equal to <upstream>
-It then attempts to create a new commit for each commit from the original
-<branch> that does not exist in the <upstream> branch.
-
-It is possible that a merge failure will prevent this process from being
-completely automatic.  You will have to resolve any such merge failure
-and run git rebase --continue.  Another option is to bypass the commit
-that caused the merge failure with git rebase --skip.  To check out the
-original <branch> and remove the .git/rebase-apply working files, use the
-command git rebase --abort instead.
-
-Note that if <branch> is not specified on the command line, the
-currently checked out branch is used.
-
-Example:       git-rebase master~1 topic
-
-	A---B---C topic                   A'\''--B'\''--C'\'' topic
-       /                   -->           /
-  D---E---F---G master          D---E---F---G master
-'
-
 SUBDIRECTORY_OK=Yes
 OPTIONS_KEEPDASHDASH=
 OPTIONS_SPEC="\
-git rebase [-i] [options] [--onto <newbase>] [<upstream>] [<branch>]
-git rebase [-i] [options] --onto <newbase> --root [<branch>]
-git-rebase [-i] --continue | --abort | --skip
+git rebase [-i] [options] [--exec <cmd>] [--onto <newbase>] [<upstream>] [<branch>]
+git rebase [-i] [options] [--exec <cmd>] [--onto <newbase>] --root [<branch>]
+git-rebase --continue | --abort | --skip | --edit-todo
 --
  Available options are
 v,verbose!         display a diffstat of what changed upstream
 q,quiet!           be quiet. implies --no-stat
+autostash!         automatically stash/stash pop before and after
 onto=!             rebase onto given branch instead of upstream
 p,preserve-merges! try to recreate merges instead of ignoring them
 s,strategy=!       use the given merge strategy
 no-ff!             cherry-pick all commits, even if unchanged
 m,merge!           use merging strategies to rebase
 i,interactive!     let the user edit the list of commits to rebase
+x,exec=!           add exec lines after each commit of the editable list
+k,keep-empty	   preserve empty commits during rebase
 f,force-rebase!    force rebase even if branch is up to date
 X,strategy-option=! pass the argument through to the merge strategy
 stat!              display a diffstat of what changed upstream
@@ -60,8 +39,10 @@ C=!                passed to 'git apply'
 continue!          continue
 abort!             abort and check out the original branch
 skip!              skip current patch and continue
+edit-todo!         edit the todo list during an interactive rebase
 "
 . git-sh-setup
+. git-sh-i18n
 set_reflog_action rebase
 require_work_tree_exists
 cd_to_toplevel
@@ -70,11 +51,12 @@ LF='
 '
 ok_to_skip_pre_rebase=
 resolvemsg="
-When you have resolved this problem run \"git rebase --continue\".
-If you would prefer to skip this patch, instead run \"git rebase --skip\".
-To check out the original branch and stop rebasing run \"git rebase --abort\".
+$(gettext 'When you have resolved this problem, run "git rebase --continue".
+If you prefer to skip this patch, run "git rebase --skip" instead.
+To check out the original branch and stop rebasing, run "git rebase --abort".')
 "
 unset onto
+cmd=
 strategy=
 strategy_opts=
 do_merge=
@@ -83,6 +65,7 @@ apply_dir="$GIT_DIR"/rebase-apply
 verbose=
 diffstat=
 test "$(git config --bool rebase.stat)" = true && diffstat=t
+autostash="$(git config --bool rebase.autostash || echo false)"
 git_am_opt=
 rebase_root=
 force_rebase=
@@ -97,9 +80,12 @@ state_dir=
 action=
 preserve_merges=
 autosquash=
+keep_empty=
 test "$(git config --bool rebase.autosquash)" = "true" && autosquash=t
 
 read_basic_state () {
+	test -f "$state_dir/head-name" &&
+	test -f "$state_dir/onto" &&
 	head_name=$(cat "$state_dir"/head-name) &&
 	onto=$(cat "$state_dir"/onto) &&
 	# We always write to orig-head, but interactive rebase used to write to
@@ -156,17 +142,44 @@ move_to_original_branch () {
 		git symbolic-ref \
 			-m "rebase finished: returning to $head_name" \
 			HEAD $head_name ||
-		die "Could not move back to $head_name"
+		die "$(gettext "Could not move back to $head_name")"
 		;;
 	esac
+}
+
+finish_rebase () {
+	if test -f "$state_dir/autostash"
+	then
+		stash_sha1=$(cat "$state_dir/autostash")
+		if git stash apply $stash_sha1 2>&1 >/dev/null
+		then
+			echo "$(gettext 'Applied autostash.')"
+		else
+			git stash store -m "autostash" -q $stash_sha1 ||
+			die "$(eval_gettext "Cannot store \$stash_sha1")"
+			gettext 'Applying autostash resulted in conflicts.
+Your changes are safe in the stash.
+You can run "git stash pop" or "git stash drop" at any time.
+'
+		fi
+	fi
+	git gc --auto &&
+	rm -rf "$state_dir"
 }
 
 run_specific_rebase () {
 	if [ "$interactive_rebase" = implied ]; then
 		GIT_EDITOR=:
 		export GIT_EDITOR
+		autosquash=
 	fi
 	. git-rebase--$type
+	ret=$?
+	if test $ret -eq 0
+	then
+		finish_rebase
+	fi
+	exit $ret
 }
 
 run_pre_rebase_hook () {
@@ -174,12 +187,12 @@ run_pre_rebase_hook () {
 	   test -x "$GIT_DIR/hooks/pre-rebase"
 	then
 		"$GIT_DIR/hooks/pre-rebase" ${1+"$@"} ||
-		die "The pre-rebase hook refused to rebase."
+		die "$(gettext "The pre-rebase hook refused to rebase.")"
 	fi
 }
 
 test -f "$apply_dir"/applying &&
-	die 'It looks like git-am is in progress. Cannot rebase.'
+	die "$(gettext "It looks like git-am is in progress. Cannot rebase.")"
 
 if test -d "$apply_dir"
 then
@@ -208,7 +221,7 @@ do
 	--verify)
 		ok_to_skip_pre_rebase=
 		;;
-	--continue|--skip|--abort)
+	--continue|--skip|--abort|--edit-todo)
 		test $total_argc -eq 2 || usage
 		action=${1##--}
 		;;
@@ -217,8 +230,16 @@ do
 		onto="$2"
 		shift
 		;;
+	-x)
+		test 2 -le "$#" || usage
+		cmd="${cmd}exec $2${LF}"
+		shift
+		;;
 	-i)
 		interactive_rebase=explicit
+		;;
+	-k)
+		keep_empty=yes
 		;;
 	-p)
 		preserve_merges=t
@@ -249,6 +270,9 @@ do
 		;;
 	--stat)
 		diffstat=t
+		;;
+	--autostash)
+		autostash=true
 		;;
 	-v)
 		verbose=t
@@ -299,9 +323,15 @@ do
 done
 test $# -gt 2 && usage
 
+if test -n "$cmd" &&
+   test "$interactive_rebase" != explicit
+then
+	die "$(gettext "The --exec option must be used with the --interactive option")"
+fi
+
 if test -n "$action"
 then
-	test -z "$in_progress" && die "No rebase in progress?"
+	test -z "$in_progress" && die "$(gettext "No rebase in progress?")"
 	# Only interactive rebase uses detailed reflog messages
 	if test "$type" = interactive && test "$GIT_REFLOG_ACTION" = rebase
 	then
@@ -310,15 +340,20 @@ then
 	fi
 fi
 
+if test "$action" = "edit-todo" && test "$type" != "interactive"
+then
+	die "$(gettext "The --edit-todo action can only be used during interactive rebase.")"
+fi
+
 case "$action" in
 continue)
 	# Sanity check
 	git rev-parse --verify HEAD >/dev/null ||
-		die "Cannot read HEAD"
+		die "$(gettext "Cannot read HEAD")"
 	git update-index --ignore-submodules --refresh &&
 	git diff-files --quiet --ignore-submodules || {
-		echo "You must edit all merge conflicts and then"
-		echo "mark them as resolved using git add"
+		echo "$(gettext "You must edit all merge conflicts and then
+mark them as resolved using git add")"
 		exit 1
 	}
 	read_basic_state
@@ -335,27 +370,38 @@ abort)
 	case "$head_name" in
 	refs/*)
 		git symbolic-ref -m "rebase: aborting" HEAD $head_name ||
-		die "Could not move back to $head_name"
+		die "$(eval_gettext "Could not move back to \$head_name")"
 		;;
 	esac
 	output git reset --hard $orig_head
-	rm -r "$state_dir"
+	finish_rebase
 	exit
+	;;
+edit-todo)
+	run_specific_rebase
 	;;
 esac
 
 # Make sure no rebase is in progress
 if test -n "$in_progress"
 then
-	die '
-It seems that there is already a '"${state_dir##*/}"' directory, and
+	state_dir_base=${state_dir##*/}
+	cmd_live_rebase="git rebase (--continue | --abort | --skip)"
+	cmd_clear_stale_rebase="rm -fr \"$state_dir\""
+	die "
+$(eval_gettext 'It seems that there is already a $state_dir_base directory, and
 I wonder if you are in the middle of another rebase.  If that is the
 case, please try
-	git rebase (--continue | --abort | --skip)
+	$cmd_live_rebase
 If that is not the case, please
-	rm -fr '"$state_dir"'
+	$cmd_clear_stale_rebase
 and run me again.  I am stopping in case you still have something
-valuable there.'
+valuable there.')"
+fi
+
+if test -n "$rebase_root" && test -z "$onto"
+then
+	test -z "$interactive_rebase" && interactive_rebase=implied
 fi
 
 if test -n "$interactive_rebase"
@@ -387,13 +433,19 @@ then
 		shift
 		;;
 	esac
-	upstream=`git rev-parse --verify "${upstream_name}^0"` ||
-	die "invalid upstream $upstream_name"
+	upstream=$(peel_committish "${upstream_name}") ||
+	die "$(eval_gettext "invalid upstream \$upstream_name")"
 	upstream_arg="$upstream_name"
 else
-	test -z "$onto" && die "You must specify --onto when using --root"
+	if test -z "$onto"
+	then
+		empty_tree=`git hash-object -t tree /dev/null`
+		onto=`git commit-tree $empty_tree </dev/null`
+		squash_onto="$onto"
+	fi
 	unset upstream_name
 	unset upstream
+	test $# -gt 1 && usage
 	upstream_arg=--root
 fi
 
@@ -406,19 +458,19 @@ case "$onto_name" in
 	then
 		case "$onto" in
 		?*"$LF"?*)
-			die "$onto_name: there are more than one merge bases"
+			die "$(eval_gettext "\$onto_name: there are more than one merge bases")"
 			;;
 		'')
-			die "$onto_name: there is no merge base"
+			die "$(eval_gettext "\$onto_name: there is no merge base")"
 			;;
 		esac
 	else
-		die "$onto_name: there is no merge base"
+		die "$(eval_gettext "\$onto_name: there is no merge base")"
 	fi
 	;;
 *)
-	onto=$(git rev-parse --verify "${onto_name}^0") ||
-	die "Does not point to a valid commit: $onto_name"
+	onto=$(peel_committish "$onto_name") ||
+	die "$(eval_gettext "Does not point to a valid commit: \$onto_name")"
 	;;
 esac
 
@@ -441,10 +493,10 @@ case "$#" in
 	then
 		head_name="detached HEAD"
 	else
-		die "fatal: no such branch: $1"
+		die "$(eval_gettext "fatal: no such branch: \$branch_name")"
 	fi
 	;;
-*)
+0)
 	# Do not need to switch branches, we are already on it.
 	if branch_name=`git symbolic-ref -q HEAD`
 	then
@@ -454,11 +506,26 @@ case "$#" in
 		head_name="detached HEAD"
 		branch_name=HEAD ;# detached
 	fi
-	orig_head=$(git rev-parse --verify "${branch_name}^0") || exit
+	orig_head=$(git rev-parse --verify HEAD) || exit
+	;;
+*)
+	die "BUG: unexpected number of arguments left to parse"
 	;;
 esac
 
-require_clean_work_tree "rebase" "Please commit or stash them."
+if test "$autostash" = true && ! (require_clean_work_tree) 2>/dev/null
+then
+	stash_sha1=$(git stash create "autostash") ||
+	die "$(gettext 'Cannot autostash')"
+
+	mkdir -p "$state_dir" &&
+	echo $stash_sha1 >"$state_dir/autostash" &&
+	stash_abbrev=$(git rev-parse --short $stash_sha1) &&
+	echo "$(eval_gettext 'Created autostash: $stash_abbrev')" &&
+	git reset --hard
+fi
+
+require_clean_work_tree "rebase" "$(gettext "Please commit or stash them.")"
 
 # Now we are rebasing commits $upstream..$orig_head (or with --root,
 # everything leading up to $orig_head) on top of $onto
@@ -475,11 +542,14 @@ then
 	if test -z "$force_rebase"
 	then
 		# Lazily switch to the target branch if needed...
-		test -z "$switch_to" || git checkout "$switch_to" --
-		say "Current branch $branch_name is up to date."
+		test -z "$switch_to" ||
+		GIT_REFLOG_ACTION="$GIT_REFLOG_ACTION: checkout $switch_to" \
+			git checkout "$switch_to" --
+		say "$(eval_gettext "Current branch \$branch_name is up to date.")"
+		finish_rebase
 		exit 0
 	else
-		say "Current branch $branch_name is up to date, rebase forced."
+		say "$(eval_gettext "Current branch \$branch_name is up to date, rebase forced.")"
 	fi
 fi
 
@@ -490,7 +560,7 @@ if test -n "$diffstat"
 then
 	if test -n "$verbose"
 	then
-		echo "Changes from $mb to $onto:"
+		echo "$(eval_gettext "Changes from \$mb to \$onto:")"
 	fi
 	# We want color (if set), but no pager
 	GIT_PAGER='' git diff --stat --summary "$mb" "$onto"
@@ -499,16 +569,19 @@ fi
 test "$type" = interactive && run_specific_rebase
 
 # Detach HEAD and reset the tree
-say "First, rewinding head to replay your work on top of it..."
-git checkout -q "$onto^0" || die "could not detach HEAD"
+say "$(gettext "First, rewinding head to replay your work on top of it...")"
+
+GIT_REFLOG_ACTION="$GIT_REFLOG_ACTION: checkout $onto_name" \
+	git checkout -q "$onto^0" || die "could not detach HEAD"
 git update-ref ORIG_HEAD $orig_head
 
 # If the $onto is a proper descendant of the tip of the branch, then
 # we just fast-forwarded.
 if test "$mb" = "$orig_head"
 then
-	say "Fast-forwarded $branch_name to $onto_name."
+	say "$(eval_gettext "Fast-forwarded \$branch_name to \$onto_name.")"
 	move_to_original_branch
+	finish_rebase
 	exit 0
 fi
 

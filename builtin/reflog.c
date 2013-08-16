@@ -330,8 +330,10 @@ static int expire_reflog_ent(unsigned char *osha1, unsigned char *nsha1,
 		printf("keep %s", message);
 	return 0;
  prune:
-	if (!cb->newlog || cb->cmd->verbose)
-		printf("%sprune %s", cb->newlog ? "" : "would ", message);
+	if (!cb->newlog)
+		printf("would prune %s", message);
+	else if (cb->cmd->verbose)
+		printf("prune %s", message);
 	return 0;
 }
 
@@ -412,7 +414,7 @@ static int expire_reflog(const char *ref, const unsigned char *sha1, int unused,
 		if (cb.unreachable_expire_kind == UE_HEAD) {
 			struct commit_list *elem;
 			for (elem = tips; elem; elem = elem->next)
-				clear_commit_marks(tip_commit, REACHABLE);
+				clear_commit_marks(elem->item, REACHABLE);
 			free_commit_list(tips);
 		} else {
 			clear_commit_marks(tip_commit, REACHABLE);
@@ -494,11 +496,9 @@ static int parse_expire_cfg_value(const char *var, const char *value, unsigned l
 {
 	if (!value)
 		return config_error_nonbool(var);
-	if (!strcmp(value, "never") || !strcmp(value, "false")) {
-		*expire = 0;
-		return 0;
-	}
-	*expire = approxidate(value);
+	if (parse_expiry_date(value, expire))
+		return error(_("%s' for '%s' is not a valid timestamp"),
+			     value, var);
 	return 0;
 }
 
@@ -508,26 +508,27 @@ static int parse_expire_cfg_value(const char *var, const char *value, unsigned l
 
 static int reflog_expire_config(const char *var, const char *value, void *cb)
 {
-	const char *lastdot = strrchr(var, '.');
+	const char *pattern, *key;
+	int pattern_len;
 	unsigned long expire;
 	int slot;
 	struct reflog_expire_cfg *ent;
 
-	if (!lastdot || prefixcmp(var, "gc."))
+	if (parse_config_key(var, "gc", &pattern, &pattern_len, &key) < 0)
 		return git_default_config(var, value, cb);
 
-	if (!strcmp(lastdot, ".reflogexpire")) {
+	if (!strcmp(key, "reflogexpire")) {
 		slot = EXPIRE_TOTAL;
 		if (parse_expire_cfg_value(var, value, &expire))
 			return -1;
-	} else if (!strcmp(lastdot, ".reflogexpireunreachable")) {
+	} else if (!strcmp(key, "reflogexpireunreachable")) {
 		slot = EXPIRE_UNREACH;
 		if (parse_expire_cfg_value(var, value, &expire))
 			return -1;
 	} else
 		return git_default_config(var, value, cb);
 
-	if (lastdot == var + 2) {
+	if (!pattern) {
 		switch (slot) {
 		case EXPIRE_TOTAL:
 			default_reflog_expire = expire;
@@ -539,7 +540,7 @@ static int reflog_expire_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 
-	ent = find_cfg_ent(var + 3, lastdot - (var+3));
+	ent = find_cfg_ent(pattern, pattern_len);
 	if (!ent)
 		return -1;
 	switch (slot) {
@@ -611,11 +612,13 @@ static int cmd_reflog_expire(int argc, const char **argv, const char *prefix)
 		if (!strcmp(arg, "--dry-run") || !strcmp(arg, "-n"))
 			cb.dry_run = 1;
 		else if (!prefixcmp(arg, "--expire=")) {
-			cb.expire_total = approxidate(arg + 9);
+			if (parse_expiry_date(arg + 9, &cb.expire_total))
+				die(_("'%s' is not a valid timestamp"), arg);
 			explicit_expiry |= EXPIRE_TOTAL;
 		}
 		else if (!prefixcmp(arg, "--expire-unreachable=")) {
-			cb.expire_unreachable = approxidate(arg + 21);
+			if (parse_expiry_date(arg + 21, &cb.expire_unreachable))
+				die(_("'%s' is not a valid timestamp"), arg);
 			explicit_expiry |= EXPIRE_UNREACH;
 		}
 		else if (!strcmp(arg, "--stale-fix"))

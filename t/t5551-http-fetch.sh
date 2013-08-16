@@ -13,6 +13,7 @@ LIB_HTTPD_PORT=${LIB_HTTPD_PORT-'5551'}
 start_httpd
 
 test_expect_success 'setup repository' '
+	git config push.default matching &&
 	echo content >file &&
 	git add file &&
 	git commit -m one
@@ -27,16 +28,19 @@ test_expect_success 'create http-accessible bare repository' '
 	git push public master:master
 '
 
+setup_askpass_helper
+
 cat >exp <<EOF
 > GET /smart/repo.git/info/refs?service=git-upload-pack HTTP/1.1
 > Accept: */*
+> Accept-Encoding: gzip
 > Pragma: no-cache
 < HTTP/1.1 200 OK
 < Pragma: no-cache
 < Cache-Control: no-cache, max-age=0, must-revalidate
 < Content-Type: application/x-git-upload-pack-advertisement
 > POST /smart/repo.git/git-upload-pack HTTP/1.1
-> Accept-Encoding: deflate, gzip
+> Accept-Encoding: gzip
 > Content-Type: application/x-git-upload-pack-request
 > Accept: application/x-git-upload-pack-result
 > Content-Length: xxx
@@ -109,12 +113,102 @@ test_expect_success 'follow redirects (302)' '
 	git clone $HTTPD_URL/smart-redir-temp/repo.git --quiet repo-t
 '
 
+test_expect_success 'clone from password-protected repository' '
+	echo two >expect &&
+	set_askpass user@host &&
+	git clone --bare "$HTTPD_URL/auth/smart/repo.git" smart-auth &&
+	expect_askpass both user@host &&
+	git --git-dir=smart-auth log -1 --format=%s >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'clone from auth-only-for-push repository' '
+	echo two >expect &&
+	set_askpass wrong &&
+	git clone --bare "$HTTPD_URL/auth-push/smart/repo.git" smart-noauth &&
+	expect_askpass none &&
+	git --git-dir=smart-noauth log -1 --format=%s >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'clone from auth-only-for-objects repository' '
+	echo two >expect &&
+	set_askpass user@host &&
+	git clone --bare "$HTTPD_URL/auth-fetch/smart/repo.git" half-auth &&
+	expect_askpass both user@host &&
+	git --git-dir=half-auth log -1 --format=%s >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'no-op half-auth fetch does not require a password' '
+	set_askpass wrong &&
+	git --git-dir=half-auth fetch &&
+	expect_askpass none
+'
+
+test_expect_success 'disable dumb http on server' '
+	git --git-dir="$HTTPD_DOCUMENT_ROOT_PATH/repo.git" \
+		config http.getanyfile false
+'
+
+test_expect_success 'GIT_SMART_HTTP can disable smart http' '
+	(GIT_SMART_HTTP=0 &&
+	 export GIT_SMART_HTTP &&
+	 cd clone &&
+	 test_must_fail git fetch)
+'
+
+test_expect_success 'invalid Content-Type rejected' '
+	test_must_fail git clone $HTTPD_URL/broken_smart/repo.git 2>actual
+	grep "not valid:" actual
+'
+
+test_expect_success 'create namespaced refs' '
+	test_commit namespaced &&
+	git push public HEAD:refs/namespaces/ns/refs/heads/master &&
+	git --git-dir="$HTTPD_DOCUMENT_ROOT_PATH/repo.git" \
+		symbolic-ref refs/namespaces/ns/HEAD refs/namespaces/ns/refs/heads/master
+'
+
+test_expect_success 'smart clone respects namespace' '
+	git clone "$HTTPD_URL/smart_namespace/repo.git" ns-smart &&
+	echo namespaced >expect &&
+	git --git-dir=ns-smart/.git log -1 --format=%s >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'dumb clone via http-backend respects namespace' '
+	git --git-dir="$HTTPD_DOCUMENT_ROOT_PATH/repo.git" \
+		config http.getanyfile true &&
+	GIT_SMART_HTTP=0 git clone \
+		"$HTTPD_URL/smart_namespace/repo.git" ns-dumb &&
+	echo namespaced >expect &&
+	git --git-dir=ns-dumb/.git log -1 --format=%s >actual &&
+	test_cmp expect actual
+'
+
+cat >cookies.txt <<EOF
+127.0.0.1	FALSE	/smart_cookies/	FALSE	0	othername	othervalue
+EOF
+cat >expect_cookies.txt <<EOF
+
+127.0.0.1	FALSE	/smart_cookies/	FALSE	0	othername	othervalue
+127.0.0.1	FALSE	/smart_cookies/repo.git/info/	FALSE	0	name	value
+EOF
+test_expect_success 'cookies stored in http.cookiefile when http.savecookies set' '
+	git config http.cookiefile cookies.txt &&
+	git config http.savecookies true &&
+	git ls-remote $HTTPD_URL/smart_cookies/repo.git master &&
+	tail -3 cookies.txt > cookies_tail.txt
+	test_cmp expect_cookies.txt cookies_tail.txt
+'
+
 test -n "$GIT_TEST_LONG" && test_set_prereq EXPENSIVE
 
 test_expect_success EXPENSIVE 'create 50,000 tags in the repo' '
 	(
 	cd "$HTTPD_DOCUMENT_ROOT_PATH/repo.git" &&
-	for i in `seq 50000`
+	for i in `test_seq 50000`
 	do
 		echo "commit refs/heads/too-many-refs"
 		echo "mark :$i"
@@ -130,14 +224,18 @@ test_expect_success EXPENSIVE 'create 50,000 tags in the repo' '
 	done | git fast-import --export-marks=marks &&
 
 	# now assign tags to all the dangling commits we created above
-	tag=$(perl -e "print \"bla\" x 30") &&
-	sed -e "s/^:\(.\+\) \(.\+\)$/\2 refs\/tags\/$tag-\1/" <marks >>packed-refs
+	tag=$("$PERL_PATH" -e "print \"bla\" x 30") &&
+	sed -e "s|^:\([^ ]*\) \(.*\)$|\2 refs/tags/$tag-\1|" <marks >>packed-refs
 	)
 '
 
 test_expect_success EXPENSIVE 'clone the 50,000 tag repo to check OS command line overflow' '
 	git clone $HTTPD_URL/smart/repo.git too-many-refs 2>err &&
-	test_line_count = 0 err
+	test_line_count = 0 err &&
+	(
+		cd too-many-refs &&
+		test $(git for-each-ref refs/tags | wc -l) = 50000
+	)
 '
 
 stop_httpd

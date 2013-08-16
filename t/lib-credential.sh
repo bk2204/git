@@ -4,10 +4,24 @@
 # stdout and stderr should be provided on stdin,
 # separated by "--".
 check() {
+	credential_opts=
+	credential_cmd=$1
+	shift
+	for arg in "$@"; do
+		credential_opts="$credential_opts -c credential.helper='$arg'"
+	done
 	read_chunk >stdin &&
 	read_chunk >expect-stdout &&
 	read_chunk >expect-stderr &&
-	test-credential "$@" <stdin >stdout 2>stderr &&
+	if ! eval "git $credential_opts credential $credential_cmd <stdin >stdout 2>stderr"; then
+		echo "git credential failed with code $?" &&
+		cat stderr &&
+		false
+	fi &&
+	if test_have_prereq MINGW
+	then
+		dos2unix -q stderr
+	fi &&
 	test_cmp expect-stdout stdout &&
 	test_cmp expect-stderr stderr
 }
@@ -41,7 +55,7 @@ reject() {
 		echo protocol=$2
 		echo host=$3
 		echo username=$4
-	) | test-credential reject $1
+	) | git -c credential.helper=$1 credential reject
 }
 
 helper_test() {
@@ -52,6 +66,8 @@ helper_test() {
 		protocol=https
 		host=example.com
 		--
+		protocol=https
+		host=example.com
 		username=askpass-username
 		password=askpass-password
 		--
@@ -74,6 +90,8 @@ helper_test() {
 		protocol=https
 		host=example.com
 		--
+		protocol=https
+		host=example.com
 		username=store-user
 		password=store-pass
 		--
@@ -85,6 +103,8 @@ helper_test() {
 		protocol=http
 		host=example.com
 		--
+		protocol=http
+		host=example.com
 		username=askpass-username
 		password=askpass-password
 		--
@@ -98,6 +118,8 @@ helper_test() {
 		protocol=https
 		host=other.tld
 		--
+		protocol=https
+		host=other.tld
 		username=askpass-username
 		password=askpass-password
 		--
@@ -112,6 +134,8 @@ helper_test() {
 		host=example.com
 		username=other
 		--
+		protocol=https
+		host=example.com
 		username=other
 		password=askpass-password
 		--
@@ -133,6 +157,9 @@ helper_test() {
 		host=path.tld
 		path=bar.git
 		--
+		protocol=http
+		host=path.tld
+		path=bar.git
 		username=askpass-username
 		password=askpass-password
 		--
@@ -150,6 +177,8 @@ helper_test() {
 		protocol=https
 		host=example.com
 		--
+		protocol=https
+		host=example.com
 		username=askpass-username
 		password=askpass-password
 		--
@@ -176,6 +205,8 @@ helper_test() {
 		host=example.com
 		username=user1
 		--
+		protocol=https
+		host=example.com
 		username=user1
 		password=pass1
 		EOF
@@ -184,6 +215,8 @@ helper_test() {
 		host=example.com
 		username=user2
 		--
+		protocol=https
+		host=example.com
 		username=user2
 		password=pass2
 		EOF
@@ -200,6 +233,8 @@ helper_test() {
 		host=example.com
 		username=user1
 		--
+		protocol=https
+		host=example.com
 		username=user1
 		password=askpass-password
 		--
@@ -213,6 +248,8 @@ helper_test() {
 		host=example.com
 		username=user2
 		--
+		protocol=https
+		host=example.com
 		username=user2
 		password=pass2
 		EOF
@@ -234,6 +271,8 @@ helper_test_timeout() {
 		protocol=https
 		host=timeout.tld
 		--
+		protocol=https
+		host=timeout.tld
 		username=askpass-username
 		password=askpass-password
 		--

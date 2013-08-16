@@ -80,12 +80,12 @@ test_expect_success 'setup: two scripts for reading pull requests' '
 
 	cat <<-EOT >fuzz.sed
 	#!/bin/sed -nf
+	s/$downstream_url_for_sed/URL/g
 	s/$_x40/OBJECT_NAME/g
 	s/A U Thor/AUTHOR/g
 	s/[-0-9]\{10\} [:0-9]\{8\} [-+][0-9]\{4\}/DATE/g
 	s/        [^ ].*/        SUBJECT/g
 	s/  [^ ].* (DATE)/  SUBJECT (DATE)/g
-	s/$downstream_url_for_sed/URL/g
 	s/for-upstream/BRANCH/g
 	s/mnemonic.txt/FILENAME/g
 	s/^version [0-9]/VERSION/
@@ -216,7 +216,7 @@ test_expect_success 'pull request format' '
 		git request-pull initial "$downstream_url" >../request
 	) &&
 	<request sed -nf fuzz.sed >request.fuzzy &&
-	test_cmp expect request.fuzzy
+	test_i18ncmp expect request.fuzzy
 
 '
 

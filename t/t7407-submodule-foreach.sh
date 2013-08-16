@@ -80,6 +80,22 @@ test_expect_success 'test basic "submodule foreach" usage' '
 	test_i18ncmp expect actual
 '
 
+cat >expect <<EOF
+Entering '../sub1'
+$pwd/clone-foo1-../sub1-$sub1sha1
+Entering '../sub3'
+$pwd/clone-foo3-../sub3-$sub3sha1
+EOF
+
+test_expect_success 'test "submodule foreach" from subdirectory' '
+	mkdir clone/sub &&
+	(
+		cd clone/sub &&
+		git submodule foreach "echo \$toplevel-\$name-\$sm_path-\$sha1" >../../actual
+	) &&
+	test_i18ncmp expect actual
+'
+
 test_expect_success 'setup nested submodules' '
 	git clone submodule nested1 &&
 	git clone submodule nested2 &&
@@ -129,7 +145,7 @@ test_expect_success 'use "submodule foreach" to checkout 2nd level submodule' '
 		git rev-parse --resolve-git-dir nested1/.git &&
 		test_must_fail git rev-parse --resolve-git-dir nested1/nested2/.git &&
 		git submodule foreach "git submodule update --init" &&
-		git rev-parse --resolve-git-dir nested1/nested1/nested2/.git
+		git rev-parse --resolve-git-dir nested1/nested2/.git &&
 		test_must_fail git rev-parse --resolve-git-dir nested1/nested2/nested3/.git
 	)
 '
@@ -226,14 +242,14 @@ test_expect_success 'test "status --recursive"' '
 	test_cmp expect actual
 '
 
-sed -e "/nested1 /s/.*/+$nested1sha1 nested1 (file2~1)/;/sub[1-3]/d" < expect > expect2
+sed -e "/nested2 /s/.*/+$nested2sha1 nested1\/nested2 (file2~1)/;/sub[1-3]/d" < expect > expect2
 mv -f expect2 expect
 
 test_expect_success 'ensure "status --cached --recursive" preserves the --cached flag' '
 	(
 		cd clone3 &&
 		(
-			cd nested1 &&
+			cd nested1/nested2 &&
 			test_commit file2
 		) &&
 		git submodule status --cached --recursive -- nested1 > ../actual

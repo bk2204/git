@@ -16,7 +16,7 @@ static int merge_entry(int pos, const char *path)
 		die("git merge-index: %s not in the cache", path);
 	found = 0;
 	do {
-		struct cache_entry *ce = active_cache[pos];
+		const struct cache_entry *ce = active_cache[pos];
 		int stage = ce_stage(ce);
 
 		if (strcmp(ce->name, path))
@@ -42,7 +42,7 @@ static int merge_entry(int pos, const char *path)
 	return found;
 }
 
-static void merge_file(const char *path)
+static void merge_one_path(const char *path)
 {
 	int pos = cache_name_pos(path, strlen(path));
 
@@ -58,7 +58,7 @@ static void merge_all(void)
 {
 	int i;
 	for (i = 0; i < active_nr; i++) {
-		struct cache_entry *ce = active_cache[i];
+		const struct cache_entry *ce = active_cache[i];
 		if (!ce_stage(ce))
 			continue;
 		i += merge_entry(i, ce->name)-1;
@@ -102,7 +102,7 @@ int cmd_merge_index(int argc, const char **argv, const char *prefix)
 			}
 			die("git merge-index: unknown option %s", arg);
 		}
-		merge_file(arg);
+		merge_one_path(arg);
 	}
 	if (err && !quiet)
 		die("merge program failed");

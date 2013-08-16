@@ -123,16 +123,6 @@ test_expect_success 'attribute matching is case insensitive when core.ignorecase
 
 '
 
-test_expect_success 'check whether FS is case-insensitive' '
-	mkdir junk &&
-	echo good >junk/CamelCase &&
-	echo bad >junk/camelcase &&
-	if test "$(cat junk/CamelCase)" != good
-	then
-		test_set_prereq CASE_INSENSITIVE_FS
-	fi
-'
-
 test_expect_success CASE_INSENSITIVE_FS 'additional case insensitivity tests' '
 	test_must_fail attr_check a/B/D/g "a/b/d/*" "-c core.ignorecase=0" &&
 	test_must_fail attr_check A/B/D/NO "a/b/d/*" "-c core.ignorecase=0" &&
@@ -204,6 +194,54 @@ test_expect_success 'attribute test: --cached option' '
 test_expect_success 'root subdir attribute test' '
 	attr_check a/i a/i &&
 	attr_check subdir/a/i unspecified
+'
+
+test_expect_success 'negative patterns' '
+	echo "!f test=bar" >.gitattributes &&
+	git check-attr test -- '"'"'!f'"'"' 2>errors &&
+	test_i18ngrep "Negative patterns are ignored" errors
+'
+
+test_expect_success 'patterns starting with exclamation' '
+	echo "\!f test=foo" >.gitattributes &&
+	attr_check "!f" foo
+'
+
+test_expect_success '"**" test' '
+	echo "**/f foo=bar" >.gitattributes &&
+	cat <<\EOF >expect &&
+f: foo: bar
+a/f: foo: bar
+a/b/f: foo: bar
+a/b/c/f: foo: bar
+EOF
+	git check-attr foo -- "f" >actual 2>err &&
+	git check-attr foo -- "a/f" >>actual 2>>err &&
+	git check-attr foo -- "a/b/f" >>actual 2>>err &&
+	git check-attr foo -- "a/b/c/f" >>actual 2>>err &&
+	test_cmp expect actual &&
+	test_line_count = 0 err
+'
+
+test_expect_success '"**" with no slashes test' '
+	echo "a**f foo=bar" >.gitattributes &&
+	git check-attr foo -- "f" >actual &&
+	cat <<\EOF >expect &&
+f: foo: unspecified
+af: foo: bar
+axf: foo: bar
+a/f: foo: unspecified
+a/b/f: foo: unspecified
+a/b/c/f: foo: unspecified
+EOF
+	git check-attr foo -- "f" >actual 2>err &&
+	git check-attr foo -- "af" >>actual 2>err &&
+	git check-attr foo -- "axf" >>actual 2>err &&
+	git check-attr foo -- "a/f" >>actual 2>>err &&
+	git check-attr foo -- "a/b/f" >>actual 2>>err &&
+	git check-attr foo -- "a/b/c/f" >>actual 2>>err &&
+	test_cmp expect actual &&
+	test_line_count = 0 err
 '
 
 test_expect_success 'setup bare' '

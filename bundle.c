@@ -33,7 +33,7 @@ static int parse_bundle_header(int fd, struct bundle_header *header,
 	if (strbuf_getwholeline_fd(&buf, fd, '\n') ||
 	    strcmp(buf.buf, bundle_signature)) {
 		if (report_path)
-			error("'%s' does not look like a v2 bundle file",
+			error(_("'%s' does not look like a v2 bundle file"),
 			      report_path);
 		status = -1;
 		goto abort;
@@ -57,10 +57,10 @@ static int parse_bundle_header(int fd, struct bundle_header *header,
 		 * followed by SP and subject line.
 		 */
 		if (get_sha1_hex(buf.buf, sha1) ||
-		    (40 <= buf.len && !isspace(buf.buf[40])) ||
+		    (buf.len > 40 && !isspace(buf.buf[40])) ||
 		    (!is_prereq && buf.len <= 40)) {
 			if (report_path)
-				error("unrecognized header: %s%s (%d)",
+				error(_("unrecognized header: %s%s (%d)"),
 				      (is_prereq ? "-" : ""), buf.buf, (int)buf.len);
 			status = -1;
 			break;
@@ -86,7 +86,7 @@ int read_bundle_header(const char *path, struct bundle_header *header)
 	int fd = open(path, O_RDONLY);
 
 	if (fd < 0)
-		return error("could not open '%s'", path);
+		return error(_("could not open '%s'"), path);
 	return parse_bundle_header(fd, header, path);
 }
 
@@ -137,7 +137,7 @@ int verify_bundle(struct bundle_header *header, int verbose)
 	struct object_array refs;
 	struct commit *commit;
 	int i, ret = 0, req_nr;
-	const char *message = "Repository lacks these prerequisite commits:";
+	const char *message = _("Repository lacks these prerequisite commits:");
 
 	init_revisions(&revs, NULL);
 	for (i = 0; i < p->nr; i++) {
@@ -161,7 +161,7 @@ int verify_bundle(struct bundle_header *header, int verbose)
 	revs.leak_pending = 1;
 
 	if (prepare_revision_walk(&revs))
-		die("revision walk setup failed");
+		die(_("revision walk setup failed"));
 
 	i = req_nr;
 	while (i && (commit = get_revision(&revs)))
@@ -183,13 +183,21 @@ int verify_bundle(struct bundle_header *header, int verbose)
 		struct ref_list *r;
 
 		r = &header->references;
-		printf("The bundle contains %d ref%s\n",
-		       r->nr, (1 < r->nr) ? "s" : "");
+		printf_ln(Q_("The bundle contains this ref:",
+			     "The bundle contains these %d refs:",
+			     r->nr),
+			  r->nr);
 		list_refs(r, 0, NULL);
 		r = &header->prerequisites;
-		printf("The bundle requires these %d ref%s\n",
-		       r->nr, (1 < r->nr) ? "s" : "");
-		list_refs(r, 0, NULL);
+		if (!r->nr) {
+			printf_ln(_("The bundle records a complete history."));
+		} else {
+			printf_ln(Q_("The bundle requires this ref:",
+				     "The bundle requires these %d refs:",
+				     r->nr),
+				  r->nr);
+			list_refs(r, 0, NULL);
+		}
 	}
 	return ret;
 }
@@ -271,25 +279,25 @@ int create_bundle(struct bundle_header *header, const char *path,
 		if (buf.len > 0 && buf.buf[0] == '-') {
 			write_or_die(bundle_fd, buf.buf, buf.len);
 			if (!get_sha1_hex(buf.buf + 1, sha1)) {
-				struct object *object = parse_object(sha1);
+				struct object *object = parse_object_or_die(sha1, buf.buf);
 				object->flags |= UNINTERESTING;
-				add_pending_object(&revs, object, xstrdup(buf.buf));
+				add_pending_object(&revs, object, buf.buf);
 			}
 		} else if (!get_sha1_hex(buf.buf, sha1)) {
-			struct object *object = parse_object(sha1);
+			struct object *object = parse_object_or_die(sha1, buf.buf);
 			object->flags |= SHOWN;
 		}
 	}
 	strbuf_release(&buf);
 	fclose(rls_fout);
 	if (finish_command(&rls))
-		return error("rev-list died");
+		return error(_("rev-list died"));
 
 	/* write references */
 	argc = setup_revisions(argc, argv, &revs, NULL);
 
 	if (argc > 1)
-		return error("unrecognized argument: %s", argv[1]);
+		return error(_("unrecognized argument: %s"), argv[1]);
 
 	object_array_remove_duplicates(&revs.pending);
 
@@ -324,7 +332,7 @@ int create_bundle(struct bundle_header *header, const char *path,
 		 * constraints.
 		 */
 		if (!(e->item->flags & SHOWN) && e->item->type == OBJ_COMMIT) {
-			warning("ref '%s' is excluded by the rev-list options",
+			warning(_("ref '%s' is excluded by the rev-list options"),
 				e->name);
 			free(ref);
 			continue;
@@ -353,7 +361,7 @@ int create_bundle(struct bundle_header *header, const char *path,
 				 * end up triggering "empty bundle"
 				 * error.
 				 */
-				obj = parse_object(sha1);
+				obj = parse_object_or_die(sha1, e->name);
 				obj->flags |= SHOWN;
 				add_pending_object(&revs, obj, e->name);
 			}
@@ -369,7 +377,7 @@ int create_bundle(struct bundle_header *header, const char *path,
 		free(ref);
 	}
 	if (!ref_count)
-		die ("Refusing to create empty bundle.");
+		die(_("Refusing to create empty bundle."));
 
 	/* end header */
 	write_or_die(bundle_fd, "\n", 1);
@@ -387,7 +395,7 @@ int create_bundle(struct bundle_header *header, const char *path,
 	rls.out = bundle_fd;
 	rls.git_cmd = 1;
 	if (start_command(&rls))
-		return error("Could not spawn pack-objects");
+		return error(_("Could not spawn pack-objects"));
 
 	/*
 	 * start_command closed bundle_fd if it was > 1
@@ -405,10 +413,10 @@ int create_bundle(struct bundle_header *header, const char *path,
 	}
 	close(rls.in);
 	if (finish_command(&rls))
-		return error ("pack-objects died");
+		return error(_("pack-objects died"));
 	if (!bundle_to_stdout) {
 		if (commit_lock_file(&lock))
-			die_errno("cannot create '%s'", path);
+			die_errno(_("cannot create '%s'"), path);
 	}
 	return 0;
 }
@@ -430,6 +438,6 @@ int unbundle(struct bundle_header *header, int bundle_fd, int flags)
 	ip.no_stdout = 1;
 	ip.git_cmd = 1;
 	if (run_command(&ip))
-		return error("index-pack died");
+		return error(_("index-pack died"));
 	return 0;
 }

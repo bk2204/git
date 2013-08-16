@@ -4,7 +4,7 @@
 #include "bisect.h"
 
 static const char * const git_bisect_helper_usage[] = {
-	"git bisect--helper --next-all [--no-checkout]",
+	N_("git bisect--helper --next-all [--no-checkout]"),
 	NULL
 };
 
@@ -13,10 +13,10 @@ int cmd_bisect__helper(int argc, const char **argv, const char *prefix)
 	int next_all = 0;
 	int no_checkout = 0;
 	struct option options[] = {
-		OPT_BOOLEAN(0, "next-all", &next_all,
-			    "perform 'git bisect next'"),
-		OPT_BOOLEAN(0, "no-checkout", &no_checkout,
-			    "update BISECT_HEAD instead of checking out the current commit"),
+		OPT_BOOL(0, "next-all", &next_all,
+			 N_("perform 'git bisect next'")),
+		OPT_BOOL(0, "no-checkout", &no_checkout,
+			 N_("update BISECT_HEAD instead of checking out the current commit")),
 		OPT_END()
 	};
 

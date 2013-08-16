@@ -78,7 +78,7 @@ test_expect_success 'submodule add' '
 	(
 		cd addtest &&
 		git submodule add -q "$submodurl" submod >actual &&
-		test ! -s actual &&
+		test_must_be_empty actual &&
 		echo "gitdir: ../.git/modules/submod" >expect &&
 		test_cmp expect submod/.git &&
 		(
@@ -133,6 +133,7 @@ test_expect_success 'submodule add --branch' '
 	(
 		cd addtest &&
 		git submodule add -b initial "$submodurl" submod-branch &&
+		test "initial" = "$(git config -f .gitmodules submodule.submod-branch.branch)" &&
 		git submodule init
 	) &&
 
@@ -211,6 +212,32 @@ test_expect_success 'submodule add with ./, /.. and // in path' '
 	test_cmp empty untracked
 '
 
+test_expect_success 'submodule add in subdirectory' '
+	echo "refs/heads/master" >expect &&
+	>empty &&
+
+	mkdir addtest/sub &&
+	(
+		cd addtest/sub &&
+		git submodule add "$submodurl" ../realsubmod3 &&
+		git submodule init
+	) &&
+
+	rm -f heads head untracked &&
+	inspect addtest/realsubmod3 ../.. &&
+	test_cmp expect heads &&
+	test_cmp expect head &&
+	test_cmp empty untracked
+'
+
+test_expect_success 'submodule add in subdirectory with relative path should fail' '
+	(
+		cd addtest/sub &&
+		test_must_fail git submodule add ../../ submod3 2>../../output.err
+	) &&
+	test_i18ngrep toplevel output.err
+'
+
 test_expect_success 'setup - add an example entry to .gitmodules' '
 	GIT_CONFIG=.gitmodules \
 	git config submodule.example.url git://example.com/init.git
@@ -258,6 +285,27 @@ test_expect_success 'init should register submodule url in .git/config' '
 	test_cmp expect url
 '
 
+test_failure_with_unknown_submodule () {
+	test_must_fail git submodule $1 no-such-submodule 2>output.err &&
+	grep "^error: .*no-such-submodule" output.err
+}
+
+test_expect_success 'init should fail with unknown submodule' '
+	test_failure_with_unknown_submodule init
+'
+
+test_expect_success 'update should fail with unknown submodule' '
+	test_failure_with_unknown_submodule update
+'
+
+test_expect_success 'status should fail with unknown submodule' '
+	test_failure_with_unknown_submodule status
+'
+
+test_expect_success 'sync should fail with unknown submodule' '
+	test_failure_with_unknown_submodule sync
+'
+
 test_expect_success 'update should fail when path is used by a file' '
 	echo hello >expect &&
 
@@ -286,7 +334,7 @@ test_expect_success 'update should work when path is an empty dir' '
 
 	mkdir init &&
 	git submodule update -q >update.out &&
-	test ! -s update.out &&
+	test_must_be_empty update.out &&
 
 	inspect init &&
 	test_cmp expect head-sha1
@@ -295,6 +343,26 @@ test_expect_success 'update should work when path is an empty dir' '
 test_expect_success 'status should be "up-to-date" after update' '
 	git submodule status >list &&
 	grep "^ $rev1" list
+'
+
+test_expect_success 'status "up-to-date" from subdirectory' '
+	mkdir -p sub &&
+	(
+		cd sub &&
+		git submodule status >../list
+	) &&
+	grep "^ $rev1" list &&
+	grep "\\.\\./init" list
+'
+
+test_expect_success 'status "up-to-date" from subdirectory with path' '
+	mkdir -p sub &&
+	(
+		cd sub &&
+		git submodule status ../init >../list
+	) &&
+	grep "^ $rev1" list &&
+	grep "\\.\\./init" list
 '
 
 test_expect_success 'status should be "modified" after submodule commit' '
@@ -377,6 +445,25 @@ test_expect_success 'update --init' '
 	git rev-parse --resolve-git-dir init/.git
 '
 
+test_expect_success 'update --init from subdirectory' '
+	mv init init2 &&
+	git config -f .gitmodules submodule.example.url "$(pwd)/init2" &&
+	git config --remove-section submodule.example &&
+	test_must_fail git config submodule.example.url &&
+
+	mkdir -p sub &&
+	(
+		cd sub &&
+		git submodule update ../init >update.out &&
+		cat update.out &&
+		test_i18ngrep "not initialized" update.out &&
+		test_must_fail git rev-parse --resolve-git-dir ../init/.git &&
+
+		git submodule update --init ../init
+	) &&
+	git rev-parse --resolve-git-dir init/.git
+'
+
 test_expect_success 'do not add files from a submodule' '
 
 	git reset --hard &&
@@ -417,11 +504,8 @@ test_expect_success 'moving to a commit without submodule does not leave empty d
 	git checkout second
 '
 
-test_expect_success 'submodule <invalid-path> warns' '
-
-	git submodule no-such-submodule 2> output.err &&
-	grep "^error: .*no-such-submodule" output.err
-
+test_expect_success 'submodule <invalid-subcommand> fails' '
+	test_must_fail git submodule no-such-subcommand
 '
 
 test_expect_success 'add submodules without specifying an explicit path' '
@@ -483,27 +567,170 @@ test_expect_success 'set up for relative path tests' '
 		git add sub &&
 		git config -f .gitmodules submodule.sub.path sub &&
 		git config -f .gitmodules submodule.sub.url ../subrepo &&
-		cp .git/config pristine-.git-config
+		cp .git/config pristine-.git-config &&
+		cp .gitmodules pristine-.gitmodules
 	)
 '
 
-test_expect_success 'relative path works with URL' '
+test_expect_success '../subrepo works with URL - ssh://hostname/repo' '
 	(
 		cd reltest &&
 		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
 		git config remote.origin.url ssh://hostname/repo &&
 		git submodule init &&
 		test "$(git config submodule.sub.url)" = ssh://hostname/subrepo
 	)
 '
 
-test_expect_success 'relative path works with user@host:path' '
+test_expect_success '../subrepo works with port-qualified URL - ssh://hostname:22/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ssh://hostname:22/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = ssh://hostname:22/subrepo
+	)
+'
+
+# About the choice of the path in the next test:
+# - double-slash side-steps path mangling issues on Windows
+# - it is still an absolute local path
+# - there cannot be a server with a blank in its name just in case the
+#   path is used erroneously to access a //server/share style path
+test_expect_success '../subrepo path works with local path - //somewhere else/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url "//somewhere else/repo" &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = "//somewhere else/subrepo"
+	)
+'
+
+test_expect_success '../subrepo works with file URL - file:///tmp/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url file:///tmp/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = file:///tmp/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with helper URL- helper:://hostname/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url helper:://hostname/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = helper:://hostname/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with scp-style URL - user@host:repo' '
 	(
 		cd reltest &&
 		cp pristine-.git-config .git/config &&
 		git config remote.origin.url user@host:repo &&
 		git submodule init &&
 		test "$(git config submodule.sub.url)" = user@host:subrepo
+	)
+'
+
+test_expect_success '../subrepo works with scp-style URL - user@host:path/to/repo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url user@host:path/to/repo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = user@host:path/to/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - foo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url foo &&
+		# actual: fails with an error
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - foo/bar' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url foo/bar &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = foo/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - ./foo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ./foo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - ./foo/bar' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ./foo/bar &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = foo/subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - ../foo' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ../foo &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = ../subrepo
+	)
+'
+
+test_expect_success '../subrepo works with relative local path - ../foo/bar' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		git config remote.origin.url ../foo/bar &&
+		git submodule init &&
+		test "$(git config submodule.sub.url)" = ../foo/subrepo
+	)
+'
+
+test_expect_success '../bar/a/b/c works with relative local path - ../foo/bar.git' '
+	(
+		cd reltest &&
+		cp pristine-.git-config .git/config &&
+		cp pristine-.gitmodules .gitmodules &&
+		mkdir -p a/b/c &&
+		(cd a/b/c; git init) &&
+		git config remote.origin.url ../foo/bar.git &&
+		git submodule add ../bar/a/b/c ./a/b/c &&
+		git submodule init &&
+		test "$(git config submodule.a/b/c.url)" = ../foo/bar/a/b/c
 	)
 '
 
@@ -519,5 +746,231 @@ test_expect_success 'moving the superproject does not break submodules' '
 		test_cmp expect actual
 	)
 '
+
+test_expect_success 'submodule add --name allows to replace a submodule with another at the same path' '
+	(
+		cd addtest2 &&
+		(
+			cd repo &&
+			echo "$submodurl/repo" >expect &&
+			git config remote.origin.url >actual &&
+			test_cmp expect actual &&
+			echo "gitdir: ../.git/modules/repo" >expect &&
+			test_cmp expect .git
+		) &&
+		rm -rf repo &&
+		git rm repo &&
+		git submodule add -q --name repo_new "$submodurl/bare.git" repo >actual &&
+		test_must_be_empty actual &&
+		echo "gitdir: ../.git/modules/submod" >expect &&
+		test_cmp expect submod/.git &&
+		(
+			cd repo &&
+			echo "$submodurl/bare.git" >expect &&
+			git config remote.origin.url >actual &&
+			test_cmp expect actual &&
+			echo "gitdir: ../.git/modules/repo_new" >expect &&
+			test_cmp expect .git
+		) &&
+		echo "repo" >expect &&
+		test_must_fail git config -f .gitmodules submodule.repo.path &&
+		git config -f .gitmodules submodule.repo_new.path >actual &&
+		test_cmp expect actual&&
+		echo "$submodurl/repo" >expect &&
+		test_must_fail git config -f .gitmodules submodule.repo.url &&
+		echo "$submodurl/bare.git" >expect &&
+		git config -f .gitmodules submodule.repo_new.url >actual &&
+		test_cmp expect actual &&
+		echo "$submodurl/repo" >expect &&
+		git config submodule.repo.url >actual &&
+		test_cmp expect actual &&
+		echo "$submodurl/bare.git" >expect &&
+		git config submodule.repo_new.url >actual &&
+		test_cmp expect actual
+	)
+'
+
+test_expect_success 'submodule add with an existing name fails unless forced' '
+	(
+		cd addtest2 &&
+		rm -rf repo &&
+		git rm repo &&
+		test_must_fail git submodule add -q --name repo_new "$submodurl/repo.git" repo &&
+		test ! -d repo &&
+		test_must_fail git config -f .gitmodules submodule.repo_new.path &&
+		test_must_fail git config -f .gitmodules submodule.repo_new.url &&
+		echo "$submodurl/bare.git" >expect &&
+		git config submodule.repo_new.url >actual &&
+		test_cmp expect actual &&
+		git submodule add -f -q --name repo_new "$submodurl/repo.git" repo &&
+		test -d repo &&
+		echo "repo" >expect &&
+		git config -f .gitmodules submodule.repo_new.path >actual &&
+		test_cmp expect actual&&
+		echo "$submodurl/repo.git" >expect &&
+		git config -f .gitmodules submodule.repo_new.url >actual &&
+		test_cmp expect actual &&
+		echo "$submodurl/repo.git" >expect &&
+		git config submodule.repo_new.url >actual &&
+		test_cmp expect actual
+	)
+'
+
+test_expect_success 'set up a second submodule' '
+	git submodule add ./init2 example2 &&
+	git commit -m "submodule example2 added"
+'
+
+test_expect_success 'submodule deinit should remove the whole submodule section from .git/config' '
+	git config submodule.example.foo bar &&
+	git config submodule.example2.frotz nitfol &&
+	git submodule deinit init &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test -n "$(git config --get-regexp "submodule\.example2\.")" &&
+	test -f example2/.git &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit from subdirectory' '
+	git submodule update --init &&
+	git config submodule.example.foo bar &&
+	mkdir -p sub &&
+	(
+		cd sub &&
+		git submodule deinit ../init >../output
+	) &&
+	grep "\\.\\./init" output &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test -n "$(git config --get-regexp "submodule\.example2\.")" &&
+	test -f example2/.git &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit . deinits all initialized submodules' '
+	git submodule update --init &&
+	git config submodule.example.foo bar &&
+	git config submodule.example2.frotz nitfol &&
+	test_must_fail git submodule deinit &&
+	git submodule deinit . >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test -z "$(git config --get-regexp "submodule\.example2\.")" &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	test_i18ngrep "Cleared directory .example2" actual &&
+	rmdir init example2
+'
+
+test_expect_success 'submodule deinit deinits a submodule when its work tree is missing or empty' '
+	git submodule update --init &&
+	rm -rf init example2/* example2/.git &&
+	git submodule deinit init example2 >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test -z "$(git config --get-regexp "submodule\.example2\.")" &&
+	test_i18ngrep ! "Cleared directory .init" actual &&
+	test_i18ngrep "Cleared directory .example2" actual &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit fails when the submodule contains modifications unless forced' '
+	git submodule update --init &&
+	echo X >>init/s &&
+	test_must_fail git submodule deinit init &&
+	test -n "$(git config --get-regexp "submodule\.example\.")" &&
+	test -f example2/.git &&
+	git submodule deinit -f init >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit fails when the submodule contains untracked files unless forced' '
+	git submodule update --init &&
+	echo X >>init/untracked &&
+	test_must_fail git submodule deinit init &&
+	test -n "$(git config --get-regexp "submodule\.example\.")" &&
+	test -f example2/.git &&
+	git submodule deinit -f init >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit fails when the submodule HEAD does not match unless forced' '
+	git submodule update --init &&
+	(
+		cd init &&
+		git checkout HEAD^
+	) &&
+	test_must_fail git submodule deinit init &&
+	test -n "$(git config --get-regexp "submodule\.example\.")" &&
+	test -f example2/.git &&
+	git submodule deinit -f init >actual &&
+	test -z "$(git config --get-regexp "submodule\.example\.")" &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	rmdir init
+'
+
+test_expect_success 'submodule deinit is silent when used on an uninitialized submodule' '
+	git submodule update --init &&
+	git submodule deinit init >actual &&
+	test_i18ngrep "Submodule .example. (.*) unregistered for path .init" actual &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	git submodule deinit init >actual &&
+	test_i18ngrep ! "Submodule .example. (.*) unregistered for path .init" actual &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	git submodule deinit . >actual &&
+	test_i18ngrep ! "Submodule .example. (.*) unregistered for path .init" actual &&
+	test_i18ngrep "Submodule .example2. (.*) unregistered for path .example2" actual &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	git submodule deinit . >actual &&
+	test_i18ngrep ! "Submodule .example. (.*) unregistered for path .init" actual &&
+	test_i18ngrep ! "Submodule .example2. (.*) unregistered for path .example2" actual &&
+	test_i18ngrep "Cleared directory .init" actual &&
+	rmdir init example2
+'
+
+test_expect_success 'submodule deinit fails when submodule has a .git directory even when forced' '
+	git submodule update --init &&
+	(
+		cd init &&
+		rm .git &&
+		cp -R ../.git/modules/example .git &&
+		GIT_WORK_TREE=. git config --unset core.worktree
+	) &&
+	test_must_fail git submodule deinit init &&
+	test_must_fail git submodule deinit -f init &&
+	test -d init/.git &&
+	test -n "$(git config --get-regexp "submodule\.example\.")"
+'
+
+test_expect_success 'submodule with UTF-8 name' '
+	svname=$(printf "\303\245 \303\244\303\266") &&
+	mkdir "$svname" &&
+	(
+		cd "$svname" &&
+		git init &&
+		>sub &&
+		git add sub &&
+		git commit -m "init sub"
+	) &&
+	test_config core.precomposeunicode true &&
+	git submodule add ./"$svname" &&
+	git submodule >&2 &&
+	test -n "$(git submodule | grep "$svname")"
+'
+
+test_expect_success 'submodule add clone shallow submodule' '
+	mkdir super &&
+	pwd=$(pwd)
+	(
+		cd super &&
+		git init &&
+		git submodule add --depth=1 file://"$pwd"/example2 submodule &&
+		(
+			cd submodule &&
+			test 1 = $(git log --oneline | wc -l)
+		)
+	)
+'
+
 
 test_done

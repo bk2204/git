@@ -39,6 +39,8 @@ extern "C" {
 #define XDF_DIFF_ALGORITHM_MASK (XDF_PATIENCE_DIFF | XDF_HISTOGRAM_DIFF)
 #define XDF_DIFF_ALG(x) ((x) & XDF_DIFF_ALGORITHM_MASK)
 
+#define XDF_IGNORE_BLANK_LINES (1 << 7)
+
 #define XDL_EMIT_FUNCNAMES (1 << 0)
 #define XDL_EMIT_COMMON (1 << 1)
 #define XDL_EMIT_FUNCCONTEXT (1 << 2)
@@ -86,13 +88,17 @@ typedef struct s_xdemitcb {
 
 typedef long (*find_func_t)(const char *line, long line_len, char *buffer, long buffer_size, void *priv);
 
+typedef int (*xdl_emit_hunk_consume_func_t)(long start_a, long count_a,
+					    long start_b, long count_b,
+					    void *cb_data);
+
 typedef struct s_xdemitconf {
 	long ctxlen;
 	long interhunkctxlen;
 	unsigned long flags;
 	find_func_t find_func;
 	void *find_func_priv;
-	void (*emit_func)();
+	xdl_emit_hunk_consume_func_t hunk_func;
 } xdemitconf_t;
 
 typedef struct s_bdiffparam {

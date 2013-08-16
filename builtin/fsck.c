@@ -12,6 +12,7 @@
 #include "parse-options.h"
 #include "dir.h"
 #include "progress.h"
+#include "streaming.h"
 
 #define REACHABLE 0x0001
 #define SEEN      0x0002
@@ -111,7 +112,7 @@ static int mark_object(struct object *obj, int type, void *data)
 		return 1;
 	}
 
-	add_object_array(obj, (void *) parent, &pending);
+	add_object_array(obj, NULL, &pending);
 	return 0;
 }
 
@@ -238,13 +239,8 @@ static void check_unreachable_object(struct object *obj)
 			if (!(f = fopen(filename, "w")))
 				die_errno("Could not open '%s'", filename);
 			if (obj->type == OBJ_BLOB) {
-				enum object_type type;
-				unsigned long size;
-				char *buf = read_sha1_file(obj->sha1,
-						&type, &size);
-				if (buf && fwrite(buf, 1, size, f) != size)
+				if (stream_blob_to_fd(fileno(f), obj->sha1, NULL, 1))
 					die_errno("Could not write '%s'", filename);
-				free(buf);
 			} else
 				fprintf(f, "%s\n", sha1_to_hex(obj->sha1));
 			if (fclose(f))
@@ -609,23 +605,23 @@ static int fsck_cache_tree(struct cache_tree *it)
 }
 
 static char const * const fsck_usage[] = {
-	"git fsck [options] [<object>...]",
+	N_("git fsck [options] [<object>...]"),
 	NULL
 };
 
 static struct option fsck_opts[] = {
-	OPT__VERBOSE(&verbose, "be verbose"),
-	OPT_BOOLEAN(0, "unreachable", &show_unreachable, "show unreachable objects"),
-	OPT_BOOL(0, "dangling", &show_dangling, "show dangling objects"),
-	OPT_BOOLEAN(0, "tags", &show_tags, "report tags"),
-	OPT_BOOLEAN(0, "root", &show_root, "report root nodes"),
-	OPT_BOOLEAN(0, "cache", &keep_cache_objects, "make index objects head nodes"),
-	OPT_BOOLEAN(0, "reflogs", &include_reflogs, "make reflogs head nodes (default)"),
-	OPT_BOOLEAN(0, "full", &check_full, "also consider packs and alternate objects"),
-	OPT_BOOLEAN(0, "strict", &check_strict, "enable more strict checking"),
-	OPT_BOOLEAN(0, "lost-found", &write_lost_and_found,
-				"write dangling objects in .git/lost-found"),
-	OPT_BOOL(0, "progress", &show_progress, "show progress"),
+	OPT__VERBOSE(&verbose, N_("be verbose")),
+	OPT_BOOL(0, "unreachable", &show_unreachable, N_("show unreachable objects")),
+	OPT_BOOL(0, "dangling", &show_dangling, N_("show dangling objects")),
+	OPT_BOOL(0, "tags", &show_tags, N_("report tags")),
+	OPT_BOOL(0, "root", &show_root, N_("report root nodes")),
+	OPT_BOOL(0, "cache", &keep_cache_objects, N_("make index objects head nodes")),
+	OPT_BOOL(0, "reflogs", &include_reflogs, N_("make reflogs head nodes (default)")),
+	OPT_BOOL(0, "full", &check_full, N_("also consider packs and alternate objects")),
+	OPT_BOOL(0, "strict", &check_strict, N_("enable more strict checking")),
+	OPT_BOOL(0, "lost-found", &write_lost_and_found,
+				N_("write dangling objects in .git/lost-found")),
+	OPT_BOOL(0, "progress", &show_progress, N_("show progress")),
 	OPT_END(),
 };
 

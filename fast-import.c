@@ -297,7 +297,7 @@ static int failure;
 static FILE *pack_edges;
 static unsigned int show_stats = 1;
 static int global_argc;
-static const char **global_argv;
+static char **global_argv;
 
 /* Memory pools */
 static size_t mem_pool_alloc = 2*1024*1024 - sizeof(struct mem_pool);
@@ -1568,7 +1568,8 @@ static int tree_content_set(
 static int tree_content_remove(
 	struct tree_entry *root,
 	const char *p,
-	struct tree_entry *backup_leaf)
+	struct tree_entry *backup_leaf,
+	int allow_root)
 {
 	struct tree_content *t;
 	const char *slash1;
@@ -1583,6 +1584,12 @@ static int tree_content_remove(
 
 	if (!root->tree)
 		load_tree(root);
+
+	if (!*p && allow_root) {
+		e = root;
+		goto del_entry;
+	}
+
 	t = root->tree;
 	for (i = 0; i < t->entry_count; i++) {
 		e = t->entries[i];
@@ -1599,7 +1606,7 @@ static int tree_content_remove(
 				goto del_entry;
 			if (!e->tree)
 				load_tree(e);
-			if (tree_content_remove(e, slash1 + 1, backup_leaf)) {
+			if (tree_content_remove(e, slash1 + 1, backup_leaf, 0)) {
 				for (n = 0; n < e->tree->entry_count; n++) {
 					if (e->tree->entries[n]->versions[1].mode) {
 						hashclr(root->versions[1].sha1);
@@ -1629,7 +1636,8 @@ del_entry:
 static int tree_content_get(
 	struct tree_entry *root,
 	const char *p,
-	struct tree_entry *leaf)
+	struct tree_entry *leaf,
+	int allow_root)
 {
 	struct tree_content *t;
 	const char *slash1;
@@ -1641,31 +1649,39 @@ static int tree_content_get(
 		n = slash1 - p;
 	else
 		n = strlen(p);
-	if (!n)
+	if (!n && !allow_root)
 		die("Empty path component found in input");
 
 	if (!root->tree)
 		load_tree(root);
+
+	if (!n) {
+		e = root;
+		goto found_entry;
+	}
+
 	t = root->tree;
 	for (i = 0; i < t->entry_count; i++) {
 		e = t->entries[i];
 		if (e->name->str_len == n && !strncmp_icase(p, e->name->str_dat, n)) {
-			if (!slash1) {
-				memcpy(leaf, e, sizeof(*leaf));
-				if (e->tree && is_null_sha1(e->versions[1].sha1))
-					leaf->tree = dup_tree_content(e->tree);
-				else
-					leaf->tree = NULL;
-				return 1;
-			}
+			if (!slash1)
+				goto found_entry;
 			if (!S_ISDIR(e->versions[1].mode))
 				return 0;
 			if (!e->tree)
 				load_tree(e);
-			return tree_content_get(e, slash1 + 1, leaf);
+			return tree_content_get(e, slash1 + 1, leaf, 0);
 		}
 	}
 	return 0;
+
+found_entry:
+	memcpy(leaf, e, sizeof(*leaf));
+	if (e->tree && is_null_sha1(e->versions[1].sha1))
+		leaf->tree = dup_tree_content(e->tree);
+	else
+		leaf->tree = NULL;
+	return 1;
 }
 
 static int update_branch(struct branch *b)
@@ -1691,7 +1707,7 @@ static int update_branch(struct branch *b)
 			return error("Branch %s is missing commits.", b->name);
 		}
 
-		if (!in_merge_bases(old_cmit, &new_cmit, 1)) {
+		if (!in_merge_bases(old_cmit, new_cmit)) {
 			unlock_ref(lock);
 			warning("Not updating %s"
 				" (new tip %s does not contain %s)",
@@ -1822,7 +1838,7 @@ static void read_marks(void)
 		*end = 0;
 		mark = strtoumax(line + 1, &end, 10);
 		if (!mark || end == line + 1
-			|| *end != ' ' || get_sha1(end + 1, sha1))
+			|| *end != ' ' || get_sha1_hex(end + 1, sha1))
 			die("corrupt mark line: %s", line);
 		e = find_object(sha1);
 		if (!e) {
@@ -2179,7 +2195,7 @@ static uintmax_t do_change_note_fanout(
 			}
 
 			/* Rename fullpath to realpath */
-			if (!tree_content_remove(orig_root, fullpath, &leaf))
+			if (!tree_content_remove(orig_root, fullpath, &leaf, 0))
 				die("Failed to remove path %s", fullpath);
 			tree_content_set(orig_root, realpath,
 				leaf.versions[1].sha1,
@@ -2265,7 +2281,7 @@ static void file_change_m(struct branch *b)
 	const char *p = command_buf.buf + 2;
 	static struct strbuf uq = STRBUF_INIT;
 	const char *endp;
-	struct object_entry *oe = oe;
+	struct object_entry *oe;
 	unsigned char sha1[20];
 	uint16_t mode, inline_data = 0;
 
@@ -2292,6 +2308,7 @@ static void file_change_m(struct branch *b)
 		hashcpy(sha1, oe->idx.sha1);
 	} else if (!prefixcmp(p, "inline ")) {
 		inline_data = 1;
+		oe = NULL; /* not used with inline_data, but makes gcc happy */
 		p += strlen("inline");  /* advance to space */
 	} else {
 		if (get_sha1_hex(p, sha1))
@@ -2313,7 +2330,7 @@ static void file_change_m(struct branch *b)
 
 	/* Git does not track empty, non-toplevel directories. */
 	if (S_ISDIR(mode) && !memcmp(sha1, EMPTY_TREE_SHA1_BIN, 20) && *p) {
-		tree_content_remove(&b->branch_tree, p, NULL);
+		tree_content_remove(&b->branch_tree, p, NULL, 0);
 		return;
 	}
 
@@ -2374,7 +2391,7 @@ static void file_change_d(struct branch *b)
 			die("Garbage after path in: %s", command_buf.buf);
 		p = uq.buf;
 	}
-	tree_content_remove(&b->branch_tree, p, NULL);
+	tree_content_remove(&b->branch_tree, p, NULL, 1);
 }
 
 static void file_change_cr(struct branch *b, int rename)
@@ -2412,9 +2429,9 @@ static void file_change_cr(struct branch *b, int rename)
 
 	memset(&leaf, 0, sizeof(leaf));
 	if (rename)
-		tree_content_remove(&b->branch_tree, s, &leaf);
+		tree_content_remove(&b->branch_tree, s, &leaf, 1);
 	else
-		tree_content_get(&b->branch_tree, s, &leaf);
+		tree_content_get(&b->branch_tree, s, &leaf, 1);
 	if (!leaf.versions[1].mode)
 		die("Path %s not in branch", s);
 	if (!*d) {	/* C "path/to/subdir" "" */
@@ -2434,7 +2451,7 @@ static void note_change_n(struct branch *b, unsigned char *old_fanout)
 {
 	const char *p = command_buf.buf + 2;
 	static struct strbuf uq = STRBUF_INIT;
-	struct object_entry *oe = oe;
+	struct object_entry *oe;
 	struct branch *s;
 	unsigned char sha1[20], commit_sha1[20];
 	char path[60];
@@ -2464,6 +2481,7 @@ static void note_change_n(struct branch *b, unsigned char *old_fanout)
 		hashcpy(sha1, oe->idx.sha1);
 	} else if (!prefixcmp(p, "inline ")) {
 		inline_data = 1;
+		oe = NULL; /* not used with inline_data, but makes gcc happy */
 		p += strlen("inline");  /* advance to space */
 	} else {
 		if (get_sha1_hex(p, sha1))
@@ -2519,7 +2537,7 @@ static void note_change_n(struct branch *b, unsigned char *old_fanout)
 	}
 
 	construct_path_with_fanout(sha1_to_hex(commit_sha1), *old_fanout, path);
-	if (tree_content_remove(&b->branch_tree, path, NULL))
+	if (tree_content_remove(&b->branch_tree, path, NULL, 0))
 		b->num_notes--;
 
 	if (is_null_sha1(sha1))
@@ -2613,7 +2631,7 @@ static int parse_from(struct branch *b)
 
 static struct hash_list *parse_merge(unsigned int *count)
 {
-	struct hash_list *list = NULL, *n, *e = e;
+	struct hash_list *list = NULL, **tail = &list, *n;
 	const char *from;
 	struct branch *s;
 
@@ -2641,11 +2659,9 @@ static struct hash_list *parse_merge(unsigned int *count)
 			die("Invalid ref name or SHA1 expression: %s", from);
 
 		n->next = NULL;
-		if (list)
-			e->next = n;
-		else
-			list = n;
-		e = n;
+		*tail = n;
+		tail = &n->next;
+
 		(*count)++;
 		read_next_command();
 	}
@@ -3051,6 +3067,8 @@ static void parse_ls(struct branch *b)
 		struct object_entry *e = parse_treeish_dataref(&p);
 		root = new_tree_entry();
 		hashcpy(root->versions[1].sha1, e->idx.sha1);
+		if (!is_null_sha1(root->versions[1].sha1))
+			root->versions[1].mode = S_IFDIR;
 		load_tree(root);
 		if (*p++ != ' ')
 			die("Missing space after tree-ish: %s", command_buf.buf);
@@ -3065,7 +3083,7 @@ static void parse_ls(struct branch *b)
 			die("Garbage after path in: %s", command_buf.buf);
 		p = uq.buf;
 	}
-	tree_content_get(root, p, &leaf);
+	tree_content_get(root, p, &leaf, 1);
 	/*
 	 * A directory in preparation would have a sha1 of zero
 	 * until it is saved.  Save, for simplicity.
@@ -3347,7 +3365,7 @@ static void parse_argv(void)
 		read_marks();
 }
 
-int main(int argc, const char **argv)
+int main(int argc, char **argv)
 {
 	unsigned int i;
 

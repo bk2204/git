@@ -7,13 +7,14 @@
 #include "parse-options.h"
 #include "diff.h"
 #include "hash.h"
+#include "argv-array.h"
 
 #define SEEN		(1u<<0)
 #define MAX_TAGS	(FLAG_BITS - 1)
 
 static const char * const describe_usage[] = {
-	"git describe [options] <committish>*",
-	"git describe [options] --dirty",
+	N_("git describe [options] <committish>*"),
+	N_("git describe [options] --dirty"),
 	NULL
 };
 
@@ -21,6 +22,7 @@ static int debug;	/* Display lots of verbose info */
 static int all;	/* Any valid ref can be used */
 static int tags;	/* Allow lightweight tags */
 static int longformat;
+static int first_parent;
 static int abbrev = -1; /* unspecified */
 static int max_candidates = 10;
 static struct hash_table names;
@@ -42,7 +44,7 @@ struct commit_name {
 	unsigned prio:2; /* annotated tag = 2, tag = 1, head = 0 */
 	unsigned name_checked:1;
 	unsigned char sha1[20];
-	const char *path;
+	char *path;
 };
 static const char *prio_names[] = {
 	"head", "lightweight", "annotated",
@@ -126,51 +128,52 @@ static void add_to_known_names(const char *path,
 			} else {
 				e->next = NULL;
 			}
+			e->path = NULL;
 		}
 		e->tag = tag;
 		e->prio = prio;
 		e->name_checked = 0;
 		hashcpy(e->sha1, sha1);
-		e->path = path;
+		free(e->path);
+		e->path = xstrdup(path);
 	}
 }
 
 static int get_name(const char *path, const unsigned char *sha1, int flag, void *cb_data)
 {
-	int might_be_tag = !prefixcmp(path, "refs/tags/");
+	int is_tag = !prefixcmp(path, "refs/tags/");
 	unsigned char peeled[20];
-	int is_tag, prio;
+	int is_annotated, prio;
 
-	if (!all && !might_be_tag)
+	/* Reject anything outside refs/tags/ unless --all */
+	if (!all && !is_tag)
 		return 0;
 
-	if (!peel_ref(path, peeled) && !is_null_sha1(peeled)) {
-		is_tag = !!hashcmp(sha1, peeled);
+	/* Accept only tags that match the pattern, if given */
+	if (pattern && (!is_tag || fnmatch(pattern, path + 10, 0)))
+		return 0;
+
+	/* Is it annotated? */
+	if (!peel_ref(path, peeled)) {
+		is_annotated = !!hashcmp(sha1, peeled);
 	} else {
 		hashcpy(peeled, sha1);
-		is_tag = 0;
+		is_annotated = 0;
 	}
 
-	/* If --all, then any refs are used.
-	 * If --tags, then any tags are used.
-	 * Otherwise only annotated tags are used.
+	/*
+	 * By default, we only use annotated tags, but with --tags
+	 * we fall back to lightweight ones (even without --tags,
+	 * we still remember lightweight ones, only to give hints
+	 * in an error message).  --all allows any refs to be used.
 	 */
-	if (might_be_tag) {
-		if (is_tag)
-			prio = 2;
-		else
-			prio = 1;
-
-		if (pattern && fnmatch(pattern, path + 10, 0))
-			prio = 0;
-	}
+	if (is_annotated)
+		prio = 2;
+	else if (is_tag)
+		prio = 1;
 	else
 		prio = 0;
 
-	if (!all) {
-		if (!prio)
-			return 0;
-	}
 	add_to_known_names(all ? path + 5 : path + 10, peeled, prio, sha1);
 	return 0;
 }
@@ -337,6 +340,9 @@ static void describe(const char *arg, int last_one)
 				commit_list_insert_by_date(p, &list);
 			p->object.flags |= c->object.flags;
 			parents = parents->next;
+
+			if (first_parent)
+				break;
 		}
 	}
 
@@ -400,23 +406,24 @@ int cmd_describe(int argc, const char **argv, const char *prefix)
 {
 	int contains = 0;
 	struct option options[] = {
-		OPT_BOOLEAN(0, "contains",   &contains, "find the tag that comes after the commit"),
-		OPT_BOOLEAN(0, "debug",      &debug, "debug search strategy on stderr"),
-		OPT_BOOLEAN(0, "all",        &all, "use any ref in .git/refs"),
-		OPT_BOOLEAN(0, "tags",       &tags, "use any tag in .git/refs/tags"),
-		OPT_BOOLEAN(0, "long",       &longformat, "always use long format"),
+		OPT_BOOL(0, "contains",   &contains, N_("find the tag that comes after the commit")),
+		OPT_BOOL(0, "debug",      &debug, N_("debug search strategy on stderr")),
+		OPT_BOOL(0, "all",        &all, N_("use any ref")),
+		OPT_BOOL(0, "tags",       &tags, N_("use any tag, even unannotated")),
+		OPT_BOOL(0, "long",       &longformat, N_("always use long format")),
+		OPT_BOOL(0, "first-parent", &first_parent, N_("only follow first parent")),
 		OPT__ABBREV(&abbrev),
 		OPT_SET_INT(0, "exact-match", &max_candidates,
-			    "only output exact matches", 0),
+			    N_("only output exact matches"), 0),
 		OPT_INTEGER(0, "candidates", &max_candidates,
-			    "consider <n> most recent tags (default: 10)"),
-		OPT_STRING(0, "match",       &pattern, "pattern",
-			   "only consider tags matching <pattern>"),
-		OPT_BOOLEAN(0, "always",     &always,
-			   "show abbreviated commit object as fallback"),
-		{OPTION_STRING, 0, "dirty",  &dirty, "mark",
-			   "append <mark> on dirty working tree (default: \"-dirty\")",
-		 PARSE_OPT_OPTARG, NULL, (intptr_t) "-dirty"},
+			    N_("consider <n> most recent tags (default: 10)")),
+		OPT_STRING(0, "match",       &pattern, N_("pattern"),
+			   N_("only consider tags matching <pattern>")),
+		OPT_BOOL(0, "always",        &always,
+			N_("show abbreviated commit object as fallback")),
+		{OPTION_STRING, 0, "dirty",  &dirty, N_("mark"),
+			N_("append <mark> on dirty working tree (default: \"-dirty\")"),
+			PARSE_OPT_OPTARG, NULL, (intptr_t) "-dirty"},
 		OPT_END(),
 	};
 
@@ -436,24 +443,24 @@ int cmd_describe(int argc, const char **argv, const char *prefix)
 		die(_("--long is incompatible with --abbrev=0"));
 
 	if (contains) {
-		const char **args = xmalloc((7 + argc) * sizeof(char *));
-		int i = 0;
-		args[i++] = "name-rev";
-		args[i++] = "--name-only";
-		args[i++] = "--no-undefined";
+		struct argv_array args;
+
+		argv_array_init(&args);
+		argv_array_pushl(&args, "name-rev",
+				 "--peel-tag", "--name-only", "--no-undefined",
+				 NULL);
 		if (always)
-			args[i++] = "--always";
+			argv_array_push(&args, "--always");
 		if (!all) {
-			args[i++] = "--tags";
-			if (pattern) {
-				char *s = xmalloc(strlen("--refs=refs/tags/") + strlen(pattern) + 1);
-				sprintf(s, "--refs=refs/tags/%s", pattern);
-				args[i++] = s;
-			}
+			argv_array_push(&args, "--tags");
+			if (pattern)
+				argv_array_pushf(&args, "--refs=refs/tags/%s", pattern);
 		}
-		memcpy(args + i, argv, argc * sizeof(char *));
-		args[i + argc] = NULL;
-		return cmd_name_rev(i + argc, args, prefix);
+		while (*argv) {
+			argv_array_push(&args, *argv);
+			argv++;
+		}
+		return cmd_name_rev(args.argc, args.argv, prefix);
 	}
 
 	init_hash(&names);

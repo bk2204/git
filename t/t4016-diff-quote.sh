@@ -13,14 +13,12 @@ P1='pathname	with HT'
 P2='pathname with SP'
 P3='pathname
 with LF'
-if : 2>/dev/null >"$P1" && test -f "$P1" && rm -f "$P1"
-then
-	test_set_prereq TABS_IN_FILENAMES
-else
-	say 'Your filesystem does not allow tabs in filenames'
-fi
+echo 2>/dev/null >"$P1" && test -f "$P1" && rm -f "$P1" || {
+	skip_all='Your filesystem does not allow tabs in filenames'
+	test_done
+}
 
-test_expect_success TABS_IN_FILENAMES setup '
+test_expect_success setup '
 	echo P0.0 >"$P0.0" &&
 	echo P0.1 >"$P0.1" &&
 	echo P0.2 >"$P0.2" &&
@@ -40,7 +38,7 @@ test_expect_success TABS_IN_FILENAMES setup '
 	:
 '
 
-test_expect_success TABS_IN_FILENAMES 'setup expected files' '
+test_expect_success 'setup expected files' '
 cat >expect <<\EOF
  rename pathname.1 => "Rpathname\twith HT.0" (100%)
  rename pathname.3 => "Rpathname\nwith LF.0" (100%)
@@ -52,27 +50,38 @@ cat >expect <<\EOF
 EOF
 '
 
-test_expect_success TABS_IN_FILENAMES 'git diff --summary -M HEAD' '
+test_expect_success 'git diff --summary -M HEAD' '
 	git diff --summary -M HEAD >actual &&
 	test_cmp expect actual
 '
 
-test_expect_success TABS_IN_FILENAMES 'setup expected files' '
-cat >expect <<\EOF
- pathname.1 => "Rpathname\twith HT.0"            |    0
- pathname.3 => "Rpathname\nwith LF.0"            |    0
- "pathname\twith HT.3" => "Rpathname\nwith LF.1" |    0
- pathname.2 => Rpathname with SP.0               |    0
- "pathname\twith HT.2" => Rpathname with SP.1    |    0
- pathname.0 => Rpathname.0                       |    0
- "pathname\twith HT.0" => Rpathname.1            |    0
- 7 files changed, 0 insertions(+), 0 deletions(-)
-EOF
+test_expect_success 'git diff --numstat -M HEAD' '
+	cat >expect <<-\EOF &&
+	0	0	pathname.1 => "Rpathname\twith HT.0"
+	0	0	pathname.3 => "Rpathname\nwith LF.0"
+	0	0	"pathname\twith HT.3" => "Rpathname\nwith LF.1"
+	0	0	pathname.2 => Rpathname with SP.0
+	0	0	"pathname\twith HT.2" => Rpathname with SP.1
+	0	0	pathname.0 => Rpathname.0
+	0	0	"pathname\twith HT.0" => Rpathname.1
+	EOF
+	git diff --numstat -M HEAD >actual &&
+	test_cmp expect actual
 '
 
-test_expect_success TABS_IN_FILENAMES 'git diff --stat -M HEAD' '
+test_expect_success 'git diff --stat -M HEAD' '
+	cat >expect <<-\EOF &&
+	 pathname.1 => "Rpathname\twith HT.0"            | 0
+	 pathname.3 => "Rpathname\nwith LF.0"            | 0
+	 "pathname\twith HT.3" => "Rpathname\nwith LF.1" | 0
+	 pathname.2 => Rpathname with SP.0               | 0
+	 "pathname\twith HT.2" => Rpathname with SP.1    | 0
+	 pathname.0 => Rpathname.0                       | 0
+	 "pathname\twith HT.0" => Rpathname.1            | 0
+	 7 files changed, 0 insertions(+), 0 deletions(-)
+	EOF
 	git diff --stat -M HEAD >actual &&
-	test_cmp expect actual
+	test_i18ncmp expect actual
 '
 
 test_done

@@ -7,10 +7,16 @@
 #include "revision.h"
 #include "notes.h"
 #include "gpg-interface.h"
+#include "mergesort.h"
+#include "commit-slab.h"
+#include "prio-queue.h"
+
+static struct commit_extra_header *read_commit_extra_header_lines(const char *buf, size_t len, const char **);
 
 int save_commit_buffer = 1;
 
 const char *commit_type = "commit";
+static int commit_count;
 
 static struct commit *check_commit(struct object *obj,
 				   const unsigned char *sha1,
@@ -55,8 +61,11 @@ struct commit *lookup_commit_or_die(const unsigned char *sha1, const char *ref_n
 struct commit *lookup_commit(const unsigned char *sha1)
 {
 	struct object *obj = lookup_object(sha1);
-	if (!obj)
-		return create_object(sha1, OBJ_COMMIT, alloc_commit_node());
+	if (!obj) {
+		struct commit *c = alloc_commit_node();
+		c->index = commit_count++;
+		return create_object(sha1, OBJ_COMMIT, c);
+	}
 	if (!obj->type)
 		obj->type = OBJ_COMMIT;
 	return check_commit(obj, sha1, 0);
@@ -67,7 +76,7 @@ struct commit *lookup_commit_reference_by_name(const char *name)
 	unsigned char sha1[20];
 	struct commit *commit;
 
-	if (get_sha1(name, sha1))
+	if (get_sha1_committish(name, sha1))
 		return NULL;
 	commit = lookup_commit_reference(sha1);
 	if (!commit || parse_commit(commit))
@@ -368,6 +377,22 @@ unsigned commit_list_count(const struct commit_list *l)
 	return c;
 }
 
+struct commit_list *copy_commit_list(struct commit_list *list)
+{
+	struct commit_list *head = NULL;
+	struct commit_list **pp = &head;
+	while (list) {
+		struct commit_list *new;
+		new = xmalloc(sizeof(struct commit_list));
+		new->item = list->item;
+		new->next = NULL;
+		*pp = new;
+		pp = &new->next;
+		list = list->next;
+	}
+	return head;
+}
+
 void free_commit_list(struct commit_list *list)
 {
 	while (list) {
@@ -390,15 +415,31 @@ struct commit_list * commit_list_insert_by_date(struct commit *item, struct comm
 	return commit_list_insert(item, pp);
 }
 
+static int commit_list_compare_by_date(const void *a, const void *b)
+{
+	unsigned long a_date = ((const struct commit_list *)a)->item->date;
+	unsigned long b_date = ((const struct commit_list *)b)->item->date;
+	if (a_date < b_date)
+		return 1;
+	if (a_date > b_date)
+		return -1;
+	return 0;
+}
+
+static void *commit_list_get_next(const void *a)
+{
+	return ((const struct commit_list *)a)->next;
+}
+
+static void commit_list_set_next(void *a, void *next)
+{
+	((struct commit_list *)a)->next = next;
+}
 
 void commit_list_sort_by_date(struct commit_list **list)
 {
-	struct commit_list *ret = NULL;
-	while (*list) {
-		commit_list_insert_by_date((*list)->item, &ret);
-		*list = (*list)->next;
-	}
-	*list = ret;
+	*list = llist_mergesort(*list, commit_list_get_next, commit_list_set_next,
+				commit_list_compare_by_date);
 }
 
 struct commit *pop_most_recent_commit(struct commit_list **list,
@@ -444,12 +485,21 @@ static void clear_commit_marks_1(struct commit_list **plist,
 	}
 }
 
-void clear_commit_marks(struct commit *commit, unsigned int mark)
+void clear_commit_marks_many(int nr, struct commit **commit, unsigned int mark)
 {
 	struct commit_list *list = NULL;
-	commit_list_insert(commit, &list);
+
+	while (nr--) {
+		commit_list_insert(*commit, &list);
+		commit++;
+	}
 	while (list)
 		clear_commit_marks_1(&list, pop_commit(&list), mark);
+}
+
+void clear_commit_marks(struct commit *commit, unsigned int mark)
+{
+	clear_commit_marks_many(1, &commit, mark);
 }
 
 void clear_commit_marks_for_object_array(struct object_array *a, unsigned mark)
@@ -479,32 +529,136 @@ struct commit *pop_commit(struct commit_list **stack)
 }
 
 /*
+ * Topological sort support
+ */
+
+/* count number of children that have not been emitted */
+define_commit_slab(indegree_slab, int);
+
+/* record author-date for each commit object */
+define_commit_slab(author_date_slab, unsigned long);
+
+static void record_author_date(struct author_date_slab *author_date,
+			       struct commit *commit)
+{
+	const char *buf, *line_end;
+	char *buffer = NULL;
+	struct ident_split ident;
+	char *date_end;
+	unsigned long date;
+
+	if (!commit->buffer) {
+		unsigned long size;
+		enum object_type type;
+		buffer = read_sha1_file(commit->object.sha1, &type, &size);
+		if (!buffer)
+			return;
+	}
+
+	for (buf = commit->buffer ? commit->buffer : buffer;
+	     buf;
+	     buf = line_end + 1) {
+		line_end = strchrnul(buf, '\n');
+		if (prefixcmp(buf, "author ")) {
+			if (!line_end[0] || line_end[1] == '\n')
+				return; /* end of header */
+			continue;
+		}
+		if (split_ident_line(&ident,
+				     buf + strlen("author "),
+				     line_end - (buf + strlen("author "))) ||
+		    !ident.date_begin || !ident.date_end)
+			goto fail_exit; /* malformed "author" line */
+		break;
+	}
+
+	date = strtoul(ident.date_begin, &date_end, 10);
+	if (date_end != ident.date_end)
+		goto fail_exit; /* malformed date */
+	*(author_date_slab_at(author_date, commit)) = date;
+
+fail_exit:
+	free(buffer);
+}
+
+static int compare_commits_by_author_date(const void *a_, const void *b_,
+					  void *cb_data)
+{
+	const struct commit *a = a_, *b = b_;
+	struct author_date_slab *author_date = cb_data;
+	unsigned long a_date = *(author_date_slab_at(author_date, a));
+	unsigned long b_date = *(author_date_slab_at(author_date, b));
+
+	/* newer commits with larger date first */
+	if (a_date < b_date)
+		return 1;
+	else if (a_date > b_date)
+		return -1;
+	return 0;
+}
+
+int compare_commits_by_commit_date(const void *a_, const void *b_, void *unused)
+{
+	const struct commit *a = a_, *b = b_;
+	/* newer commits with larger date first */
+	if (a->date < b->date)
+		return 1;
+	else if (a->date > b->date)
+		return -1;
+	return 0;
+}
+
+/*
  * Performs an in-place topological sort on the list supplied.
  */
-void sort_in_topological_order(struct commit_list ** list, int lifo)
+void sort_in_topological_order(struct commit_list **list, enum rev_sort_order sort_order)
 {
 	struct commit_list *next, *orig = *list;
-	struct commit_list *work, **insert;
 	struct commit_list **pptr;
+	struct indegree_slab indegree;
+	struct prio_queue queue;
+	struct commit *commit;
+	struct author_date_slab author_date;
 
 	if (!orig)
 		return;
 	*list = NULL;
 
+	init_indegree_slab(&indegree);
+	memset(&queue, '\0', sizeof(queue));
+
+	switch (sort_order) {
+	default: /* REV_SORT_IN_GRAPH_ORDER */
+		queue.compare = NULL;
+		break;
+	case REV_SORT_BY_COMMIT_DATE:
+		queue.compare = compare_commits_by_commit_date;
+		break;
+	case REV_SORT_BY_AUTHOR_DATE:
+		init_author_date_slab(&author_date);
+		queue.compare = compare_commits_by_author_date;
+		queue.cb_data = &author_date;
+		break;
+	}
+
 	/* Mark them and clear the indegree */
 	for (next = orig; next; next = next->next) {
 		struct commit *commit = next->item;
-		commit->indegree = 1;
+		*(indegree_slab_at(&indegree, commit)) = 1;
+		/* also record the author dates, if needed */
+		if (sort_order == REV_SORT_BY_AUTHOR_DATE)
+			record_author_date(&author_date, commit);
 	}
 
 	/* update the indegree */
 	for (next = orig; next; next = next->next) {
-		struct commit_list * parents = next->item->parents;
+		struct commit_list *parents = next->item->parents;
 		while (parents) {
 			struct commit *parent = parents->item;
+			int *pi = indegree_slab_at(&indegree, parent);
 
-			if (parent->indegree)
-				parent->indegree++;
+			if (*pi)
+				(*pi)++;
 			parents = parents->next;
 		}
 	}
@@ -516,34 +670,33 @@ void sort_in_topological_order(struct commit_list ** list, int lifo)
 	 *
 	 * the tips serve as a starting set for the work queue.
 	 */
-	work = NULL;
-	insert = &work;
 	for (next = orig; next; next = next->next) {
 		struct commit *commit = next->item;
 
-		if (commit->indegree == 1)
-			insert = &commit_list_insert(commit, insert)->next;
+		if (*(indegree_slab_at(&indegree, commit)) == 1)
+			prio_queue_put(&queue, commit);
 	}
 
-	/* process the list in topological order */
-	if (!lifo)
-		commit_list_sort_by_date(&work);
+	/*
+	 * This is unfortunate; the initial tips need to be shown
+	 * in the order given from the revision traversal machinery.
+	 */
+	if (sort_order == REV_SORT_IN_GRAPH_ORDER)
+		prio_queue_reverse(&queue);
+
+	/* We no longer need the commit list */
+	free_commit_list(orig);
 
 	pptr = list;
 	*list = NULL;
-	while (work) {
-		struct commit *commit;
-		struct commit_list *parents, *work_item;
+	while ((commit = prio_queue_get(&queue)) != NULL) {
+		struct commit_list *parents;
 
-		work_item = work;
-		work = work_item->next;
-		work_item->next = NULL;
-
-		commit = work_item->item;
 		for (parents = commit->parents; parents ; parents = parents->next) {
 			struct commit *parent = parents->item;
+			int *pi = indegree_slab_at(&indegree, parent);
 
-			if (!parent->indegree)
+			if (!*pi)
 				continue;
 
 			/*
@@ -551,21 +704,22 @@ void sort_in_topological_order(struct commit_list ** list, int lifo)
 			 * when all their children have been emitted thereby
 			 * guaranteeing topological order.
 			 */
-			if (--parent->indegree == 1) {
-				if (!lifo)
-					commit_list_insert_by_date(parent, &work);
-				else
-					commit_list_insert(parent, &work);
-			}
+			if (--(*pi) == 1)
+				prio_queue_put(&queue, parent);
 		}
 		/*
-		 * work_item is a commit all of whose children
-		 * have already been emitted. we can emit it now.
+		 * all children of commit have already been
+		 * emitted. we can emit it now.
 		 */
-		commit->indegree = 0;
-		*pptr = work_item;
-		pptr = &work_item->next;
+		*(indegree_slab_at(&indegree, commit)) = 0;
+
+		pptr = &commit_list_insert(commit, pptr)->next;
 	}
+
+	clear_indegree_slab(&indegree);
+	clear_prio_queue(&queue);
+	if (sort_order == REV_SORT_BY_AUTHOR_DATE)
+		clear_author_date_slab(&author_date);
 }
 
 /* merge-base stuff */
@@ -590,30 +744,17 @@ static struct commit *interesting(struct commit_list *list)
 	return NULL;
 }
 
-static struct commit_list *merge_bases_many(struct commit *one, int n, struct commit **twos)
+/* all input commits in one and twos[] must have been parsed! */
+static struct commit_list *paint_down_to_common(struct commit *one, int n, struct commit **twos)
 {
 	struct commit_list *list = NULL;
 	struct commit_list *result = NULL;
 	int i;
 
-	for (i = 0; i < n; i++) {
-		if (one == twos[i])
-			/*
-			 * We do not mark this even with RESULT so we do not
-			 * have to clean it up.
-			 */
-			return commit_list_insert(one, &result);
-	}
-
-	if (parse_commit(one))
-		return NULL;
-	for (i = 0; i < n; i++) {
-		if (parse_commit(twos[i]))
-			return NULL;
-	}
-
 	one->object.flags |= PARENT1;
 	commit_list_insert_by_date(one, &list);
+	if (!n)
+		return list;
 	for (i = 0; i < n; i++) {
 		twos[i]->object.flags |= PARENT2;
 		commit_list_insert_by_date(twos[i], &list);
@@ -652,9 +793,34 @@ static struct commit_list *merge_bases_many(struct commit *one, int n, struct co
 		}
 	}
 
-	/* Clean up the result to remove stale ones */
 	free_commit_list(list);
-	list = result; result = NULL;
+	return result;
+}
+
+static struct commit_list *merge_bases_many(struct commit *one, int n, struct commit **twos)
+{
+	struct commit_list *list = NULL;
+	struct commit_list *result = NULL;
+	int i;
+
+	for (i = 0; i < n; i++) {
+		if (one == twos[i])
+			/*
+			 * We do not mark this even with RESULT so we do not
+			 * have to clean it up.
+			 */
+			return commit_list_insert(one, &result);
+	}
+
+	if (parse_commit(one))
+		return NULL;
+	for (i = 0; i < n; i++) {
+		if (parse_commit(twos[i]))
+			return NULL;
+	}
+
+	list = paint_down_to_common(one, n, twos);
+
 	while (list) {
 		struct commit_list *next = list->next;
 		if (!(list->item->object.flags & STALE))
@@ -692,6 +858,62 @@ struct commit_list *get_octopus_merge_bases(struct commit_list *in)
 	return ret;
 }
 
+static int remove_redundant(struct commit **array, int cnt)
+{
+	/*
+	 * Some commit in the array may be an ancestor of
+	 * another commit.  Move such commit to the end of
+	 * the array, and return the number of commits that
+	 * are independent from each other.
+	 */
+	struct commit **work;
+	unsigned char *redundant;
+	int *filled_index;
+	int i, j, filled;
+
+	work = xcalloc(cnt, sizeof(*work));
+	redundant = xcalloc(cnt, 1);
+	filled_index = xmalloc(sizeof(*filled_index) * (cnt - 1));
+
+	for (i = 0; i < cnt; i++)
+		parse_commit(array[i]);
+	for (i = 0; i < cnt; i++) {
+		struct commit_list *common;
+
+		if (redundant[i])
+			continue;
+		for (j = filled = 0; j < cnt; j++) {
+			if (i == j || redundant[j])
+				continue;
+			filled_index[filled] = j;
+			work[filled++] = array[j];
+		}
+		common = paint_down_to_common(array[i], filled, work);
+		if (array[i]->object.flags & PARENT2)
+			redundant[i] = 1;
+		for (j = 0; j < filled; j++)
+			if (work[j]->object.flags & PARENT1)
+				redundant[filled_index[j]] = 1;
+		clear_commit_marks(array[i], all_flags);
+		for (j = 0; j < filled; j++)
+			clear_commit_marks(work[j], all_flags);
+		free_commit_list(common);
+	}
+
+	/* Now collect the result */
+	memcpy(work, array, sizeof(*array) * cnt);
+	for (i = filled = 0; i < cnt; i++)
+		if (!redundant[i])
+			array[filled++] = work[i];
+	for (j = filled, i = 0; i < cnt; i++)
+		if (redundant[i])
+			array[j++] = work[i];
+	free(work);
+	free(redundant);
+	free(filled_index);
+	return filled;
+}
+
 struct commit_list *get_merge_bases_many(struct commit *one,
 					 int n,
 					 struct commit **twos,
@@ -700,7 +922,7 @@ struct commit_list *get_merge_bases_many(struct commit *one,
 	struct commit_list *list;
 	struct commit **rslt;
 	struct commit_list *result;
-	int cnt, i, j;
+	int cnt, i;
 
 	result = merge_bases_many(one, n, twos);
 	for (i = 0; i < n; i++) {
@@ -710,8 +932,7 @@ struct commit_list *get_merge_bases_many(struct commit *one,
 	if (!result || !result->next) {
 		if (cleanup) {
 			clear_commit_marks(one, all_flags);
-			for (i = 0; i < n; i++)
-				clear_commit_marks(twos[i], all_flags);
+			clear_commit_marks_many(n, twos, all_flags);
 		}
 		return result;
 	}
@@ -729,30 +950,12 @@ struct commit_list *get_merge_bases_many(struct commit *one,
 	free_commit_list(result);
 
 	clear_commit_marks(one, all_flags);
-	for (i = 0; i < n; i++)
-		clear_commit_marks(twos[i], all_flags);
-	for (i = 0; i < cnt - 1; i++) {
-		for (j = i+1; j < cnt; j++) {
-			if (!rslt[i] || !rslt[j])
-				continue;
-			result = merge_bases_many(rslt[i], 1, &rslt[j]);
-			clear_commit_marks(rslt[i], all_flags);
-			clear_commit_marks(rslt[j], all_flags);
-			for (list = result; list; list = list->next) {
-				if (rslt[i] == list->item)
-					rslt[i] = NULL;
-				if (rslt[j] == list->item)
-					rslt[j] = NULL;
-			}
-		}
-	}
+	clear_commit_marks_many(n, twos, all_flags);
 
-	/* Surviving ones in rslt[] are the independent results */
+	cnt = remove_redundant(rslt, cnt);
 	result = NULL;
-	for (i = 0; i < cnt; i++) {
-		if (rslt[i])
-			commit_list_insert_by_date(rslt[i], &result);
-	}
+	for (i = 0; i < cnt; i++)
+		commit_list_insert_by_date(rslt[i], &result);
 	free(rslt);
 	return result;
 }
@@ -763,6 +966,9 @@ struct commit_list *get_merge_bases(struct commit *one, struct commit *two,
 	return get_merge_bases_many(one, 1, &two, cleanup);
 }
 
+/*
+ * Is "commit" a descendant of one of the elements on the "with_commit" list?
+ */
 int is_descendant_of(struct commit *commit, struct commit_list *with_commit)
 {
 	if (!with_commit)
@@ -772,81 +978,72 @@ int is_descendant_of(struct commit *commit, struct commit_list *with_commit)
 
 		other = with_commit->item;
 		with_commit = with_commit->next;
-		if (in_merge_bases(other, &commit, 1))
+		if (in_merge_bases(other, commit))
 			return 1;
 	}
 	return 0;
 }
 
-int in_merge_bases(struct commit *commit, struct commit **reference, int num)
+/*
+ * Is "commit" an ancestor of one of the "references"?
+ */
+int in_merge_bases_many(struct commit *commit, int nr_reference, struct commit **reference)
 {
-	struct commit_list *bases, *b;
-	int ret = 0;
+	struct commit_list *bases;
+	int ret = 0, i;
 
-	if (num == 1)
-		bases = get_merge_bases(commit, *reference, 1);
-	else
-		die("not yet");
-	for (b = bases; b; b = b->next) {
-		if (!hashcmp(commit->object.sha1, b->item->object.sha1)) {
-			ret = 1;
-			break;
-		}
-	}
+	if (parse_commit(commit))
+		return ret;
+	for (i = 0; i < nr_reference; i++)
+		if (parse_commit(reference[i]))
+			return ret;
 
+	bases = paint_down_to_common(commit, nr_reference, reference);
+	if (commit->object.flags & PARENT2)
+		ret = 1;
+	clear_commit_marks(commit, all_flags);
+	clear_commit_marks_many(nr_reference, reference, all_flags);
 	free_commit_list(bases);
 	return ret;
+}
+
+/*
+ * Is "commit" an ancestor of (i.e. reachable from) the "reference"?
+ */
+int in_merge_bases(struct commit *commit, struct commit *reference)
+{
+	return in_merge_bases_many(commit, 1, &reference);
 }
 
 struct commit_list *reduce_heads(struct commit_list *heads)
 {
 	struct commit_list *p;
 	struct commit_list *result = NULL, **tail = &result;
-	struct commit **other;
-	size_t num_head, num_other;
+	struct commit **array;
+	int num_head, i;
 
 	if (!heads)
 		return NULL;
 
-	/* Avoid unnecessary reallocations */
-	for (p = heads, num_head = 0; p; p = p->next)
-		num_head++;
-	other = xcalloc(sizeof(*other), num_head);
-
-	/* For each commit, see if it can be reached by others */
-	for (p = heads; p; p = p->next) {
-		struct commit_list *q, *base;
-
-		/* Do we already have this in the result? */
-		for (q = result; q; q = q->next)
-			if (p->item == q->item)
-				break;
-		if (q)
+	/* Uniquify */
+	for (p = heads; p; p = p->next)
+		p->item->object.flags &= ~STALE;
+	for (p = heads, num_head = 0; p; p = p->next) {
+		if (p->item->object.flags & STALE)
 			continue;
-
-		num_other = 0;
-		for (q = heads; q; q = q->next) {
-			if (p->item == q->item)
-				continue;
-			other[num_other++] = q->item;
-		}
-		if (num_other)
-			base = get_merge_bases_many(p->item, num_other, other, 1);
-		else
-			base = NULL;
-		/*
-		 * If p->item does not have anything common with other
-		 * commits, there won't be any merge base.  If it is
-		 * reachable from some of the others, p->item will be
-		 * the merge base.  If its history is connected with
-		 * others, but p->item is not reachable by others, we
-		 * will get something other than p->item back.
-		 */
-		if (!base || (base->item != p->item))
-			tail = &(commit_list_insert(p->item, tail)->next);
-		free_commit_list(base);
+		p->item->object.flags |= STALE;
+		num_head++;
 	}
-	free(other);
+	array = xcalloc(sizeof(*array), num_head);
+	for (p = heads, i = 0; p; p = p->next) {
+		if (p->item->object.flags & STALE) {
+			array[i++] = p->item;
+			p->item->object.flags &= ~STALE;
+		}
+	}
+	num_head = remove_redundant(array, num_head);
+	for (i = 0; i < num_head; i++)
+		tail = &commit_list_insert(array[i], tail)->next;
 	return result;
 }
 
@@ -970,6 +1167,76 @@ free_return:
 	free(buf);
 }
 
+static struct {
+	char result;
+	const char *check;
+} sigcheck_gpg_status[] = {
+	{ 'G', "\n[GNUPG:] GOODSIG " },
+	{ 'B', "\n[GNUPG:] BADSIG " },
+	{ 'U', "\n[GNUPG:] TRUST_NEVER" },
+	{ 'U', "\n[GNUPG:] TRUST_UNDEFINED" },
+};
+
+static void parse_gpg_output(struct signature_check *sigc)
+{
+	const char *buf = sigc->gpg_status;
+	int i;
+
+	/* Iterate over all search strings */
+	for (i = 0; i < ARRAY_SIZE(sigcheck_gpg_status); i++) {
+		const char *found, *next;
+
+		if (!prefixcmp(buf, sigcheck_gpg_status[i].check + 1)) {
+			/* At the very beginning of the buffer */
+			found = buf + strlen(sigcheck_gpg_status[i].check + 1);
+		} else {
+			found = strstr(buf, sigcheck_gpg_status[i].check);
+			if (!found)
+				continue;
+			found += strlen(sigcheck_gpg_status[i].check);
+		}
+		sigc->result = sigcheck_gpg_status[i].result;
+		/* The trust messages are not followed by key/signer information */
+		if (sigc->result != 'U') {
+			sigc->key = xmemdupz(found, 16);
+			found += 17;
+			next = strchrnul(found, '\n');
+			sigc->signer = xmemdupz(found, next - found);
+		}
+	}
+}
+
+void check_commit_signature(const struct commit* commit, struct signature_check *sigc)
+{
+	struct strbuf payload = STRBUF_INIT;
+	struct strbuf signature = STRBUF_INIT;
+	struct strbuf gpg_output = STRBUF_INIT;
+	struct strbuf gpg_status = STRBUF_INIT;
+	int status;
+
+	sigc->result = 'N';
+
+	if (parse_signed_commit(commit->object.sha1,
+				&payload, &signature) <= 0)
+		goto out;
+	status = verify_signed_buffer(payload.buf, payload.len,
+				      signature.buf, signature.len,
+				      &gpg_output, &gpg_status);
+	if (status && !gpg_output.len)
+		goto out;
+	sigc->gpg_output = strbuf_detach(&gpg_output, NULL);
+	sigc->gpg_status = strbuf_detach(&gpg_status, NULL);
+	parse_gpg_output(sigc);
+
+ out:
+	strbuf_release(&gpg_status);
+	strbuf_release(&gpg_output);
+	strbuf_release(&payload);
+	strbuf_release(&signature);
+}
+
+
+
 void append_merge_tag_headers(struct commit_list *parents,
 			      struct commit_extra_header ***tail)
 {
@@ -1027,8 +1294,9 @@ static int excluded_header_field(const char *field, size_t len, const char **exc
 	return 0;
 }
 
-struct commit_extra_header *read_commit_extra_header_lines(const char *buffer, size_t size,
-							   const char **exclude)
+static struct commit_extra_header *read_commit_extra_header_lines(
+	const char *buffer, size_t size,
+	const char **exclude)
 {
 	struct commit_extra_header *extra = NULL, **tail = &extra, *it = NULL;
 	const char *line, *next, *eof, *eob;
@@ -1095,8 +1363,118 @@ int commit_tree(const struct strbuf *msg, unsigned char *tree,
 	return result;
 }
 
+static int find_invalid_utf8(const char *buf, int len)
+{
+	int offset = 0;
+	static const unsigned int max_codepoint[] = {
+		0x7f, 0x7ff, 0xffff, 0x10ffff
+	};
+
+	while (len) {
+		unsigned char c = *buf++;
+		int bytes, bad_offset;
+		unsigned int codepoint;
+		unsigned int min_val, max_val;
+
+		len--;
+		offset++;
+
+		/* Simple US-ASCII? No worries. */
+		if (c < 0x80)
+			continue;
+
+		bad_offset = offset-1;
+
+		/*
+		 * Count how many more high bits set: that's how
+		 * many more bytes this sequence should have.
+		 */
+		bytes = 0;
+		while (c & 0x40) {
+			c <<= 1;
+			bytes++;
+		}
+
+		/*
+		 * Must be between 1 and 3 more bytes.  Longer sequences result in
+		 * codepoints beyond U+10FFFF, which are guaranteed never to exist.
+		 */
+		if (bytes < 1 || 3 < bytes)
+			return bad_offset;
+
+		/* Do we *have* that many bytes? */
+		if (len < bytes)
+			return bad_offset;
+
+		/*
+		 * Place the encoded bits at the bottom of the value and compute the
+		 * valid range.
+		 */
+		codepoint = (c & 0x7f) >> bytes;
+		min_val = max_codepoint[bytes-1] + 1;
+		max_val = max_codepoint[bytes];
+
+		offset += bytes;
+		len -= bytes;
+
+		/* And verify that they are good continuation bytes */
+		do {
+			codepoint <<= 6;
+			codepoint |= *buf & 0x3f;
+			if ((*buf++ & 0xc0) != 0x80)
+				return bad_offset;
+		} while (--bytes);
+
+		/* Reject codepoints that are out of range for the sequence length. */
+		if (codepoint < min_val || codepoint > max_val)
+			return bad_offset;
+		/* Surrogates are only for UTF-16 and cannot be encoded in UTF-8. */
+		if ((codepoint & 0x1ff800) == 0xd800)
+			return bad_offset;
+		/* U+xxFFFE and U+xxFFFF are guaranteed non-characters. */
+		if ((codepoint & 0xfffe) == 0xfffe)
+			return bad_offset;
+		/* So are anything in the range U+FDD0..U+FDEF. */
+		if (codepoint >= 0xfdd0 && codepoint <= 0xfdef)
+			return bad_offset;
+	}
+	return -1;
+}
+
+/*
+ * This verifies that the buffer is in proper utf8 format.
+ *
+ * If it isn't, it assumes any non-utf8 characters are Latin1,
+ * and does the conversion.
+ */
+static int verify_utf8(struct strbuf *buf)
+{
+	int ok = 1;
+	long pos = 0;
+
+	for (;;) {
+		int bad;
+		unsigned char c;
+		unsigned char replace[2];
+
+		bad = find_invalid_utf8(buf->buf + pos, buf->len - pos);
+		if (bad < 0)
+			return ok;
+		pos += bad;
+		ok = 0;
+		c = buf->buf[pos];
+		strbuf_remove(buf, pos, 1);
+
+		/* We know 'c' must be in the range 128-255 */
+		replace[0] = 0xc0 + (c >> 6);
+		replace[1] = 0x80 + (c & 0x3f);
+		strbuf_insert(buf, pos, replace, 2);
+		pos += 2;
+	}
+}
+
 static const char commit_utf8_warn[] =
-"Warning: commit message does not conform to UTF-8.\n"
+"Warning: commit message did not conform to UTF-8.\n"
 "You may want to amend it after fixing the message, or set the config\n"
 "variable i18n.commitencoding to the encoding your project uses.\n";
 
@@ -1137,9 +1515,9 @@ int commit_tree_extended(const struct strbuf *msg, unsigned char *tree,
 
 	/* Person/date information */
 	if (!author)
-		author = git_author_info(IDENT_ERROR_ON_NO_NAME);
+		author = git_author_info(IDENT_STRICT);
 	strbuf_addf(&buffer, "author %s\n", author);
-	strbuf_addf(&buffer, "committer %s\n", git_committer_info(IDENT_ERROR_ON_NO_NAME));
+	strbuf_addf(&buffer, "committer %s\n", git_committer_info(IDENT_STRICT));
 	if (!encoding_is_utf8)
 		strbuf_addf(&buffer, "encoding %s\n", git_commit_encoding);
 
@@ -1153,7 +1531,7 @@ int commit_tree_extended(const struct strbuf *msg, unsigned char *tree,
 	strbuf_addbuf(&buffer, msg);
 
 	/* And check the encoding */
-	if (encoding_is_utf8 && !is_utf8(buffer.buf))
+	if (encoding_is_utf8 && !verify_utf8(&buffer))
 		fprintf(stderr, commit_utf8_warn);
 
 	if (sign_commit && do_sign_commit(&buffer, sign_commit))
@@ -1181,4 +1559,41 @@ struct commit *get_merge_parent(const char *name)
 		commit->util = desc;
 	}
 	return commit;
+}
+
+/*
+ * Append a commit to the end of the commit_list.
+ *
+ * next starts by pointing to the variable that holds the head of an
+ * empty commit_list, and is updated to point to the "next" field of
+ * the last item on the list as new commits are appended.
+ *
+ * Usage example:
+ *
+ *     struct commit_list *list;
+ *     struct commit_list **next = &list;
+ *
+ *     next = commit_list_append(c1, next);
+ *     next = commit_list_append(c2, next);
+ *     assert(commit_list_count(list) == 2);
+ *     return list;
+ */
+struct commit_list **commit_list_append(struct commit *commit,
+					struct commit_list **next)
+{
+	struct commit_list *new = xmalloc(sizeof(struct commit_list));
+	new->item = commit;
+	*next = new;
+	new->next = NULL;
+	return &new->next;
+}
+
+void print_commit_list(struct commit_list *list,
+		       const char *format_cur,
+		       const char *format_last)
+{
+	for ( ; list; list = list->next) {
+		const char *format = list->next ? format_cur : format_last;
+		printf(format, sha1_to_hex(list->item->object.sha1));
+	}
 }

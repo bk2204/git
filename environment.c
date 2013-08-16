@@ -11,11 +11,9 @@
 #include "refs.h"
 #include "fmt-merge-msg.h"
 
-char git_default_email[MAX_GITNAME];
-char git_default_name[MAX_GITNAME];
-int user_ident_explicitly_given;
 int trust_executable_bit = 1;
 int trust_ctime = 1;
+int check_stat = 1;
 int has_symlinks = 1;
 int minimum_abbrev = 4, default_abbrev = 7;
 int ignore_case;
@@ -24,6 +22,7 @@ int prefer_symlink_refs;
 int is_bare_repository_cfg = -1; /* unspecified */
 int log_all_ref_updates = -1; /* unspecified */
 int warn_ambiguous_refs = 1;
+int warn_on_object_refname_ambiguity = 1;
 int repository_format_version;
 const char *git_commit_encoding;
 const char *git_log_output_encoding;
@@ -39,7 +38,6 @@ size_t packed_git_window_size = DEFAULT_PACKED_GIT_WINDOW_SIZE;
 size_t packed_git_limit = DEFAULT_PACKED_GIT_LIMIT;
 size_t delta_base_cache_limit = 16 * 1024 * 1024;
 unsigned long big_file_threshold = 512 * 1024 * 1024;
-const char *log_pack_access;
 const char *pager_program;
 int pager_use_color = 1;
 const char *editor_program;
@@ -61,8 +59,15 @@ char *notes_ref_name;
 int grafts_replace_parents = 1;
 int core_apply_sparse_checkout;
 int merge_log_config = -1;
+int precomposed_unicode = -1; /* see probe_utf8_pathname_composition() */
 struct startup_info *startup_info;
 unsigned long pack_size_limit_cfg;
+
+/*
+ * The character that begins a commented line in user-editable file
+ * that is subject to stripspace.
+ */
+char comment_line_char = '#';
 
 /* Parallel index stat data preload? */
 int core_preload_index = 0;
@@ -78,20 +83,20 @@ static const char *git_dir;
 static char *git_object_dir, *git_index_file, *git_graft_file;
 
 /*
- * Repository-local GIT_* environment variables
- * Remember to update local_repo_env_size in cache.h when
- * the size of the list changes
+ * Repository-local GIT_* environment variables; see cache.h for details.
  */
-const char * const local_repo_env[LOCAL_REPO_ENV_SIZE + 1] = {
+const char * const local_repo_env[] = {
 	ALTERNATE_DB_ENVIRONMENT,
 	CONFIG_ENVIRONMENT,
 	CONFIG_DATA_ENVIRONMENT,
 	DB_ENVIRONMENT,
 	GIT_DIR_ENVIRONMENT,
 	GIT_WORK_TREE_ENVIRONMENT,
+	GIT_IMPLICIT_WORK_TREE_ENVIRONMENT,
 	GRAFT_ENVIRONMENT,
 	INDEX_ENVIRONMENT,
 	NO_REPLACE_OBJECTS_ENVIRONMENT,
+	GIT_PREFIX_ENVIRONMENT,
 	NULL
 };
 

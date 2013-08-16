@@ -13,10 +13,96 @@
 #include "rerere.h"
 #include "merge-recursive.h"
 #include "refs.h"
+#include "argv-array.h"
 
 #define GIT_REFLOG_ACTION "GIT_REFLOG_ACTION"
 
-void remove_sequencer_state(void)
+const char sign_off_header[] = "Signed-off-by: ";
+static const char cherry_picked_prefix[] = "(cherry picked from commit ";
+
+static int is_rfc2822_line(const char *buf, int len)
+{
+	int i;
+
+	for (i = 0; i < len; i++) {
+		int ch = buf[i];
+		if (ch == ':')
+			return 1;
+		if (!isalnum(ch) && ch != '-')
+			break;
+	}
+
+	return 0;
+}
+
+static int is_cherry_picked_from_line(const char *buf, int len)
+{
+	/*
+	 * We only care that it looks roughly like (cherry picked from ...)
+	 */
+	return len > strlen(cherry_picked_prefix) + 1 &&
+		!prefixcmp(buf, cherry_picked_prefix) && buf[len - 1] == ')';
+}
+
+/*
+ * Returns 0 for non-conforming footer
+ * Returns 1 for conforming footer
+ * Returns 2 when sob exists within conforming footer
+ * Returns 3 when sob exists within conforming footer as last entry
+ */
+static int has_conforming_footer(struct strbuf *sb, struct strbuf *sob,
+	int ignore_footer)
+{
+	char prev;
+	int i, k;
+	int len = sb->len - ignore_footer;
+	const char *buf = sb->buf;
+	int found_sob = 0;
+
+	/* footer must end with newline */
+	if (!len || buf[len - 1] != '\n')
+		return 0;
+
+	prev = '\0';
+	for (i = len - 1; i > 0; i--) {
+		char ch = buf[i];
+		if (prev == '\n' && ch == '\n') /* paragraph break */
+			break;
+		prev = ch;
+	}
+
+	/* require at least one blank line */
+	if (prev != '\n' || buf[i] != '\n')
+		return 0;
+
+	/* advance to start of last paragraph */
+	while (i < len - 1 && buf[i] == '\n')
+		i++;
+
+	for (; i < len; i = k) {
+		int found_rfc2822;
+
+		for (k = i; k < len && buf[k] != '\n'; k++)
+			; /* do nothing */
+		k++;
+
+		found_rfc2822 = is_rfc2822_line(buf + i, k - i - 1);
+		if (found_rfc2822 && sob &&
+		    !strncmp(buf + i, sob->buf, sob->len))
+			found_sob = k;
+
+		if (!(found_rfc2822 ||
+		      is_cherry_picked_from_line(buf + i, k - i - 1)))
+			return 0;
+	}
+	if (found_sob == i)
+		return 3;
+	if (found_sob)
+		return 2;
+	return 1;
+}
+
+static void remove_sequencer_state(void)
 {
 	struct strbuf seq_dir = STRBUF_INIT;
 
@@ -57,7 +143,7 @@ static int get_message(struct commit *commit, struct commit_message *out)
 
 	out->reencoded_message = NULL;
 	out->message = commit->buffer;
-	if (strcmp(encoding, git_commit_encoding))
+	if (same_encoding(encoding, git_commit_encoding))
 		out->reencoded_message = reencode_string(commit->buffer,
 					git_commit_encoding, encoding);
 	if (out->reencoded_message)
@@ -130,7 +216,7 @@ static void print_advice(int show_hint, struct replay_opts *opts)
 	if (msg) {
 		fprintf(stderr, "%s\n", msg);
 		/*
-		 * A conflict has occured but the porcelain
+		 * A conflict has occurred but the porcelain
 		 * (typically rebase --interactive) wants to take care
 		 * of the commit itself so remove CHERRY_PICK_HEAD
 		 */
@@ -183,15 +269,21 @@ static int error_dirty_index(struct replay_opts *opts)
 	return -1;
 }
 
-static int fast_forward_to(const unsigned char *to, const unsigned char *from)
+static int fast_forward_to(const unsigned char *to, const unsigned char *from,
+			int unborn, struct replay_opts *opts)
 {
 	struct ref_lock *ref_lock;
+	struct strbuf sb = STRBUF_INIT;
+	int ret;
 
 	read_cache();
-	if (checkout_fast_forward(from, to))
+	if (checkout_fast_forward(from, to, 1))
 		exit(1); /* the callee should have complained already */
-	ref_lock = lock_any_ref_for_update("HEAD", from, 0);
-	return write_ref_sha1(ref_lock, to, "cherry-pick");
+	ref_lock = lock_any_ref_for_update("HEAD", unborn ? null_sha1 : from, 0);
+	strbuf_addf(&sb, "%s: fast-forward", action_name(opts));
+	ret = write_ref_sha1(ref_lock, to, sb.buf);
+	strbuf_release(&sb);
+	return ret;
 }
 
 static int do_recursive_merge(struct commit *base, struct commit *next,
@@ -232,11 +324,14 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 		die(_("%s: Unable to write new index file"), action_name(opts));
 	rollback_lock_file(&index_lock);
 
+	if (opts->signoff)
+		append_signoff(msgbuf, 0, 0);
+
 	if (!clean) {
 		int i;
 		strbuf_addstr(msgbuf, "\nConflicts:\n");
 		for (i = 0; i < active_nr;) {
-			struct cache_entry *ce = active_cache[i++];
+			const struct cache_entry *ce = active_cache[i++];
 			if (ce_stage(ce)) {
 				strbuf_addch(msgbuf, '\t');
 				strbuf_addstr(msgbuf, ce->name);
@@ -251,6 +346,39 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 	return !clean;
 }
 
+static int is_index_unchanged(void)
+{
+	unsigned char head_sha1[20];
+	struct commit *head_commit;
+
+	if (!resolve_ref_unsafe("HEAD", head_sha1, 1, NULL))
+		return error(_("Could not resolve HEAD commit\n"));
+
+	head_commit = lookup_commit(head_sha1);
+
+	/*
+	 * If head_commit is NULL, check_commit, called from
+	 * lookup_commit, would have indicated that head_commit is not
+	 * a commit object already.  parse_commit() will return failure
+	 * without further complaints in such a case.  Otherwise, if
+	 * the commit is invalid, parse_commit() will complain.  So
+	 * there is nothing for us to say here.  Just return failure.
+	 */
+	if (parse_commit(head_commit))
+		return -1;
+
+	if (!active_cache_tree)
+		active_cache_tree = cache_tree();
+
+	if (!cache_tree_fully_valid(active_cache_tree))
+		if (cache_tree_update(active_cache_tree,
+				      (const struct cache_entry * const *)active_cache,
+				      active_nr, 0))
+			return error(_("Unable to update cache tree\n"));
+
+	return !hashcmp(active_cache_tree->sha1, head_commit->tree->object.sha1);
+}
+
 /*
  * If we are cherry-pick, and if the merge did not result in
  * hand-editing, we will hit this commit and inherit the original
@@ -258,23 +386,90 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
  * If we are revert, or if our cherry-pick results in a hand merge,
  * we had better say that the current user is responsible for that.
  */
-static int run_git_commit(const char *defmsg, struct replay_opts *opts)
+static int run_git_commit(const char *defmsg, struct replay_opts *opts,
+			  int allow_empty)
 {
-	/* 6 is max possible length of our args array including NULL */
-	const char *args[6];
-	int i = 0;
+	struct argv_array array;
+	int rc;
 
-	args[i++] = "commit";
-	args[i++] = "-n";
+	argv_array_init(&array);
+	argv_array_push(&array, "commit");
+	argv_array_push(&array, "-n");
+
 	if (opts->signoff)
-		args[i++] = "-s";
+		argv_array_push(&array, "-s");
 	if (!opts->edit) {
-		args[i++] = "-F";
-		args[i++] = defmsg;
+		argv_array_push(&array, "-F");
+		argv_array_push(&array, defmsg);
 	}
-	args[i] = NULL;
 
-	return run_command_v_opt(args, RUN_GIT_CMD);
+	if (allow_empty)
+		argv_array_push(&array, "--allow-empty");
+
+	if (opts->allow_empty_message)
+		argv_array_push(&array, "--allow-empty-message");
+
+	rc = run_command_v_opt(array.argv, RUN_GIT_CMD);
+	argv_array_clear(&array);
+	return rc;
+}
+
+static int is_original_commit_empty(struct commit *commit)
+{
+	const unsigned char *ptree_sha1;
+
+	if (parse_commit(commit))
+		return error(_("Could not parse commit %s\n"),
+			     sha1_to_hex(commit->object.sha1));
+	if (commit->parents) {
+		struct commit *parent = commit->parents->item;
+		if (parse_commit(parent))
+			return error(_("Could not parse parent commit %s\n"),
+				sha1_to_hex(parent->object.sha1));
+		ptree_sha1 = parent->tree->object.sha1;
+	} else {
+		ptree_sha1 = EMPTY_TREE_SHA1_BIN; /* commit is root */
+	}
+
+	return !hashcmp(ptree_sha1, commit->tree->object.sha1);
+}
+
+/*
+ * Do we run "git commit" with "--allow-empty"?
+ */
+static int allow_empty(struct replay_opts *opts, struct commit *commit)
+{
+	int index_unchanged, empty_commit;
+
+	/*
+	 * Three cases:
+	 *
+	 * (1) we do not allow empty at all and error out.
+	 *
+	 * (2) we allow ones that were initially empty, but
+	 * forbid the ones that become empty;
+	 *
+	 * (3) we allow both.
+	 */
+	if (!opts->allow_empty)
+		return 0; /* let "git commit" barf as necessary */
+
+	index_unchanged = is_index_unchanged();
+	if (index_unchanged < 0)
+		return index_unchanged;
+	if (!index_unchanged)
+		return 0; /* we do not have to say --allow-empty */
+
+	if (opts->keep_redundant_commits)
+		return 1;
+
+	empty_commit = is_original_commit_empty(commit);
+	if (empty_commit < 0)
+		return empty_commit;
+	if (!empty_commit)
+		return 0;
+	else
+		return 1;
 }
 
 static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
@@ -285,7 +480,7 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 	struct commit_message msg = { NULL, NULL, NULL, NULL, NULL };
 	char *defmsg = NULL;
 	struct strbuf msgbuf = STRBUF_INIT;
-	int res;
+	int res, unborn = 0, allow;
 
 	if (opts->no_commit) {
 		/*
@@ -297,9 +492,10 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 		if (write_cache_as_tree(head, 0, NULL))
 			die (_("Your index file is unmerged."));
 	} else {
-		if (get_sha1("HEAD", head))
-			return error(_("You do not have a valid HEAD"));
-		if (index_differs_from("HEAD", 0))
+		unborn = get_sha1("HEAD", head);
+		if (unborn)
+			hashcpy(head, EMPTY_TREE_SHA1_BIN);
+		if (index_differs_from(unborn ? EMPTY_TREE_SHA1_HEX : "HEAD", 0))
 			return error_dirty_index(opts);
 	}
 	discard_cache();
@@ -330,8 +526,10 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 	else
 		parent = commit->parents->item;
 
-	if (opts->allow_ff && parent && !hashcmp(parent->object.sha1, head))
-		return fast_forward_to(commit->object.sha1, head);
+	if (opts->allow_ff &&
+	    ((parent && !hashcmp(parent->object.sha1, head)) ||
+	     (!parent && unborn)))
+		return fast_forward_to(commit->object.sha1, head, unborn, opts);
 
 	if (parent && parse_commit(parent) < 0)
 		/* TRANSLATORS: The first %s will be "revert" or
@@ -387,7 +585,9 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 		}
 
 		if (opts->record_origin) {
-			strbuf_addstr(&msgbuf, "(cherry picked from commit ");
+			if (!has_conforming_footer(&msgbuf, NULL, 0))
+				strbuf_addch(&msgbuf, '\n');
+			strbuf_addstr(&msgbuf, cherry_picked_prefix);
 			strbuf_addstr(&msgbuf, sha1_to_hex(commit->object.sha1));
 			strbuf_addstr(&msgbuf, ")\n");
 		}
@@ -430,11 +630,18 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 		      msg.subject);
 		print_advice(res == 1, opts);
 		rerere(opts->allow_rerere_auto);
-	} else {
-		if (!opts->no_commit)
-			res = run_git_commit(defmsg, opts);
+		goto leave;
 	}
 
+	allow = allow_empty(opts, commit);
+	if (allow < 0) {
+		res = allow;
+		goto leave;
+	}
+	if (!opts->no_commit)
+		res = run_git_commit(defmsg, opts, allow);
+
+leave:
 	free_message(&msg);
 	free(defmsg);
 
@@ -443,7 +650,11 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 
 static void prepare_revs(struct replay_opts *opts)
 {
-	if (opts->action != REPLAY_REVERT)
+	/*
+	 * picking (but not reverting) ranges (but not individual revisions)
+	 * should be done in reverse
+	 */
+	if (opts->action == REPLAY_PICK && !opts->revs->no_walk)
 		opts->revs->reverse ^= 1;
 
 	if (prepare_revision_walk(opts->revs))
@@ -466,33 +677,6 @@ static void read_and_refresh_cache(struct replay_opts *opts)
 			die(_("git %s: failed to refresh the index"), action_name(opts));
 	}
 	rollback_lock_file(&index_lock);
-}
-
-/*
- * Append a commit to the end of the commit_list.
- *
- * next starts by pointing to the variable that holds the head of an
- * empty commit_list, and is updated to point to the "next" field of
- * the last item on the list as new commits are appended.
- *
- * Usage example:
- *
- *     struct commit_list *list;
- *     struct commit_list **next = &list;
- *
- *     next = commit_list_append(c1, next);
- *     next = commit_list_append(c2, next);
- *     assert(commit_list_count(list) == 2);
- *     return list;
- */
-static struct commit_list **commit_list_append(struct commit *commit,
-					       struct commit_list **next)
-{
-	struct commit_list *new = xmalloc(sizeof(struct commit_list));
-	new->item = commit;
-	*next = new;
-	new->next = NULL;
-	return &new->next;
 }
 
 static int format_todo(struct strbuf *buf, struct commit_list *todo_list,
@@ -873,6 +1057,7 @@ int sequencer_pick_revisions(struct replay_opts *opts)
 {
 	struct commit_list *todo_list = NULL;
 	unsigned char sha1[20];
+	int i;
 
 	if (opts->subcommand == REPLAY_NONE)
 		assert(opts->revs);
@@ -892,6 +1077,23 @@ int sequencer_pick_revisions(struct replay_opts *opts)
 		return sequencer_rollback(opts);
 	if (opts->subcommand == REPLAY_CONTINUE)
 		return sequencer_continue(opts);
+
+	for (i = 0; i < opts->revs->pending.nr; i++) {
+		unsigned char sha1[20];
+		const char *name = opts->revs->pending.objects[i].name;
+
+		/* This happens when using --stdin. */
+		if (!strlen(name))
+			continue;
+
+		if (!get_sha1(name, sha1)) {
+			if (!lookup_commit_reference_gently(sha1, 1)) {
+				enum object_type type = sha1_object_info(sha1, NULL);
+				die(_("%s: can't cherry-pick a %s"), name, typename(type));
+			}
+		} else
+			die(_("%s: bad revision"), name);
+	}
 
 	/*
 	 * If we were called as "git cherry-pick <commit>", just
@@ -930,4 +1132,69 @@ int sequencer_pick_revisions(struct replay_opts *opts)
 	save_head(sha1_to_hex(sha1));
 	save_opts(opts);
 	return pick_commits(todo_list, opts);
+}
+
+void append_signoff(struct strbuf *msgbuf, int ignore_footer, unsigned flag)
+{
+	unsigned no_dup_sob = flag & APPEND_SIGNOFF_DEDUP;
+	struct strbuf sob = STRBUF_INIT;
+	int has_footer;
+
+	strbuf_addstr(&sob, sign_off_header);
+	strbuf_addstr(&sob, fmt_name(getenv("GIT_COMMITTER_NAME"),
+				getenv("GIT_COMMITTER_EMAIL")));
+	strbuf_addch(&sob, '\n');
+
+	/*
+	 * If the whole message buffer is equal to the sob, pretend that we
+	 * found a conforming footer with a matching sob
+	 */
+	if (msgbuf->len - ignore_footer == sob.len &&
+	    !strncmp(msgbuf->buf, sob.buf, sob.len))
+		has_footer = 3;
+	else
+		has_footer = has_conforming_footer(msgbuf, &sob, ignore_footer);
+
+	if (!has_footer) {
+		const char *append_newlines = NULL;
+		size_t len = msgbuf->len - ignore_footer;
+
+		if (!len) {
+			/*
+			 * The buffer is completely empty.  Leave foom for
+			 * the title and body to be filled in by the user.
+			 */
+			append_newlines = "\n\n";
+		} else if (msgbuf->buf[len - 1] != '\n') {
+			/*
+			 * Incomplete line.  Complete the line and add a
+			 * blank one so that there is an empty line between
+			 * the message body and the sob.
+			 */
+			append_newlines = "\n\n";
+		} else if (len == 1) {
+			/*
+			 * Buffer contains a single newline.  Add another
+			 * so that we leave room for the title and body.
+			 */
+			append_newlines = "\n";
+		} else if (msgbuf->buf[len - 2] != '\n') {
+			/*
+			 * Buffer ends with a single newline.  Add another
+			 * so that there is an empty line between the message
+			 * body and the sob.
+			 */
+			append_newlines = "\n";
+		} /* else, the buffer already ends with two newlines. */
+
+		if (append_newlines)
+			strbuf_splice(msgbuf, msgbuf->len - ignore_footer, 0,
+				append_newlines, strlen(append_newlines));
+	}
+
+	if (has_footer != 3 && (!no_dup_sob || has_footer != 2))
+		strbuf_splice(msgbuf, msgbuf->len - ignore_footer, 0,
+				sob.buf, sob.len);
+
+	strbuf_release(&sob);
 }

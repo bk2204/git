@@ -6,9 +6,10 @@
 #include "rerere.h"
 #include "xdiff/xdiff.h"
 #include "xdiff-interface.h"
+#include "pathspec.h"
 
 static const char * const rerere_usage[] = {
-	"git rerere [clear | forget path... | status | remaining | diff | gc]",
+	N_("git rerere [clear | forget path... | status | remaining | diff | gc]"),
 	NULL,
 };
 
@@ -53,7 +54,7 @@ int cmd_rerere(int argc, const char **argv, const char *prefix)
 
 	struct option options[] = {
 		OPT_SET_INT(0, "rerere-autoupdate", &autoupdate,
-			"register clean resolutions in index", 1),
+			N_("register clean resolutions in index"), 1),
 		OPT_END(),
 	};
 
@@ -68,11 +69,12 @@ int cmd_rerere(int argc, const char **argv, const char *prefix)
 		return rerere(flags);
 
 	if (!strcmp(argv[0], "forget")) {
-		const char **pathspec;
+		struct pathspec pathspec;
 		if (argc < 2)
 			warning("'git rerere forget' without paths is deprecated");
-		pathspec = get_pathspec(prefix, argv + 1);
-		return rerere_forget(pathspec);
+		parse_pathspec(&pathspec, 0, PATHSPEC_PREFER_CWD,
+			       prefix, argv + 1);
+		return rerere_forget(&pathspec);
 	}
 
 	fd = setup_rerere(&merge_rr, flags);

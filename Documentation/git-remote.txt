@@ -10,16 +10,16 @@ SYNOPSIS
 --------
 [verse]
 'git remote' [-v | --verbose]
-'git remote add' [-t <branch>] [-m <master>] [-f] [--tags|--no-tags] [--mirror=<fetch|push>] <name> <url>
+'git remote add' [-t <branch>] [-m <master>] [-f] [--[no-]tags] [--mirror=<fetch|push>] <name> <url>
 'git remote rename' <old> <new>
-'git remote rm' <name>
+'git remote remove' <name>
 'git remote set-head' <name> (-a | -d | <branch>)
 'git remote set-branches' [--add] <name> <branch>...
 'git remote set-url' [--push] <name> <newurl> [<oldurl>]
 'git remote set-url --add' [--push] <name> <newurl>
 'git remote set-url --delete' [--push] <name> <url>
-'git remote' [-v | --verbose] 'show' [-n] <name>
-'git remote prune' [-n | --dry-run] <name>
+'git remote' [-v | --verbose] 'show' [-n] <name>...
+'git remote prune' [-n | --dry-run] <name>...
 'git remote' [-v | --verbose] 'update' [-p | --prune] [(<group> | <remote>)...]
 
 DESCRIPTION
@@ -85,6 +85,7 @@ In case <old> and <new> are the same, and <old> is a file under
 `$GIT_DIR/remotes` or `$GIT_DIR/branches`, the remote is converted to
 the configuration file format.
 
+'remove'::
 'rm'::
 
 Remove the remote named <name>. All remote-tracking branches and
@@ -186,18 +187,25 @@ Examples
 $ git remote
 origin
 $ git branch -r
-origin/master
-$ git remote add linux-nfs git://linux-nfs.org/pub/linux/nfs-2.6.git
+  origin/HEAD -> origin/master
+  origin/master
+$ git remote add staging git://git.kernel.org/.../gregkh/staging.git
 $ git remote
-linux-nfs
 origin
-$ git fetch
-* refs/remotes/linux-nfs/master: storing branch 'master' ...
-  commit: bf81b46
+staging
+$ git fetch staging
+...
+From git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/staging
+ * [new branch]      master     -> staging/master
+ * [new branch]      staging-linus -> staging/staging-linus
+ * [new branch]      staging-next -> staging/staging-next
 $ git branch -r
-origin/master
-linux-nfs/master
-$ git checkout -b nfs linux-nfs/master
+  origin/HEAD -> origin/master
+  origin/master
+  staging/master
+  staging/staging-linus
+  staging/staging-next
+$ git checkout -b staging staging/master
 ...
 ------------
 

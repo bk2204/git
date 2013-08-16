@@ -99,7 +99,7 @@ int close_istream(struct git_istream *st)
 	return r;
 }
 
-ssize_t read_istream(struct git_istream *st, char *buf, size_t sz)
+ssize_t read_istream(struct git_istream *st, void *buf, size_t sz)
 {
 	return st->vtbl->read(st, buf, sz);
 }
@@ -111,17 +111,17 @@ static enum input_source istream_source(const unsigned char *sha1,
 	unsigned long size;
 	int status;
 
+	oi->typep = type;
 	oi->sizep = &size;
 	status = sha1_object_info_extended(sha1, oi);
 	if (status < 0)
 		return stream_error;
-	*type = status;
 
 	switch (oi->whence) {
 	case OI_LOOSE:
 		return loose;
 	case OI_PACKED:
-		if (!oi->u.packed.is_delta && big_file_threshold <= size)
+		if (!oi->u.packed.is_delta && big_file_threshold < size)
 			return pack_non_delta;
 		/* fallthru */
 	default:
@@ -135,7 +135,7 @@ struct git_istream *open_istream(const unsigned char *sha1,
 				 struct stream_filter *filter)
 {
 	struct git_istream *st;
-	struct object_info oi;
+	struct object_info oi = {NULL};
 	const unsigned char *real = lookup_replace_object(sha1);
 	enum input_source src = istream_source(real, type, &oi);
 
@@ -149,7 +149,7 @@ struct git_istream *open_istream(const unsigned char *sha1,
 			return NULL;
 		}
 	}
-	if (st && filter) {
+	if (filter) {
 		/* Add "&& !is_null_stream_filter(filter)" for performance */
 		struct git_istream *nst = attach_stream_filter(st, filter);
 		if (!nst)
@@ -237,7 +237,7 @@ static read_method_decl(filtered)
 		if (!fs->input_finished) {
 			fs->i_end = read_istream(fs->upstream, fs->ibuf, FILTER_BUFFER);
 			if (fs->i_end < 0)
-				break;
+				return -1;
 			if (fs->i_end)
 				continue;
 		}
@@ -309,7 +309,7 @@ static read_method_decl(loose)
 			st->z_state = z_done;
 			break;
 		}
-		if (status != Z_OK && status != Z_BUF_ERROR) {
+		if (status != Z_OK && (status != Z_BUF_ERROR || total_read < sz)) {
 			git_inflate_end(&st->z);
 			st->z_state = z_error;
 			return -1;
@@ -488,4 +488,61 @@ static open_method_decl(incore)
 	st->vtbl = &incore_vtbl;
 
 	return st->u.incore.buf ? 0 : -1;
+}
+
+
+/****************************************************************
+ * Users of streaming interface
+ ****************************************************************/
+
+int stream_blob_to_fd(int fd, unsigned const char *sha1, struct stream_filter *filter,
+		      int can_seek)
+{
+	struct git_istream *st;
+	enum object_type type;
+	unsigned long sz;
+	ssize_t kept = 0;
+	int result = -1;
+
+	st = open_istream(sha1, &type, &sz, filter);
+	if (!st)
+		return result;
+	if (type != OBJ_BLOB)
+		goto close_and_exit;
+	for (;;) {
+		char buf[1024 * 16];
+		ssize_t wrote, holeto;
+		ssize_t readlen = read_istream(st, buf, sizeof(buf));
+
+		if (readlen < 0)
+			goto close_and_exit;
+		if (!readlen)
+			break;
+		if (can_seek && sizeof(buf) == readlen) {
+			for (holeto = 0; holeto < readlen; holeto++)
+				if (buf[holeto])
+					break;
+			if (readlen == holeto) {
+				kept += holeto;
+				continue;
+			}
+		}
+
+		if (kept && lseek(fd, kept, SEEK_CUR) == (off_t) -1)
+			goto close_and_exit;
+		else
+			kept = 0;
+		wrote = write_in_full(fd, buf, readlen);
+
+		if (wrote != readlen)
+			goto close_and_exit;
+	}
+	if (kept && (lseek(fd, kept - 1, SEEK_CUR) == (off_t) -1 ||
+		     write(fd, "", 1) != 1))
+		goto close_and_exit;
+	result = 0;
+
+ close_and_exit:
+	close_istream(st);
+	return result;
 }

@@ -21,13 +21,15 @@
 #include "parse-options.h"
 #include "utf8.h"
 #include "userdiff.h"
+#include "line-range.h"
+#include "line-log.h"
 
-static char blame_usage[] = "git blame [options] [rev-opts] [rev] [--] file";
+static char blame_usage[] = N_("git blame [options] [rev-opts] [rev] [--] file");
 
 static const char *blame_opt_usage[] = {
 	blame_usage,
 	"",
-	"[rev-opts] are documented in git-rev-list(1)",
+	N_("[rev-opts] are documented in git-rev-list(1)"),
 	NULL
 };
 
@@ -42,6 +44,7 @@ static int blank_boundary;
 static int incremental;
 static int xdl_opts;
 static int abbrev = -1;
+static int no_whole_file_rename;
 
 static enum date_mode blame_date_mode = DATE_ISO8601;
 static size_t blame_date_width;
@@ -88,6 +91,20 @@ struct origin {
 	char path[FLEX_ARRAY];
 };
 
+static int diff_hunks(mmfile_t *file_a, mmfile_t *file_b, long ctxlen,
+		      xdl_emit_hunk_consume_func_t hunk_func, void *cb_data)
+{
+	xpparam_t xpp = {0};
+	xdemitconf_t xecfg = {0};
+	xdemitcb_t ecb = {NULL};
+
+	xpp.flags = xdl_opts;
+	xecfg.ctxlen = ctxlen;
+	xecfg.hunk_func = hunk_func;
+	ecb.priv = cb_data;
+	return xdi_diff(file_a, file_b, &xpp, &xecfg, &ecb);
+}
+
 /*
  * Prepare diff_filespec and convert it using diff textconv API
  * if the textconv driver exists.
@@ -96,6 +113,7 @@ struct origin {
 int textconv_object(const char *path,
 		    unsigned mode,
 		    const unsigned char *sha1,
+		    int sha1_valid,
 		    char **buf,
 		    unsigned long *buf_size)
 {
@@ -103,7 +121,7 @@ int textconv_object(const char *path,
 	struct userdiff_driver *textconv;
 
 	df = alloc_filespec(path);
-	fill_filespec(df, sha1, mode);
+	fill_filespec(df, sha1, sha1_valid, mode);
 	textconv = get_textconv(df);
 	if (!textconv) {
 		free_filespec(df);
@@ -128,7 +146,7 @@ static void fill_origin_blob(struct diff_options *opt,
 
 		num_read_blob++;
 		if (DIFF_OPT_TST(opt, ALLOW_TEXTCONV) &&
-		    textconv_object(o->path, o->mode, o->blob_sha1, &file->ptr, &file_size))
+		    textconv_object(o->path, o->mode, o->blob_sha1, 1, &file->ptr, &file_size))
 			;
 		else
 			file->ptr = read_sha1_file(o->blob_sha1, &type, &file_size);
@@ -391,9 +409,8 @@ static struct origin *find_origin(struct scoreboard *sb,
 	paths[0] = origin->path;
 	paths[1] = NULL;
 
-	diff_tree_setup_paths(paths, &diff_opts);
-	if (diff_setup_done(&diff_opts) < 0)
-		die("diff-setup");
+	parse_pathspec(&diff_opts.pathspec, PATHSPEC_ALL_MAGIC, 0, "", paths);
+	diff_setup_done(&diff_opts);
 
 	if (is_null_sha1(origin->commit->object.sha1))
 		do_diff_cache(parent->tree->object.sha1, &diff_opts);
@@ -442,7 +459,7 @@ static struct origin *find_origin(struct scoreboard *sb,
 		}
 	}
 	diff_flush(&diff_opts);
-	diff_tree_release_paths(&diff_opts);
+	free_pathspec(&diff_opts.pathspec);
 	if (porigin) {
 		/*
 		 * Create a freestanding copy that is not part of
@@ -470,17 +487,13 @@ static struct origin *find_rename(struct scoreboard *sb,
 	struct origin *porigin = NULL;
 	struct diff_options diff_opts;
 	int i;
-	const char *paths[2];
 
 	diff_setup(&diff_opts);
 	DIFF_OPT_SET(&diff_opts, RECURSIVE);
 	diff_opts.detect_rename = DIFF_DETECT_RENAME;
 	diff_opts.output_format = DIFF_FORMAT_NO_OUTPUT;
 	diff_opts.single_follow = origin->path;
-	paths[0] = NULL;
-	diff_tree_setup_paths(paths, &diff_opts);
-	if (diff_setup_done(&diff_opts) < 0)
-		die("diff-setup");
+	diff_setup_done(&diff_opts);
 
 	if (is_null_sha1(origin->commit->object.sha1))
 		do_diff_cache(parent->tree->object.sha1, &diff_opts);
@@ -501,7 +514,7 @@ static struct origin *find_rename(struct scoreboard *sb,
 		}
 	}
 	diff_flush(&diff_opts);
-	diff_tree_release_paths(&diff_opts);
+	free_pathspec(&diff_opts.pathspec);
 	return porigin;
 }
 
@@ -552,9 +565,14 @@ static void dup_entry(struct blame_entry *dst, struct blame_entry *src)
 	dst->score = 0;
 }
 
-static const char *nth_line(struct scoreboard *sb, int lno)
+static const char *nth_line(struct scoreboard *sb, long lno)
 {
 	return sb->final_buf + sb->lineno[lno];
+}
+
+static const char *nth_line_cb(void *data, long lno)
+{
+	return nth_line((struct scoreboard *)data, lno);
 }
 
 /*
@@ -759,12 +777,14 @@ struct blame_chunk_cb_data {
 	long tlno;
 };
 
-static void blame_chunk_cb(void *data, long same, long p_next, long t_next)
+static int blame_chunk_cb(long start_a, long count_a,
+			  long start_b, long count_b, void *data)
 {
 	struct blame_chunk_cb_data *d = data;
-	blame_chunk(d->sb, d->tlno, d->plno, same, d->target, d->parent);
-	d->plno = p_next;
-	d->tlno = t_next;
+	blame_chunk(d->sb, d->tlno, d->plno, start_b, d->target, d->parent);
+	d->plno = start_a + count_a;
+	d->tlno = start_b + count_b;
+	return 0;
 }
 
 /*
@@ -779,8 +799,7 @@ static int pass_blame_to_parent(struct scoreboard *sb,
 	int last_in_target;
 	mmfile_t file_p, file_o;
 	struct blame_chunk_cb_data d;
-	xpparam_t xpp;
-	xdemitconf_t xecfg;
+
 	memset(&d, 0, sizeof(d));
 	d.sb = sb; d.target = target; d.parent = parent;
 	last_in_target = find_last_in_target(sb, target);
@@ -791,11 +810,7 @@ static int pass_blame_to_parent(struct scoreboard *sb,
 	fill_origin_blob(&sb->revs->diffopt, target, &file_o);
 	num_get_patch++;
 
-	memset(&xpp, 0, sizeof(xpp));
-	xpp.flags = xdl_opts;
-	memset(&xecfg, 0, sizeof(xecfg));
-	xecfg.ctxlen = 0;
-	xdi_diff_hunks(&file_p, &file_o, blame_chunk_cb, &d, &xpp, &xecfg);
+	diff_hunks(&file_p, &file_o, 0, blame_chunk_cb, &d);
 	/* The rest (i.e. anything after tlno) are the same as the parent */
 	blame_chunk(sb, d.tlno, d.plno, last_in_target, target, parent);
 
@@ -899,12 +914,15 @@ struct handle_split_cb_data {
 	long tlno;
 };
 
-static void handle_split_cb(void *data, long same, long p_next, long t_next)
+static int handle_split_cb(long start_a, long count_a,
+			   long start_b, long count_b, void *data)
 {
 	struct handle_split_cb_data *d = data;
-	handle_split(d->sb, d->ent, d->tlno, d->plno, same, d->parent, d->split);
-	d->plno = p_next;
-	d->tlno = t_next;
+	handle_split(d->sb, d->ent, d->tlno, d->plno, start_b, d->parent,
+		     d->split);
+	d->plno = start_a + count_a;
+	d->tlno = start_b + count_b;
+	return 0;
 }
 
 /*
@@ -922,8 +940,7 @@ static void find_copy_in_blob(struct scoreboard *sb,
 	int cnt;
 	mmfile_t file_o;
 	struct handle_split_cb_data d;
-	xpparam_t xpp;
-	xdemitconf_t xecfg;
+
 	memset(&d, 0, sizeof(d));
 	d.sb = sb; d.ent = ent; d.parent = parent; d.split = split;
 	/*
@@ -943,12 +960,8 @@ static void find_copy_in_blob(struct scoreboard *sb,
 	 * file_o is a part of final image we are annotating.
 	 * file_p partially may match that image.
 	 */
-	memset(&xpp, 0, sizeof(xpp));
-	xpp.flags = xdl_opts;
-	memset(&xecfg, 0, sizeof(xecfg));
-	xecfg.ctxlen = 1;
 	memset(split, 0, sizeof(struct blame_entry [3]));
-	xdi_diff_hunks(file_p, &file_o, handle_split_cb, &d, &xpp, &xecfg);
+	diff_hunks(file_p, &file_o, 1, handle_split_cb, &d);
 	/* remainder, if any, all match the preimage */
 	handle_split(sb, ent, d.tlno, d.plno, ent->num_lines, parent, split);
 }
@@ -1049,7 +1062,6 @@ static int find_copy_in_parent(struct scoreboard *sb,
 			       int opt)
 {
 	struct diff_options diff_opts;
-	const char *paths[1];
 	int i, j;
 	int retval;
 	struct blame_list *blame_list;
@@ -1063,10 +1075,7 @@ static int find_copy_in_parent(struct scoreboard *sb,
 	DIFF_OPT_SET(&diff_opts, RECURSIVE);
 	diff_opts.output_format = DIFF_FORMAT_NO_OUTPUT;
 
-	paths[0] = NULL;
-	diff_tree_setup_paths(paths, &diff_opts);
-	if (diff_setup_done(&diff_opts) < 0)
-		die("diff-setup");
+	diff_setup_done(&diff_opts);
 
 	/* Try "find copies harder" on new path if requested;
 	 * we do not want to use diffcore_rename() actually to
@@ -1148,7 +1157,7 @@ static int find_copy_in_parent(struct scoreboard *sb,
 	}
 	reset_scanned_flag(sb);
 	diff_flush(&diff_opts);
-	diff_tree_release_paths(&diff_opts);
+	free_pathspec(&diff_opts.pathspec);
 	return retval;
 }
 
@@ -1219,7 +1228,7 @@ static void pass_blame(struct scoreboard *sb, struct origin *origin, int opt)
 	 * The first pass looks for unrenamed path to optimize for
 	 * common cases, then we look for renames in the second pass.
 	 */
-	for (pass = 0; pass < 2; pass++) {
+	for (pass = 0; pass < 2 - no_whole_file_rename; pass++) {
 		struct origin *(*find)(struct scoreboard *,
 				       struct commit *, struct origin *);
 		find = pass ? find_rename : find_origin;
@@ -1314,30 +1323,31 @@ static void pass_blame(struct scoreboard *sb, struct origin *origin, int opt)
  * Information on commits, used for output.
  */
 struct commit_info {
-	const char *author;
-	const char *author_mail;
+	struct strbuf author;
+	struct strbuf author_mail;
 	unsigned long author_time;
-	const char *author_tz;
+	struct strbuf author_tz;
 
 	/* filled only when asked for details */
-	const char *committer;
-	const char *committer_mail;
+	struct strbuf committer;
+	struct strbuf committer_mail;
 	unsigned long committer_time;
-	const char *committer_tz;
+	struct strbuf committer_tz;
 
-	const char *summary;
+	struct strbuf summary;
 };
 
 /*
  * Parse author/committer line in the commit object buffer
  */
 static void get_ac_line(const char *inbuf, const char *what,
-			int person_len, char *person,
-			int mail_len, char *mail,
-			unsigned long *time, const char **tz)
+	struct strbuf *name, struct strbuf *mail,
+	unsigned long *time, struct strbuf *tz)
 {
-	int len, tzlen, maillen;
-	char *tmp, *endp, *timepos, *mailpos;
+	struct ident_split ident;
+	size_t len, maillen, namelen;
+	char *tmp, *endp;
+	const char *namebuf, *mailbuf;
 
 	tmp = strstr(inbuf, what);
 	if (!tmp)
@@ -1348,69 +1358,66 @@ static void get_ac_line(const char *inbuf, const char *what,
 		len = strlen(tmp);
 	else
 		len = endp - tmp;
-	if (person_len <= len) {
+
+	if (split_ident_line(&ident, tmp, len)) {
 	error_out:
 		/* Ugh */
-		*tz = "(unknown)";
-		strcpy(person, *tz);
-		strcpy(mail, *tz);
+		tmp = "(unknown)";
+		strbuf_addstr(name, tmp);
+		strbuf_addstr(mail, tmp);
+		strbuf_addstr(tz, tmp);
 		*time = 0;
 		return;
 	}
-	memcpy(person, tmp, len);
 
-	tmp = person;
-	tmp += len;
-	*tmp = 0;
-	while (person < tmp && *tmp != ' ')
-		tmp--;
-	if (tmp <= person)
-		goto error_out;
-	*tz = tmp+1;
-	tzlen = (person+len)-(tmp+1);
+	namelen = ident.name_end - ident.name_begin;
+	namebuf = ident.name_begin;
 
-	*tmp = 0;
-	while (person < tmp && *tmp != ' ')
-		tmp--;
-	if (tmp <= person)
-		goto error_out;
-	*time = strtoul(tmp, NULL, 10);
-	timepos = tmp;
+	maillen = ident.mail_end - ident.mail_begin;
+	mailbuf = ident.mail_begin;
 
-	*tmp = 0;
-	while (person < tmp && !(*tmp == ' ' && tmp[1] == '<'))
-		tmp--;
-	if (tmp <= person)
-		return;
-	mailpos = tmp + 1;
-	*tmp = 0;
-	maillen = timepos - tmp;
-	memcpy(mail, mailpos, maillen);
+	if (ident.date_begin && ident.date_end)
+		*time = strtoul(ident.date_begin, NULL, 10);
+	else
+		*time = 0;
 
-	if (!mailmap.nr)
-		return;
-
-	/*
-	 * mailmap expansion may make the name longer.
-	 * make room by pushing stuff down.
-	 */
-	tmp = person + person_len - (tzlen + 1);
-	memmove(tmp, *tz, tzlen);
-	tmp[tzlen] = 0;
-	*tz = tmp;
+	if (ident.tz_begin && ident.tz_end)
+		strbuf_add(tz, ident.tz_begin, ident.tz_end - ident.tz_begin);
+	else
+		strbuf_addstr(tz, "(unknown)");
 
 	/*
 	 * Now, convert both name and e-mail using mailmap
 	 */
-	if (map_user(&mailmap, mail+1, mail_len-1, person, tmp-person-1)) {
-		/* Add a trailing '>' to email, since map_user returns plain emails
-		   Note: It already has '<', since we replace from mail+1 */
-		mailpos = memchr(mail, '\0', mail_len);
-		if (mailpos && mailpos-mail < mail_len - 1) {
-			*mailpos = '>';
-			*(mailpos+1) = '\0';
-		}
-	}
+	map_user(&mailmap, &mailbuf, &maillen,
+		 &namebuf, &namelen);
+
+	strbuf_addf(mail, "<%.*s>", (int)maillen, mailbuf);
+	strbuf_add(name, namebuf, namelen);
+}
+
+static void commit_info_init(struct commit_info *ci)
+{
+
+	strbuf_init(&ci->author, 0);
+	strbuf_init(&ci->author_mail, 0);
+	strbuf_init(&ci->author_tz, 0);
+	strbuf_init(&ci->committer, 0);
+	strbuf_init(&ci->committer_mail, 0);
+	strbuf_init(&ci->committer_tz, 0);
+	strbuf_init(&ci->summary, 0);
+}
+
+static void commit_info_destroy(struct commit_info *ci)
+{
+
+	strbuf_release(&ci->author);
+	strbuf_release(&ci->author_mail);
+	strbuf_release(&ci->author_tz);
+	strbuf_release(&ci->committer);
+	strbuf_release(&ci->committer_mail);
+	strbuf_release(&ci->committer_tz);
+	strbuf_release(&ci->summary);
 }
 
 static void get_commit_info(struct commit *commit,
@@ -1418,57 +1425,33 @@ static void get_commit_info(struct commit *commit,
 			    int detailed)
 {
 	int len;
-	const char *subject;
-	char *reencoded, *message;
-	static char author_name[1024];
-	static char author_mail[1024];
-	static char committer_name[1024];
-	static char committer_mail[1024];
-	static char summary_buf[1024];
+	const char *subject, *encoding;
+	char *message;
 
-	/*
-	 * We've operated without save_commit_buffer, so
-	 * we now need to populate them for output.
-	 */
-	if (!commit->buffer) {
-		enum object_type type;
-		unsigned long size;
-		commit->buffer =
-			read_sha1_file(commit->object.sha1, &type, &size);
-		if (!commit->buffer)
-			die("Cannot read commit %s",
-			    sha1_to_hex(commit->object.sha1));
-	}
-	reencoded = reencode_commit_message(commit, NULL);
-	message   = reencoded ? reencoded : commit->buffer;
-	ret->author = author_name;
-	ret->author_mail = author_mail;
+	commit_info_init(ret);
+
+	encoding = get_log_output_encoding();
+	message = logmsg_reencode(commit, NULL, encoding);
 	get_ac_line(message, "\nauthor ",
-		    sizeof(author_name), author_name,
-		    sizeof(author_mail), author_mail,
+		    &ret->author, &ret->author_mail,
 		    &ret->author_time, &ret->author_tz);
 
 	if (!detailed) {
-		free(reencoded);
+		logmsg_free(message, commit);
 		return;
 	}
 
-	ret->committer = committer_name;
-	ret->committer_mail = committer_mail;
 	get_ac_line(message, "\ncommitter ",
-		    sizeof(committer_name), committer_name,
-		    sizeof(committer_mail), committer_mail,
+		    &ret->committer, &ret->committer_mail,
 		    &ret->committer_time, &ret->committer_tz);
 
-	ret->summary = summary_buf;
 	len = find_commit_subject(message, &subject);
-	if (len && len < sizeof(summary_buf)) {
-		memcpy(summary_buf, subject, len);
-		summary_buf[len] = 0;
-	} else {
-		sprintf(summary_buf, "(%s)", sha1_to_hex(commit->object.sha1));
-	}
-	free(reencoded);
+	if (len)
+		strbuf_add(&ret->summary, subject, len);
+	else
+		strbuf_addf(&ret->summary, "(%s)", sha1_to_hex(commit->object.sha1));
+
+	logmsg_free(message, commit);
 }
 
 /*
@@ -1496,15 +1479,15 @@ static int emit_one_suspect_detail(struct origin *suspect, int repeat)
 
 	suspect->commit->object.flags |= METAINFO_SHOWN;
 	get_commit_info(suspect->commit, &ci, 1);
-	printf("author %s\n", ci.author);
-	printf("author-mail %s\n", ci.author_mail);
+	printf("author %s\n", ci.author.buf);
+	printf("author-mail %s\n", ci.author_mail.buf);
 	printf("author-time %lu\n", ci.author_time);
-	printf("author-tz %s\n", ci.author_tz);
-	printf("committer %s\n", ci.committer);
-	printf("committer-mail %s\n", ci.committer_mail);
+	printf("author-tz %s\n", ci.author_tz.buf);
+	printf("committer %s\n", ci.committer.buf);
+	printf("committer-mail %s\n", ci.committer_mail.buf);
 	printf("committer-time %lu\n", ci.committer_time);
-	printf("committer-tz %s\n", ci.committer_tz);
-	printf("summary %s\n", ci.summary);
+	printf("committer-tz %s\n", ci.committer_tz.buf);
+	printf("summary %s\n", ci.summary.buf);
 	if (suspect->commit->object.flags & UNINTERESTING)
 		printf("boundary\n");
 	if (suspect->previous) {
@@ -1512,6 +1495,9 @@ static int emit_one_suspect_detail(struct origin *suspect, int repeat)
 		printf("previous %s ", sha1_to_hex(prev->commit->object.sha1));
 		write_name_quoted(prev->path, stdout, '\n');
 	}
+
+	commit_info_destroy(&ci);
+
 	return 1;
 }
 
@@ -1698,11 +1684,11 @@ static void emit_other(struct scoreboard *sb, struct blame_entry *ent, int opt)
 		if (opt & OUTPUT_ANNOTATE_COMPAT) {
 			const char *name;
 			if (opt & OUTPUT_SHOW_EMAIL)
-				name = ci.author_mail;
+				name = ci.author_mail.buf;
 			else
-				name = ci.author;
+				name = ci.author.buf;
 			printf("\t(%10s\t%10s\t%d)", name,
-			       format_time(ci.author_time, ci.author_tz,
+			       format_time(ci.author_time, ci.author_tz.buf,
 					   show_raw_time),
 			       ent->lno + 1 + cnt);
 		} else {
@@ -1721,14 +1707,14 @@ static void emit_other(struct scoreboard *sb, struct blame_entry *ent, int opt)
 				const char *name;
 				int pad;
 				if (opt & OUTPUT_SHOW_EMAIL)
-					name = ci.author_mail;
+					name = ci.author_mail.buf;
 				else
-					name = ci.author;
+					name = ci.author.buf;
 				pad = longest_author - utf8_strwidth(name);
 				printf(" (%s%*s %10s",
 				       name, pad, "",
 				       format_time(ci.author_time,
-						   ci.author_tz,
+						   ci.author_tz.buf,
 						   show_raw_time));
 			}
 			printf(" %*d) ",
@@ -1743,6 +1729,8 @@ static void emit_other(struct scoreboard *sb, struct blame_entry *ent, int opt)
 
 	if (sb->final_buf_size && cp[-1] != '\n')
 		putchar('\n');
+
+	commit_info_destroy(&ci);
 }
 
 static void output(struct scoreboard *sb, int option)
@@ -1828,6 +1816,16 @@ static int read_ancestry(const char *graft_file)
 	return 0;
 }
 
+static int update_auto_abbrev(int auto_abbrev, struct origin *suspect)
+{
+	const char *uniq = find_unique_abbrev(suspect->commit->object.sha1,
+					      auto_abbrev);
+	int len = strlen(uniq);
+	if (auto_abbrev < len)
+		return len;
+	return auto_abbrev;
+}
+
 /*
  * How many columns do we need to show line numbers, authors,
  * and filenames?
@@ -1838,12 +1836,16 @@ static void find_alignment(struct scoreboard *sb, int *option)
 	int longest_dst_lines = 0;
 	unsigned largest_score = 0;
 	struct blame_entry *e;
+	int compute_auto_abbrev = (abbrev < 0);
+	int auto_abbrev = default_abbrev;
 
 	for (e = sb->ent; e; e = e->next) {
 		struct origin *suspect = e->suspect;
 		struct commit_info ci;
 		int num;
 
+		if (compute_auto_abbrev)
+			auto_abbrev = update_auto_abbrev(auto_abbrev, suspect);
 		if (strcmp(suspect->path, sb->path))
 			*option |= OUTPUT_SHOW_NAME;
 		num = strlen(suspect->path);
@@ -1853,9 +1855,9 @@ static void find_alignment(struct scoreboard *sb, int *option)
 			suspect->commit->object.flags |= METAINFO_SHOWN;
 			get_commit_info(suspect->commit, &ci, 1);
 			if (*option & OUTPUT_SHOW_EMAIL)
-				num = utf8_strwidth(ci.author_mail);
+				num = utf8_strwidth(ci.author_mail.buf);
 			else
-				num = utf8_strwidth(ci.author);
+				num = utf8_strwidth(ci.author.buf);
 			if (longest_author < num)
 				longest_author = num;
 		}
@@ -1867,10 +1869,16 @@ static void find_alignment(struct scoreboard *sb, int *option)
 			longest_dst_lines = num;
 		if (largest_score < ent_score(sb, e))
 			largest_score = ent_score(sb, e);
+
+		commit_info_destroy(&ci);
 	}
 	max_orig_digits = decimal_width(longest_src_lines);
 	max_digits = decimal_width(longest_dst_lines);
 	max_score_digits = decimal_width(largest_score);
+
+	if (compute_auto_abbrev)
+		/* one more abbrev length is needed for the boundary commit */
+		abbrev = auto_abbrev + 1;
 }
 
 /*
@@ -1924,103 +1932,6 @@ static const char *add_prefix(const char *prefix, const char *path)
 	return prefix_path(prefix, prefix ? strlen(prefix) : 0, path);
 }
 
-/*
- * Parsing of (comma separated) one item in the -L option
- */
-static const char *parse_loc(const char *spec,
-			     struct scoreboard *sb, long lno,
-			     long begin, long *ret)
-{
-	char *term;
-	const char *line;
-	long num;
-	int reg_error;
-	regex_t regexp;
-	regmatch_t match[1];
-
-	/* Allow "-L <something>,+20" to mean starting at <something>
-	 * for 20 lines, or "-L <something>,-5" for 5 lines ending at
-	 * <something>.
-	 */
-	if (1 < begin && (spec[0] == '+' || spec[0] == '-')) {
-		num = strtol(spec + 1, &term, 10);
-		if (term != spec + 1) {
-			if (spec[0] == '-')
-				num = 0 - num;
-			if (0 < num)
-				*ret = begin + num - 2;
-			else if (!num)
-				*ret = begin;
-			else
-				*ret = begin + num;
-			return term;
-		}
-		return spec;
-	}
-	num = strtol(spec, &term, 10);
-	if (term != spec) {
-		*ret = num;
-		return term;
-	}
-	if (spec[0] != '/')
-		return spec;
-
-	/* it could be a regexp of form /.../ */
-	for (term = (char *) spec + 1; *term && *term != '/'; term++) {
-		if (*term == '\\')
-			term++;
-	}
-	if (*term != '/')
-		return spec;
-
-	/* try [spec+1 .. term-1] as regexp */
-	*term = 0;
-	begin--; /* input is in human terms */
-	line = nth_line(sb, begin);
-
-	if (!(reg_error = regcomp(&regexp, spec + 1, REG_NEWLINE)) &&
-	    !(reg_error = regexec(&regexp, line, 1, match, 0))) {
-		const char *cp = line + match[0].rm_so;
-		const char *nline;
-
-		while (begin++ < lno) {
-			nline = nth_line(sb, begin);
-			if (line <= cp && cp < nline)
-				break;
-			line = nline;
-		}
-		*ret = begin;
-		regfree(&regexp);
-		*term++ = '/';
-		return term;
-	}
-	else {
-		char errbuf[1024];
-		regerror(reg_error, &regexp, errbuf, 1024);
-		die("-L parameter '%s': %s", spec + 1, errbuf);
-	}
-}
-
-/*
- * Parsing of -L option
- */
-static void prepare_blame_range(struct scoreboard *sb,
-				const char *bottomtop,
-				long lno,
-				long *bottom, long *top)
-{
-	const char *term;
-
-	term = parse_loc(bottomtop, sb, lno, 1, bottom);
-	if (*term == ',') {
-		term = parse_loc(term + 1, sb, lno, *bottom + 1, top);
-		if (*term)
-			usage(blame_usage);
-	}
-	if (*term)
-		usage(blame_usage);
-}
-
 static int git_blame_config(const char *var, const char *value, void *cb)
 {
 	if (!strcmp(var, "blame.showroot")) {
@@ -2044,6 +1955,55 @@ static int git_blame_config(const char *var, const char *value, void *cb)
 	return git_default_config(var, value, cb);
 }
 
+static void verify_working_tree_path(struct commit *work_tree, const char *path)
+{
+	struct commit_list *parents;
+
+	for (parents = work_tree->parents; parents; parents = parents->next) {
+		const unsigned char *commit_sha1 = parents->item->object.sha1;
+		unsigned char blob_sha1[20];
+		unsigned mode;
+
+		if (!get_tree_entry(commit_sha1, path, blob_sha1, &mode) &&
+		    sha1_object_info(blob_sha1, NULL) == OBJ_BLOB)
+			return;
+	}
+	die("no such path '%s' in HEAD", path);
+}
+
+static struct commit_list **append_parent(struct commit_list **tail, const unsigned char *sha1)
+{
+	struct commit *parent;
+
+	parent = lookup_commit_reference(sha1);
+	if (!parent)
+		die("no such commit %s", sha1_to_hex(sha1));
+	return &commit_list_insert(parent, tail)->next;
+}
+
+static void append_merge_parents(struct commit_list **tail)
+{
+	int merge_head;
+	const char *merge_head_file = git_path("MERGE_HEAD");
+	struct strbuf line = STRBUF_INIT;
+
+	merge_head = open(merge_head_file, O_RDONLY);
+	if (merge_head < 0) {
+		if (errno == ENOENT)
+			return;
+		die("cannot open '%s' for reading", merge_head_file);
+	}
+
+	while (!strbuf_getwholeline_fd(&line, merge_head, '\n')) {
+		unsigned char sha1[20];
+		if (line.len < 40 || get_sha1_hex(line.buf, sha1))
+			die("unknown line in '%s': %s", merge_head_file, line.buf);
+		tail = append_parent(tail, sha1);
+	}
+	close(merge_head);
+	strbuf_release(&line);
+}
+
 /*
  * Prepare a dummy commit that represents the work tree (or staged) item.
  * Note that annotating work tree item never works in the reverse.
@@ -2054,6 +2014,7 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 {
 	struct commit *commit;
 	struct origin *origin;
+	struct commit_list **parent_tail, *parent;
 	unsigned char head_sha1[20];
 	struct strbuf buf = STRBUF_INIT;
 	const char *ident;
@@ -2061,19 +2022,37 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	int size, len;
 	struct cache_entry *ce;
 	unsigned mode;
-
-	if (get_sha1("HEAD", head_sha1))
-		die("No such ref: HEAD");
+	struct strbuf msg = STRBUF_INIT;
 
 	time(&now);
 	commit = xcalloc(1, sizeof(*commit));
-	commit->parents = xcalloc(1, sizeof(*commit->parents));
-	commit->parents->item = lookup_commit_reference(head_sha1);
 	commit->object.parsed = 1;
 	commit->date = now;
 	commit->object.type = OBJ_COMMIT;
+	parent_tail = &commit->parents;
+
+	if (!resolve_ref_unsafe("HEAD", head_sha1, 1, NULL))
+		die("no such ref: HEAD");
+
+	parent_tail = append_parent(parent_tail, head_sha1);
+	append_merge_parents(parent_tail);
+	verify_working_tree_path(commit, path);
 
 	origin = make_origin(commit, path);
+
+	ident = fmt_ident("Not Committed Yet", "not.committed.yet", NULL, 0);
+	strbuf_addstr(&msg, "tree 0000000000000000000000000000000000000000\n");
+	for (parent = commit->parents; parent; parent = parent->next)
+		strbuf_addf(&msg, "parent %s\n",
+			    sha1_to_hex(parent->item->object.sha1));
+	strbuf_addf(&msg,
+		    "author %s\n"
+		    "committer %s\n\n"
+		    "Version of %s from %s\n",
+		    ident, ident, path,
+		    (!contents_from ? path :
+		     (!strcmp(contents_from, "-") ? "standard input" : contents_from)));
+	commit->buffer = strbuf_detach(&msg, NULL);
 
 	if (!contents_from || strcmp("-", contents_from)) {
 		struct stat st;
@@ -2096,7 +2075,7 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 		switch (st.st_mode & S_IFMT) {
 		case S_IFREG:
 			if (DIFF_OPT_TST(opt, ALLOW_TEXTCONV) &&
-			    textconv_object(read_from, mode, null_sha1, &buf_ptr, &buf_len))
+			    textconv_object(read_from, mode, null_sha1, 0, &buf_ptr, &buf_len))
 				strbuf_attach(&buf, buf_ptr, buf_len, buf_len + 1);
 			else if (strbuf_read_file(&buf, read_from, st.st_size) != st.st_size)
 				die_errno("cannot open or read '%s'", read_from);
@@ -2111,7 +2090,6 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	}
 	else {
 		/* Reading from stdin */
-		contents_from = "standard input";
 		mode = 0;
 		if (strbuf_read(&buf, 0, 0) < 0)
 			die_errno("failed to read from stdin");
@@ -2144,7 +2122,8 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	ce = xcalloc(1, size);
 	hashcpy(ce->sha1, origin->blob_sha1);
 	memcpy(ce->name, path, len);
-	ce->ce_flags = create_ce_flags(len, 0);
+	ce->ce_flags = create_ce_flags(0);
+	ce->ce_namelen = len;
 	ce->ce_mode = create_ce_mode(mode);
 	add_cache_entry(ce, ADD_CACHE_OK_TO_ADD|ADD_CACHE_OK_TO_REPLACE);
 
@@ -2155,16 +2134,6 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	 */
 	cache_tree_invalidate_path(active_cache_tree, path);
 
-	commit->buffer = xmalloc(400);
-	ident = fmt_ident("Not Committed Yet", "not.committed.yet", NULL, 0);
-	snprintf(commit->buffer, 400,
-		"tree 0000000000000000000000000000000000000000\n"
-		"parent %s\n"
-		"author %s\n"
-		"committer %s\n\n"
-		"Version of %s from %s\n",
-		sha1_to_hex(head_sha1),
-		ident, ident, path, contents_from ? contents_from : path);
 	return commit;
 }
 
@@ -2259,66 +2228,59 @@ static int blame_move_callback(const struct option *option, const char *arg, int
 	return 0;
 }
 
-static int blame_bottomtop_callback(const struct option *option, const char *arg, int unset)
-{
-	const char **bottomtop = option->value;
-	if (!arg)
-		return -1;
-	if (*bottomtop)
-		die("More than one '-L n,m' option given");
-	*bottomtop = arg;
-	return 0;
-}
-
 int cmd_blame(int argc, const char **argv, const char *prefix)
 {
 	struct rev_info revs;
 	const char *path;
 	struct scoreboard sb;
 	struct origin *o;
-	struct blame_entry *ent;
-	long dashdash_pos, bottom, top, lno;
+	struct blame_entry *ent = NULL;
+	long dashdash_pos, lno;
 	const char *final_commit_name = NULL;
 	enum object_type type;
 
-	static const char *bottomtop = NULL;
+	static struct string_list range_list;
 	static int output_option = 0, opt = 0;
 	static int show_stats = 0;
 	static const char *revs_file = NULL;
 	static const char *contents_from = NULL;
 	static const struct option options[] = {
-		OPT_BOOLEAN(0, "incremental", &incremental, "Show blame entries as we find them, incrementally"),
-		OPT_BOOLEAN('b', NULL, &blank_boundary, "Show blank SHA-1 for boundary commits (Default: off)"),
-		OPT_BOOLEAN(0, "root", &show_root, "Do not treat root commits as boundaries (Default: off)"),
-		OPT_BOOLEAN(0, "show-stats", &show_stats, "Show work cost statistics"),
-		OPT_BIT(0, "score-debug", &output_option, "Show output score for blame entries", OUTPUT_SHOW_SCORE),
-		OPT_BIT('f', "show-name", &output_option, "Show original filename (Default: auto)", OUTPUT_SHOW_NAME),
-		OPT_BIT('n', "show-number", &output_option, "Show original linenumber (Default: off)", OUTPUT_SHOW_NUMBER),
-		OPT_BIT('p', "porcelain", &output_option, "Show in a format designed for machine consumption", OUTPUT_PORCELAIN),
-		OPT_BIT(0, "line-porcelain", &output_option, "Show porcelain format with per-line commit information", OUTPUT_PORCELAIN|OUTPUT_LINE_PORCELAIN),
-		OPT_BIT('c', NULL, &output_option, "Use the same output mode as git-annotate (Default: off)", OUTPUT_ANNOTATE_COMPAT),
-		OPT_BIT('t', NULL, &output_option, "Show raw timestamp (Default: off)", OUTPUT_RAW_TIMESTAMP),
-		OPT_BIT('l', NULL, &output_option, "Show long commit SHA1 (Default: off)", OUTPUT_LONG_OBJECT_NAME),
-		OPT_BIT('s', NULL, &output_option, "Suppress author name and timestamp (Default: off)", OUTPUT_NO_AUTHOR),
-		OPT_BIT('e', "show-email", &output_option, "Show author email instead of name (Default: off)", OUTPUT_SHOW_EMAIL),
-		OPT_BIT('w', NULL, &xdl_opts, "Ignore whitespace differences", XDF_IGNORE_WHITESPACE),
-		OPT_BIT(0, "minimal", &xdl_opts, "Spend extra cycles to find better match", XDF_NEED_MINIMAL),
-		OPT_STRING('S', NULL, &revs_file, "file", "Use revisions from <file> instead of calling git-rev-list"),
-		OPT_STRING(0, "contents", &contents_from, "file", "Use <file>'s contents as the final image"),
-		{ OPTION_CALLBACK, 'C', NULL, &opt, "score", "Find line copies within and across files", PARSE_OPT_OPTARG, blame_copy_callback },
-		{ OPTION_CALLBACK, 'M', NULL, &opt, "score", "Find line movements within and across files", PARSE_OPT_OPTARG, blame_move_callback },
-		OPT_CALLBACK('L', NULL, &bottomtop, "n,m", "Process only line range n,m, counting from 1", blame_bottomtop_callback),
+		OPT_BOOL(0, "incremental", &incremental, N_("Show blame entries as we find them, incrementally")),
+		OPT_BOOL('b', NULL, &blank_boundary, N_("Show blank SHA-1 for boundary commits (Default: off)")),
+		OPT_BOOL(0, "root", &show_root, N_("Do not treat root commits as boundaries (Default: off)")),
+		OPT_BOOL(0, "show-stats", &show_stats, N_("Show work cost statistics")),
+		OPT_BIT(0, "score-debug", &output_option, N_("Show output score for blame entries"), OUTPUT_SHOW_SCORE),
+		OPT_BIT('f', "show-name", &output_option, N_("Show original filename (Default: auto)"), OUTPUT_SHOW_NAME),
+		OPT_BIT('n', "show-number", &output_option, N_("Show original linenumber (Default: off)"), OUTPUT_SHOW_NUMBER),
+		OPT_BIT('p', "porcelain", &output_option, N_("Show in a format designed for machine consumption"), OUTPUT_PORCELAIN),
+		OPT_BIT(0, "line-porcelain", &output_option, N_("Show porcelain format with per-line commit information"), OUTPUT_PORCELAIN|OUTPUT_LINE_PORCELAIN),
+		OPT_BIT('c', NULL, &output_option, N_("Use the same output mode as git-annotate (Default: off)"), OUTPUT_ANNOTATE_COMPAT),
+		OPT_BIT('t', NULL, &output_option, N_("Show raw timestamp (Default: off)"), OUTPUT_RAW_TIMESTAMP),
+		OPT_BIT('l', NULL, &output_option, N_("Show long commit SHA1 (Default: off)"), OUTPUT_LONG_OBJECT_NAME),
+		OPT_BIT('s', NULL, &output_option, N_("Suppress author name and timestamp (Default: off)"), OUTPUT_NO_AUTHOR),
+		OPT_BIT('e', "show-email", &output_option, N_("Show author email instead of name (Default: off)"), OUTPUT_SHOW_EMAIL),
+		OPT_BIT('w', NULL, &xdl_opts, N_("Ignore whitespace differences"), XDF_IGNORE_WHITESPACE),
+		OPT_BIT(0, "minimal", &xdl_opts, N_("Spend extra cycles to find better match"), XDF_NEED_MINIMAL),
+		OPT_STRING('S', NULL, &revs_file, N_("file"), N_("Use revisions from <file> instead of calling git-rev-list")),
+		OPT_STRING(0, "contents", &contents_from, N_("file"), N_("Use <file>'s contents as the final image")),
+		{ OPTION_CALLBACK, 'C', NULL, &opt, N_("score"), N_("Find line copies within and across files"), PARSE_OPT_OPTARG, blame_copy_callback },
+		{ OPTION_CALLBACK, 'M', NULL, &opt, N_("score"), N_("Find line movements within and across files"), PARSE_OPT_OPTARG, blame_move_callback },
+		OPT_STRING_LIST('L', NULL, &range_list, N_("n,m"), N_("Process only line range n,m, counting from 1")),
 		OPT__ABBREV(&abbrev),
 		OPT_END()
 	};
 
 	struct parse_opt_ctx_t ctx;
 	int cmd_is_annotate = !strcmp(argv[0], "annotate");
+	struct range_set ranges;
+	unsigned int range_i;
+	long anchor;
 
 	git_config(git_blame_config, NULL);
 	init_revisions(&revs, NULL);
 	revs.date_mode = blame_date_mode;
 	DIFF_OPT_SET(&revs.diffopt, ALLOW_TEXTCONV);
+	DIFF_OPT_SET(&revs.diffopt, FOLLOW_RENAMES);
 
 	save_commit_buffer = 0;
 	dashdash_pos = 0;
@@ -2342,12 +2304,13 @@ int cmd_blame(int argc, const char **argv, const char *prefix)
 		parse_revision_opt(&revs, &ctx, options, blame_opt_usage);
 	}
 parse_done:
+	no_whole_file_rename = !DIFF_OPT_TST(&revs.diffopt, FOLLOW_RENAMES);
+	DIFF_OPT_CLR(&revs.diffopt, FOLLOW_RENAMES);
 	argc = parse_options_end(&ctx);
 
-	if (abbrev == -1)
-		abbrev = default_abbrev;
-	/* one more abbrev length is needed for the boundary commit */
-	abbrev++;
+	if (0 < abbrev)
+		/* one more abbrev length is needed for the boundary commit */
+		abbrev++;
 
 	if (revs_file && read_ancestry(revs_file))
 		die_errno("reading graft file '%s' failed", revs_file);
@@ -2489,7 +2452,7 @@ parse_done:
 			die("no such path %s in %s", path, final_commit_name);
 
 		if (DIFF_OPT_TST(&sb.revs->diffopt, ALLOW_TEXTCONV) &&
-		    textconv_object(path, o->mode, o->blob_sha1, (char **) &sb.final_buf,
+		    textconv_object(path, o->mode, o->blob_sha1, 1, (char **) &sb.final_buf,
 				    &sb.final_buf_size))
 			;
 		else
@@ -2504,26 +2467,48 @@ parse_done:
 	num_read_blob++;
 	lno = prepare_lines(&sb);
 
-	bottom = top = 0;
-	if (bottomtop)
-		prepare_blame_range(&sb, bottomtop, lno, &bottom, &top);
-	if (bottom && top && top < bottom) {
-		long tmp;
-		tmp = top; top = bottom; bottom = tmp;
-	}
-	if (bottom < 1)
-		bottom = 1;
-	if (top < 1)
-		top = lno;
-	bottom--;
-	if (lno < top || lno < bottom)
-		die("file %s has only %lu lines", path, lno);
+	if (lno && !range_list.nr)
+		string_list_append(&range_list, xstrdup("1"));
 
-	ent = xcalloc(1, sizeof(*ent));
-	ent->lno = bottom;
-	ent->num_lines = top - bottom;
-	ent->suspect = o;
-	ent->s_lno = bottom;
+	anchor = 1;
+	range_set_init(&ranges, range_list.nr);
+	for (range_i = 0; range_i < range_list.nr; ++range_i) {
+		long bottom, top;
+		if (parse_range_arg(range_list.items[range_i].string,
+				    nth_line_cb, &sb, lno, anchor,
+				    &bottom, &top, sb.path))
+			usage(blame_usage);
+		if (lno < top || ((lno || bottom) && lno < bottom))
+			die("file %s has only %lu lines", path, lno);
+		if (bottom < 1)
+			bottom = 1;
+		if (top < 1)
+			top = lno;
+		bottom--;
+		range_set_append_unsafe(&ranges, bottom, top);
+		anchor = top + 1;
+	}
+	sort_and_merge_range_set(&ranges);
+
+	for (range_i = ranges.nr; range_i > 0; --range_i) {
+		const struct range *r = &ranges.ranges[range_i - 1];
+		long bottom = r->start;
+		long top = r->end;
+		struct blame_entry *next = ent;
+		ent = xcalloc(1, sizeof(*ent));
+		ent->lno = bottom;
+		ent->num_lines = top - bottom;
+		ent->suspect = o;
+		ent->s_lno = bottom;
+		ent->next = next;
+		if (next)
+			next->prev = ent;
+		origin_incref(o);
+	}
+	origin_decref(o);
+
+	range_set_release(&ranges);
+	string_list_clear(&range_list, 0);
 
 	sb.ent = ent;
 	sb.path = path;

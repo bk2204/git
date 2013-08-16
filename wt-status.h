@@ -44,7 +44,7 @@ struct wt_status {
 	int is_initial;
 	char *branch;
 	const char *reference;
-	const char **pathspec;
+	struct pathspec pathspec;
 	int verbose;
 	int amend;
 	enum commit_whence whence;
@@ -56,6 +56,7 @@ struct wt_status {
 	enum untracked_status_type show_untracked_files;
 	const char *ignore_submodule_arg;
 	char color_palette[WT_STATUS_MAXSLOT][COLOR_MAXLEN];
+	unsigned colopts;
 	int null_termination;
 	int show_branch;
 
@@ -68,20 +69,36 @@ struct wt_status {
 	struct string_list change;
 	struct string_list untracked;
 	struct string_list ignored;
+	uint32_t untracked_in_ms;
+};
+
+struct wt_status_state {
+	int merge_in_progress;
+	int am_in_progress;
+	int am_empty_patch;
+	int rebase_in_progress;
+	int rebase_interactive_in_progress;
+	int cherry_pick_in_progress;
+	int bisect_in_progress;
+	int revert_in_progress;
+	char *branch;
+	char *onto;
+	char *detached_from;
+	unsigned char detached_sha1[20];
+	unsigned char revert_head_sha1[20];
 };
 
 void wt_status_prepare(struct wt_status *s);
 void wt_status_print(struct wt_status *s);
 void wt_status_collect(struct wt_status *s);
+void wt_status_get_state(struct wt_status_state *state, int get_detached_from);
 
 void wt_shortstatus_print(struct wt_status *s);
 void wt_porcelain_print(struct wt_status *s);
 
-void status_printf_ln(struct wt_status *s, const char *color, const char *fmt, ...)
-	;
-void status_printf(struct wt_status *s, const char *color, const char *fmt, ...)
-	;
-void status_printf_more(struct wt_status *s, const char *color, const char *fmt, ...)
-	__attribute__((format(printf, 3, 4)));
+__attribute__((format (printf, 3, 4)))
+void status_printf_ln(struct wt_status *s, const char *color, const char *fmt, ...);
+__attribute__((format (printf, 3, 4)))
+void status_printf(struct wt_status *s, const char *color, const char *fmt, ...);
 
 #endif /* STATUS_H */

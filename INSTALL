@@ -101,7 +101,7 @@ Issues of note:
 	- "openssl" library is used by git-imap-send to use IMAP over SSL.
 	  If you don't need it, use NO_OPENSSL.
 
-	  By default, git uses OpenSSL for SHA1 but it will use it's own
+	  By default, git uses OpenSSL for SHA1 but it will use its own
 	  library (inspired by Mozilla's) with either NO_OPENSSL or
 	  BLK_SHA1.  Also included is a version optimized for PowerPC
 	  (PPC_SHA1).
@@ -131,6 +131,10 @@ Issues of note:
 	  use English. Under autoconf the configure script will do this
 	  automatically if it can't find libintl on the system.
 
+	- Python version 2.4 or later (but not 3.x, which is not
+	  supported by Perforce) is needed to use the git-p4 interface
+	  to Perforce.
+
  - Some platform specific issues are dealt with Makefile rules,
    but depending on your specific installation, you may not
    have all the libraries/tools needed, or you may have
@@ -158,11 +162,9 @@ Issues of note:
    makeinfo and docbook2X.  Version 0.8.3 is known to work.
 
    Building and installing the pdf file additionally requires
-   dblatex.  Version 0.2.7 with asciidoc >= 8.2.7 is known to work.
+   dblatex.  Version >= 0.2.7 is known to work.
 
-   The documentation is written for AsciiDoc 7, but by default
-   uses some compatibility wrappers to work on AsciiDoc 8. If you have
-   AsciiDoc 7, try "make ASCIIDOC7=YesPlease".
+   All formats require at least asciidoc 8.4.1.
 
    There are also "make quick-install-doc", "make quick-install-man"
    and "make quick-install-html" which install preformatted man pages

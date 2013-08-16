@@ -250,6 +250,84 @@ do
 		git -c grep.extendedRegexp=true grep "a+b*c" ab >actual &&
 		test_cmp expected actual
 	'
+
+	test_expect_success "grep $L with grep.patterntype=basic" '
+		echo "ab:a+bc" >expected &&
+		git -c grep.patterntype=basic grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success "grep $L with grep.patterntype=extended" '
+		echo "ab:abc" >expected &&
+		git -c grep.patterntype=extended grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success "grep $L with grep.patterntype=fixed" '
+		echo "ab:a+b*c" >expected &&
+		git -c grep.patterntype=fixed grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success LIBPCRE "grep $L with grep.patterntype=perl" '
+		echo "ab:a+b*c" >expected &&
+		git -c grep.patterntype=perl grep "a\x{2b}b\x{2a}c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success "grep $L with grep.patternType=default and grep.extendedRegexp=true" '
+		echo "ab:abc" >expected &&
+		git \
+			-c grep.patternType=default \
+			-c grep.extendedRegexp=true \
+			grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success "grep $L with grep.extendedRegexp=true and grep.patternType=default" '
+		echo "ab:abc" >expected &&
+		git \
+			-c grep.extendedRegexp=true \
+			-c grep.patternType=default \
+			grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success 'grep $L with grep.patternType=extended and grep.extendedRegexp=false' '
+		echo "ab:abc" >expected &&
+		git \
+			-c grep.patternType=extended \
+			-c grep.extendedRegexp=false \
+			grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success 'grep $L with grep.patternType=basic and grep.extendedRegexp=true' '
+		echo "ab:a+bc" >expected &&
+		git \
+			-c grep.patternType=basic \
+			-c grep.extendedRegexp=true \
+			grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success 'grep $L with grep.extendedRegexp=false and grep.patternType=extended' '
+		echo "ab:abc" >expected &&
+		git \
+			-c grep.extendedRegexp=false \
+			-c grep.patternType=extended \
+			grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
+
+	test_expect_success 'grep $L with grep.extendedRegexp=true and grep.patternType=basic' '
+		echo "ab:a+bc" >expected &&
+		git \
+			-c grep.extendedRegexp=true \
+			-c grep.patternType=basic \
+			grep "a+b*c" ab >actual &&
+		test_cmp expected actual
+	'
 done
 
 cat >expected <<EOF
@@ -399,17 +477,6 @@ test_expect_success 'grep -q, silently report matches' '
 	test_cmp empty actual
 '
 
-# Create 1024 file names that sort between "y" and "z" to make sure
-# the two files are handled by different calls to an external grep.
-# This depends on MAXARGS in builtin-grep.c being 1024 or less.
-c32="0 1 2 3 4 5 6 7 8 9 a b c d e f g h i j k l m n o p q r s t u v"
-test_expect_success 'grep -C1, hunk mark between files' '
-	for a in $c32; do for b in $c32; do : >y-$a$b; done; done &&
-	git add y-?? &&
-	git grep -C1 "^[yz]" >actual &&
-	test_cmp expected actual
-'
-
 test_expect_success 'grep -C1 hunk mark between files' '
 	git grep -C1 "^[yz]" >actual &&
 	test_cmp expected actual
@@ -435,31 +502,41 @@ test_expect_success 'log grep setup' '
 
 test_expect_success 'log grep (1)' '
 	git log --author=author --pretty=tformat:%s >actual &&
-	( echo third ; echo initial ) >expect &&
+	{
+		echo third && echo initial
+	} >expect &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log grep (2)' '
 	git log --author=" * " -F --pretty=tformat:%s >actual &&
-	( echo second ) >expect &&
+	{
+		echo second
+	} >expect &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log grep (3)' '
 	git log --author="^A U" --pretty=tformat:%s >actual &&
-	( echo third ; echo initial ) >expect &&
+	{
+		echo third && echo initial
+	} >expect &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log grep (4)' '
 	git log --author="frotz\.com>$" --pretty=tformat:%s >actual &&
-	( echo second ) >expect &&
+	{
+		echo second
+	} >expect &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log grep (5)' '
 	git log --author=Thor -F --pretty=tformat:%s >actual &&
-	( echo third ; echo initial ) >expect &&
+	{
+		echo third && echo initial
+	} >expect &&
 	test_cmp expect actual
 '
 
@@ -469,11 +546,49 @@ test_expect_success 'log grep (6)' '
 	test_cmp expect actual
 '
 
-test_expect_success 'log --grep --author implicitly uses all-match' '
-	# grep matches initial and second but not third
-	# author matches only initial and third
-	git log --author="A U Thor" --grep=s --grep=l --format=%s >actual &&
-	echo initial >expect &&
+test_expect_success 'log grep (7)' '
+	git log -g --grep-reflog="commit: third" --pretty=tformat:%s >actual &&
+	echo third >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log grep (8)' '
+	git log -g --grep-reflog="commit: third" --grep-reflog="commit: second" --pretty=tformat:%s >actual &&
+	{
+		echo third && echo second
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log grep (9)' '
+	git log -g --grep-reflog="commit: third" --author="Thor" --pretty=tformat:%s >actual &&
+	echo third >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log grep (9)' '
+	git log -g --grep-reflog="commit: third" --author="non-existant" --pretty=tformat:%s >actual &&
+	: >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --grep-reflog can only be used under -g' '
+	test_must_fail git log --grep-reflog="commit: third"
+'
+
+test_expect_success 'log with multiple --grep uses union' '
+	git log --grep=i --grep=r --format=%s >actual &&
+	{
+		echo fourth && echo third && echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --all-match with multiple --grep uses intersection' '
+	git log --all-match --grep=i --grep=r --format=%s >actual &&
+	{
+		echo third
+	} >expect &&
 	test_cmp expect actual
 '
 
@@ -485,7 +600,47 @@ test_expect_success 'log with multiple --author uses union' '
 	test_cmp expect actual
 '
 
-test_expect_success 'log with --grep and multiple --author uses all-match' '
+test_expect_success 'log --all-match with multiple --author still uses union' '
+	git log --all-match --author="Thor" --author="Aster" --format=%s >actual &&
+	{
+	    echo third && echo second && echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --grep --author uses intersection' '
+	# grep matches only third and fourth
+	# author matches only initial and third
+	git log --author="A U Thor" --grep=r --format=%s >actual &&
+	{
+		echo third
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --grep --grep --author takes union of greps and intersects with author' '
+	# grep matches initial and second but not third
+	# author matches only initial and third
+	git log --author="A U Thor" --grep=s --grep=l --format=%s >actual &&
+	{
+		echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log ---all-match -grep --author --author still takes union of authors and intersects with grep' '
+	# grep matches only initial and third
+	# author matches all but second
+	git log --all-match --author="Thor" --author="Night" --grep=i --format=%s >actual &&
+	{
+	    echo third && echo initial
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --grep --author --author takes union of authors and intersects with grep' '
+	# grep matches only initial and third
+	# author matches all but second
 	git log --author="Thor" --author="Night" --grep=i --format=%s >actual &&
 	{
 	    echo third && echo initial
@@ -493,9 +648,25 @@ test_expect_success 'log with --grep and multiple --author uses all-match' '
 	test_cmp expect actual
 '
 
-test_expect_success 'log with --grep and multiple --author uses all-match' '
-	git log --author="Thor" --author="Night" --grep=q --format=%s >actual &&
-	>expect &&
+test_expect_success 'log --all-match --grep --grep --author takes intersection' '
+	# grep matches only third
+	# author matches only initial and third
+	git log --all-match --author="A U Thor" --grep=i --grep=r --format=%s >actual &&
+	{
+		echo third
+	} >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --author does not search in timestamp' '
+	: >expect &&
+	git log --author="$GIT_AUTHOR_DATE" >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log --committer does not search in timestamp' '
+	: >expect &&
+	git log --committer="$GIT_COMMITTER_DATE" >actual &&
 	test_cmp expect actual
 '
 
@@ -772,17 +943,39 @@ test_expect_success 'grep -G invalidpattern properly dies ' '
 	test_must_fail git grep -G "a["
 '
 
+test_expect_success 'grep invalidpattern properly dies with grep.patternType=basic' '
+	test_must_fail git -c grep.patterntype=basic grep "a["
+'
+
 test_expect_success 'grep -E invalidpattern properly dies ' '
 	test_must_fail git grep -E "a["
+'
+
+test_expect_success 'grep invalidpattern properly dies with grep.patternType=extended' '
+	test_must_fail git -c grep.patterntype=extended grep "a["
 '
 
 test_expect_success LIBPCRE 'grep -P invalidpattern properly dies ' '
 	test_must_fail git grep -P "a["
 '
 
+test_expect_success LIBPCRE 'grep invalidpattern properly dies with grep.patternType=perl' '
+	test_must_fail git -c grep.patterntype=perl grep "a["
+'
+
 test_expect_success 'grep -G -E -F pattern' '
 	echo "ab:a+b*c" >expected &&
 	git grep -G -E -F "a+b*c" ab >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'grep pattern with grep.patternType=basic, =extended, =fixed' '
+	echo "ab:a+b*c" >expected &&
+	git \
+		-c grep.patterntype=basic \
+		-c grep.patterntype=extended \
+		-c grep.patterntype=fixed \
+		grep "a+b*c" ab >actual &&
 	test_cmp expected actual
 '
 
@@ -792,9 +985,29 @@ test_expect_success 'grep -E -F -G pattern' '
 	test_cmp expected actual
 '
 
+test_expect_success 'grep pattern with grep.patternType=extended, =fixed, =basic' '
+	echo "ab:a+bc" >expected &&
+	git \
+		-c grep.patterntype=extended \
+		-c grep.patterntype=fixed \
+		-c grep.patterntype=basic \
+		grep "a+b*c" ab >actual &&
+	test_cmp expected actual
+'
+
 test_expect_success 'grep -F -G -E pattern' '
 	echo "ab:abc" >expected &&
 	git grep -F -G -E "a+b*c" ab >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'grep pattern with grep.patternType=fixed, =basic, =extended' '
+	echo "ab:abc" >expected &&
+	git \
+		-c grep.patterntype=fixed \
+		-c grep.patterntype=basic \
+		-c grep.patterntype=extended \
+		grep "a+b*c" ab >actual &&
 	test_cmp expected actual
 '
 
@@ -804,9 +1017,70 @@ test_expect_success 'grep -G -F -P -E pattern' '
 	test_cmp empty actual
 '
 
+test_expect_success 'grep pattern with grep.patternType=fixed, =basic, =perl, =extended' '
+	>empty &&
+	test_must_fail git \
+		-c grep.patterntype=fixed \
+		-c grep.patterntype=basic \
+		-c grep.patterntype=perl \
+		-c grep.patterntype=extended \
+		grep "a\x{2b}b\x{2a}c" ab >actual &&
+	test_cmp empty actual
+'
+
 test_expect_success LIBPCRE 'grep -G -F -E -P pattern' '
 	echo "ab:a+b*c" >expected &&
 	git grep -G -F -E -P "a\x{2b}b\x{2a}c" ab >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success LIBPCRE 'grep pattern with grep.patternType=fixed, =basic, =extended, =perl' '
+	echo "ab:a+b*c" >expected &&
+	git \
+		-c grep.patterntype=fixed \
+		-c grep.patterntype=basic \
+		-c grep.patterntype=extended \
+		-c grep.patterntype=perl \
+		grep "a\x{2b}b\x{2a}c" ab >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success LIBPCRE 'grep -P pattern with grep.patternType=fixed' '
+	echo "ab:a+b*c" >expected &&
+	git \
+		-c grep.patterntype=fixed \
+		grep -P "a\x{2b}b\x{2a}c" ab >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'grep -F pattern with grep.patternType=basic' '
+	echo "ab:a+b*c" >expected &&
+	git \
+		-c grep.patterntype=basic \
+		grep -F "*c" ab >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'grep -G pattern with grep.patternType=fixed' '
+	{
+		echo "ab:a+b*c"
+		echo "ab:a+bc"
+	} >expected &&
+	git \
+		-c grep.patterntype=fixed \
+		grep -G "a+b" ab >actual &&
+	test_cmp expected actual
+'
+
+test_expect_success 'grep -E pattern with grep.patternType=fixed' '
+	{
+		echo "ab:a+b*c"
+		echo "ab:a+bc"
+		echo "ab:abc"
+	} >expected &&
+	git \
+		-c grep.patterntype=fixed \
+		grep -E "a+" ab >actual &&
 	test_cmp expected actual
 '
 

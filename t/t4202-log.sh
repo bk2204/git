@@ -72,9 +72,9 @@ cat > expect << EOF
   commit.
 EOF
 
-test_expect_success 'format %w(12,1,2)' '
+test_expect_success 'format %w(11,1,2)' '
 
-	git log -2 --format="%w(12,1,2)This is the %s commit." > actual &&
+	git log -2 --format="%w(11,1,2)This is the %s commit." > actual &&
 	test_cmp expect actual
 '
 
@@ -178,11 +178,21 @@ test_expect_success 'git log --no-walk <commits> sorts by commit time' '
 	test_cmp expect actual
 '
 
+test_expect_success 'git log --no-walk=sorted <commits> sorts by commit time' '
+	git log --no-walk=sorted --oneline 5d31159 804a787 394ef78 > actual &&
+	test_cmp expect actual
+'
+
 cat > expect << EOF
 5d31159 fourth
 804a787 sixth
 394ef78 fifth
 EOF
+test_expect_success 'git log --no-walk=unsorted <commits> leaves list of commits as given' '
+	git log --no-walk=unsorted --oneline 5d31159 804a787 394ef78 > actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'git show <commits> leaves list of commits as given' '
 	git show --oneline -s 5d31159 804a787 394ef78 > actual &&
 	test_cmp expect actual
@@ -217,6 +227,12 @@ test_expect_success 'log -i --grep' '
 test_expect_success 'log --grep -i' '
 	echo Second >expect &&
 	git log -1 --pretty="tformat:%s" --grep=sec -i >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'log -F -E --grep=<ere> uses ere' '
+	echo second >expect &&
+	git log -1 --pretty="tformat:%s" -F -E --grep=s.c.nd >actual &&
 	test_cmp expect actual
 '
 
@@ -262,6 +278,16 @@ test_expect_success 'log --graph with merge' '
 	git log --graph --date-order --pretty=tformat:%s |
 		sed "s/ *\$//" >actual &&
 	test_cmp expect actual
+'
+
+test_expect_success 'log --raw --graph -m with merge' '
+	git log --raw --graph --oneline -m master | head -n 500 >actual &&
+	grep "initial" actual
+'
+
+test_expect_success 'diff-tree --graph' '
+	git diff-tree --graph master^ | head -n 500 >actual &&
+	grep "one" actual
 '
 
 cat > expect <<\EOF
@@ -393,8 +419,6 @@ test_expect_success 'log --graph with merge' '
 '
 
 test_expect_success 'log.decorate configuration' '
-	test_might_fail git config --unset-all log.decorate &&
-
 	git log --oneline >expect.none &&
 	git log --oneline --decorate >expect.short &&
 	git log --oneline --decorate=full >expect.full &&
@@ -403,8 +427,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline >actual &&
 	test_cmp expect.short actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate true &&
+	test_config log.decorate true &&
 	git log --oneline >actual &&
 	test_cmp expect.short actual &&
 	git log --oneline --decorate=full >actual &&
@@ -412,8 +435,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate=no >actual &&
 	test_cmp expect.none actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate no &&
+	test_config log.decorate no &&
 	git log --oneline >actual &&
 	test_cmp expect.none actual &&
 	git log --oneline --decorate >actual &&
@@ -421,8 +443,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate=full >actual &&
 	test_cmp expect.full actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate 1 &&
+	test_config log.decorate 1 &&
 	git log --oneline >actual &&
 	test_cmp expect.short actual &&
 	git log --oneline --decorate=full >actual &&
@@ -430,8 +451,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate=no >actual &&
 	test_cmp expect.none actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate short &&
+	test_config log.decorate short &&
 	git log --oneline >actual &&
 	test_cmp expect.short actual &&
 	git log --oneline --no-decorate >actual &&
@@ -439,8 +459,7 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate=full >actual &&
 	test_cmp expect.full actual &&
 
-	git config --unset-all log.decorate &&
-	git config log.decorate full &&
+	test_config log.decorate full &&
 	git log --oneline >actual &&
 	test_cmp expect.full actual &&
 	git log --oneline --no-decorate >actual &&
@@ -448,16 +467,15 @@ test_expect_success 'log.decorate configuration' '
 	git log --oneline --decorate >actual &&
 	test_cmp expect.short actual
 
-	git config --unset-all log.decorate &&
+	test_unconfig log.decorate &&
 	git log --pretty=raw >expect.raw &&
-	git config log.decorate full &&
+	test_config log.decorate full &&
 	git log --pretty=raw >actual &&
 	test_cmp expect.raw actual
 
 '
 
 test_expect_success 'reflog is expected format' '
-	test_might_fail git config --remove-section log &&
 	git log -g --abbrev-commit --pretty=oneline >expect &&
 	git reflog >actual &&
 	test_cmp expect actual
@@ -470,10 +488,6 @@ test_expect_success 'whatchanged is expected format' '
 '
 
 test_expect_success 'log.abbrevCommit configuration' '
-	test_when_finished "git config --unset log.abbrevCommit" &&
-
-	test_might_fail git config --unset log.abbrevCommit &&
-
 	git log --abbrev-commit >expect.log.abbrev &&
 	git log --no-abbrev-commit >expect.log.full &&
 	git log --pretty=raw >expect.log.raw &&
@@ -482,7 +496,7 @@ test_expect_success 'log.abbrevCommit configuration' '
 	git whatchanged --abbrev-commit >expect.whatchanged.abbrev &&
 	git whatchanged --no-abbrev-commit >expect.whatchanged.full &&
 
-	git config log.abbrevCommit true &&
+	test_config log.abbrevCommit true &&
 
 	git log >actual &&
 	test_cmp expect.log.abbrev actual &&
@@ -516,6 +530,20 @@ test_expect_success 'show added path under "--follow -M"' '
 	)
 '
 
+test_expect_success 'git log -c --follow' '
+	test_create_repo follow-c &&
+	(
+		cd follow-c &&
+		test_commit initial file original &&
+		git rm file &&
+		test_commit rename file2 original &&
+		git reset --hard initial &&
+		test_commit modify file foo &&
+		git merge -m merge rename &&
+		git log -c --follow file2
+	)
+'
+
 cat >expect <<\EOF
 *   commit COMMIT_OBJECT_NAME
 |\  Merge: MERGE_PARENTS
@@ -528,7 +556,7 @@ cat >expect <<\EOF
 | |
 | |     reach
 | | ---
-| |  reach.t |    1 +
+| |  reach.t | 1 +
 | |  1 file changed, 1 insertion(+)
 | |
 | | diff --git a/reach.t b/reach.t
@@ -551,7 +579,7 @@ cat >expect <<\EOF
 | | |
 | | |       octopus-b
 | | |   ---
-| | |    octopus-b.t |    1 +
+| | |    octopus-b.t | 1 +
 | | |    1 file changed, 1 insertion(+)
 | | |
 | | |   diff --git a/octopus-b.t b/octopus-b.t
@@ -567,7 +595,7 @@ cat >expect <<\EOF
 | |
 | |       octopus-a
 | |   ---
-| |    octopus-a.t |    1 +
+| |    octopus-a.t | 1 +
 | |    1 file changed, 1 insertion(+)
 | |
 | |   diff --git a/octopus-a.t b/octopus-a.t
@@ -583,7 +611,7 @@ cat >expect <<\EOF
 |
 |       seventh
 |   ---
-|    seventh.t |    1 +
+|    seventh.t | 1 +
 |    1 file changed, 1 insertion(+)
 |
 |   diff --git a/seventh.t b/seventh.t
@@ -617,7 +645,7 @@ cat >expect <<\EOF
 | | | |
 | | | |     tangle-a
 | | | | ---
-| | | |  tangle-a |    1 +
+| | | |  tangle-a | 1 +
 | | | |  1 file changed, 1 insertion(+)
 | | | |
 | | | | diff --git a/tangle-a b/tangle-a
@@ -639,7 +667,7 @@ cat >expect <<\EOF
 | |/| |
 | | | |       side-2
 | | | |   ---
-| | | |    2 |    1 +
+| | | |    2 | 1 +
 | | | |    1 file changed, 1 insertion(+)
 | | | |
 | | | |   diff --git a/2 b/2
@@ -655,7 +683,7 @@ cat >expect <<\EOF
 | | | |
 | | | |     side-1
 | | | | ---
-| | | |  1 |    1 +
+| | | |  1 | 1 +
 | | | |  1 file changed, 1 insertion(+)
 | | | |
 | | | | diff --git a/1 b/1
@@ -671,7 +699,7 @@ cat >expect <<\EOF
 | | | |
 | | | |     Second
 | | | | ---
-| | | |  one |    1 +
+| | | |  one | 1 +
 | | | |  1 file changed, 1 insertion(+)
 | | | |
 | | | | diff --git a/one b/one
@@ -687,7 +715,7 @@ cat >expect <<\EOF
 |/| |
 | | |       sixth
 | | |   ---
-| | |    a/two |    1 -
+| | |    a/two | 1 -
 | | |    1 file changed, 1 deletion(-)
 | | |
 | | |   diff --git a/a/two b/a/two
@@ -703,7 +731,7 @@ cat >expect <<\EOF
 | | |
 | | |     fifth
 | | | ---
-| | |  a/two |    1 +
+| | |  a/two | 1 +
 | | |  1 file changed, 1 insertion(+)
 | | |
 | | | diff --git a/a/two b/a/two
@@ -719,7 +747,7 @@ cat >expect <<\EOF
 | |
 | |       fourth
 | |   ---
-| |    ein |    1 +
+| |    ein | 1 +
 | |    1 file changed, 1 insertion(+)
 | |
 | |   diff --git a/ein b/ein
@@ -735,8 +763,8 @@ cat >expect <<\EOF
 |
 |       third
 |   ---
-|    ichi |    1 +
-|    one  |    1 -
+|    ichi | 1 +
+|    one  | 1 -
 |    2 files changed, 1 insertion(+), 1 deletion(-)
 |
 |   diff --git a/ichi b/ichi
@@ -759,7 +787,7 @@ cat >expect <<\EOF
 |
 |     second
 | ---
-|  one |    2 +-
+|  one | 2 +-
 |  1 file changed, 1 insertion(+), 1 deletion(-)
 |
 | diff --git a/one b/one
@@ -775,7 +803,7 @@ cat >expect <<\EOF
 
       initial
   ---
-   one |    1 +
+   one | 1 +
    1 file changed, 1 insertion(+)
 
   diff --git a/one b/one
@@ -803,7 +831,14 @@ sanitize_output () {
 test_expect_success 'log --graph with diff and stats' '
 	git log --graph --pretty=short --stat -p >actual &&
 	sanitize_output >actual.sanitized <actual &&
-	test_cmp expect actual.sanitized
+	test_i18ncmp expect actual.sanitized
+'
+
+test_expect_success 'dotdot is a parent directory' '
+	mkdir -p a/b &&
+	( echo sixth && echo fifth ) >expect &&
+	( cd a/b && git log --format=%s .. ) >actual &&
+	test_cmp expect actual
 '
 
 test_done

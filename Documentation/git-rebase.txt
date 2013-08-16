@@ -8,11 +8,11 @@ git-rebase - Forward-port local commits to the updated upstream head
 SYNOPSIS
 --------
 [verse]
-'git rebase' [-i | --interactive] [options] [--onto <newbase>]
+'git rebase' [-i | --interactive] [options] [--exec <cmd>] [--onto <newbase>]
 	[<upstream>] [<branch>]
-'git rebase' [-i | --interactive] [options] --onto <newbase>
+'git rebase' [-i | --interactive] [options] [--exec <cmd>] [--onto <newbase>]
 	--root [<branch>]
-'git rebase' --continue | --skip | --abort
+'git rebase' --continue | --skip | --abort | --edit-todo
 
 DESCRIPTION
 -----------
@@ -179,7 +179,7 @@ parameter can be any valid commit-ish.
 In case of conflict, 'git rebase' will stop at the first problematic commit
 and leave conflict markers in the tree.  You can use 'git diff' to locate
 the markers (<<<<<<) and make edits to resolve the conflict.  For each
-file you edit, you need to tell git that the conflict has been resolved,
+file you edit, you need to tell Git that the conflict has been resolved,
 typically this would be done with
 
 
@@ -208,9 +208,12 @@ rebase.stat::
 rebase.autosquash::
 	If set to true enable '--autosquash' option by default.
 
+rebase.autostash::
+	If set to true enable '--autostash' option by default.
+
 OPTIONS
 -------
-<newbase>::
+--onto <newbase>::
 	Starting point at which to create the new commits. If the
 	--onto option is not specified, the starting point is
 	<upstream>.  May be any valid commit, and not just an
@@ -238,8 +241,15 @@ leave out at most one of A and B, in which case it defaults to HEAD.
 	will be reset to where it was when the rebase operation was
 	started.
 
+--keep-empty::
+	Keep the commits that do not change anything from its
+	parents in the result.
+
 --skip::
 	Restart the rebasing process by skipping the current patch.
+
+--edit-todo::
+	Edit the todo list during an interactive rebase.
 
 -m::
 --merge::
@@ -269,7 +279,7 @@ which makes little sense.
 	Pass the <strategy-option> through to the merge strategy.
 	This implies `--merge` and, if no strategy has been
 	specified, `-s recursive`.  Note the reversal of 'ours' and
-	'theirs' as noted in above for the `-m` option.
+	'theirs' as noted above for the `-m` option.
 
 -q::
 --quiet::
@@ -340,14 +350,36 @@ This uses the `--interactive` machinery internally, but combining it
 with the `--interactive` option explicitly is generally not a good
 idea unless you know what you are doing (see BUGS below).
 
+-x <cmd>::
+--exec <cmd>::
+	Append "exec <cmd>" after each line creating a commit in the
+	final history. <cmd> will be interpreted as one or more shell
+	commands.
++
+This option can only be used with the `--interactive` option
+(see INTERACTIVE MODE below).
++
+You may execute several commands by either using one instance of `--exec`
+with several commands:
++
+	git rebase -i --exec "cmd1 && cmd2 && ..."
++
+or by giving more than one `--exec`:
++
+	git rebase -i --exec "cmd1" --exec "cmd2" --exec ...
++
+If `--autosquash` is used, "exec" lines will not be appended for
+the intermediate commits, and will only appear at the end of each
+squash/fixup series.
 
 --root::
 	Rebase all commits reachable from <branch>, instead of
 	limiting them with an <upstream>.  This allows you to rebase
-	the root commit(s) on a branch.  Must be used with --onto, and
+	the root commit(s) on a branch.  When used with --onto, it
 	will skip changes already contained in <newbase> (instead of
-	<upstream>).  When used together with --preserve-merges, 'all'
-	root commits will be rewritten to have <newbase> as parent
+	<upstream>) whereas without --onto it will operate on every change.
+	When used together with both --onto and --preserve-merges,
+	'all' root commits will be rewritten to have <newbase> as parent
 	instead.
 
 --autosquash::
@@ -357,13 +389,22 @@ idea unless you know what you are doing (see BUGS below).
 	the same ..., automatically modify the todo list of rebase -i
 	so that the commit marked for squashing comes right after the
 	commit to be modified, and change the action of the moved
-	commit from `pick` to `squash` (or `fixup`).
+	commit from `pick` to `squash` (or `fixup`).  Ignores subsequent
+	"fixup! " or "squash! " after the first, in case you referred to an
+	earlier fixup/squash with `git commit --fixup/--squash`.
 +
 This option is only valid when the '--interactive' option is used.
 +
 If the '--autosquash' option is enabled by default using the
 configuration variable `rebase.autosquash`, this option can be
 used to override and disable this setting.
+
+--[no-]autostash::
+	Automatically create a temporary stash before the operation
+	begins, and apply it after the operation ends.  This means
+	that you can run rebase on a dirty worktree.  However, use
+	with care: the final stash application after a successful
+	rebase might result in non-trivial conflicts.
 
 --no-ff::
 	With --interactive, cherry-pick all rebased commits instead of
@@ -516,6 +557,24 @@ The "exec" command launches the command in a shell (the one specified
 in `$SHELL`, or the default shell if `$SHELL` is not set), so you can
 use shell features (like "cd", ">", ";" ...). The command is run from
 the root of the working tree.
+
+----------------------------------
+$ git rebase -i --exec "make test"
+----------------------------------
+
+This command lets you check that intermediate commits are compilable.
+The todo list becomes like that:
+
+--------------------
+pick 5928aea one
+exec make test
+pick 04d0fda two
+exec make test
+pick ba46169 three
+exec make test
+pick f4593f9 four
+exec make test
+--------------------
 
 SPLITTING COMMITS
 -----------------

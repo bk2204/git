@@ -3,8 +3,6 @@
 # Copyright (c) 2010 Junio C Hamano.
 #
 
-. git-sh-setup
-
 prec=4
 
 read_state () {
@@ -98,7 +96,6 @@ finish_rb_merge () {
 			"$GIT_DIR"/hooks/post-rewrite rebase <"$state_dir"/rewritten
 		fi
 	fi
-	rm -r "$state_dir"
 	say All done.
 }
 
@@ -112,7 +109,7 @@ continue)
 		continue_merge
 	done
 	finish_rb_merge
-	exit
+	return
 	;;
 skip)
 	read_state
@@ -124,7 +121,7 @@ skip)
 		continue_merge
 	done
 	finish_rb_merge
-	exit
+	return
 	;;
 esac
 

@@ -9,6 +9,7 @@
 #include "notes.h"
 #include "notes-merge.h"
 #include "strbuf.h"
+#include "notes-utils.h"
 
 struct notes_merge_pair {
 	unsigned char obj[20], base[20], local[20], remote[20];
@@ -126,8 +127,7 @@ static struct notes_merge_pair *diff_tree_remote(struct notes_merge_options *o,
 	diff_setup(&opt);
 	DIFF_OPT_SET(&opt, RECURSIVE);
 	opt.output_format = DIFF_FORMAT_NO_OUTPUT;
-	if (diff_setup_done(&opt) < 0)
-		die("diff_setup_done failed");
+	diff_setup_done(&opt);
 	diff_tree_sha1(base, remote, "", &opt);
 	diffcore_std(&opt);
 
@@ -170,7 +170,7 @@ static struct notes_merge_pair *diff_tree_remote(struct notes_merge_options *o,
 		       sha1_to_hex(mp->remote));
 	}
 	diff_flush(&opt);
-	diff_tree_release_paths(&opt);
+	free_pathspec(&opt.pathspec);
 
 	*num_changes = len;
 	return changes;
@@ -190,8 +190,7 @@ static void diff_tree_local(struct notes_merge_options *o,
 	diff_setup(&opt);
 	DIFF_OPT_SET(&opt, RECURSIVE);
 	opt.output_format = DIFF_FORMAT_NO_OUTPUT;
-	if (diff_setup_done(&opt) < 0)
-		die("diff_setup_done failed");
+	diff_setup_done(&opt);
 	diff_tree_sha1(base, local, "", &opt);
 	diffcore_std(&opt);
 
@@ -257,7 +256,7 @@ static void diff_tree_local(struct notes_merge_options *o,
 		       sha1_to_hex(mp->local));
 	}
 	diff_flush(&opt);
-	diff_tree_release_paths(&opt);
+	free_pathspec(&opt.pathspec);
 }
 
 static void check_notes_merge_worktree(struct notes_merge_options *o)
@@ -524,36 +523,12 @@ static int merge_from_diffs(struct notes_merge_options *o,
 	free(changes);
 
 	if (o->verbosity >= 4)
-		printf("Merge result: %i unmerged notes and a %s notes tree\n",
-			conflicts, t->dirty ? "dirty" : "clean");
+		printf(t->dirty ?
+		       "Merge result: %i unmerged notes and a dirty notes tree\n" :
+		       "Merge result: %i unmerged notes and a clean notes tree\n",
+		       conflicts);
 
 	return conflicts ? -1 : 1;
-}
-
-void create_notes_commit(struct notes_tree *t, struct commit_list *parents,
-			 const struct strbuf *msg, unsigned char *result_sha1)
-{
-	unsigned char tree_sha1[20];
-
-	assert(t->initialized);
-
-	if (write_notes_tree(t, tree_sha1))
-		die("Failed to write notes tree to database");
-
-	if (!parents) {
-		/* Deduce parent commit from t->ref */
-		unsigned char parent_sha1[20];
-		if (!read_ref(t->ref, parent_sha1)) {
-			struct commit *parent = lookup_commit(parent_sha1);
-			if (!parent || parse_commit(parent))
-				die("Failed to find/parse commit %s", t->ref);
-			commit_list_insert(parent, &parents);
-		}
-		/* else: t->ref points to nothing, assume root/orphan commit */
-	}
-
-	if (commit_tree(msg, tree_sha1, parents, result_sha1, NULL, NULL))
-		die("Failed to commit notes tree to database");
 }
 
 int notes_merge(struct notes_merge_options *o,

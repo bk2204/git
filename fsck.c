@@ -27,7 +27,7 @@ static int fsck_walk_tree(struct tree *tree, fsck_walk_func walk, void *data)
 		else if (S_ISREG(entry.mode) || S_ISLNK(entry.mode))
 			result = walk(&lookup_blob(entry.sha1)->object, OBJ_BLOB, data);
 		else {
-			result = error("in tree %s: entry %s has bad mode %.6o\n",
+			result = error("in tree %s: entry %s has bad mode %.6o",
 					sha1_to_hex(tree->object.sha1), entry.path, entry.mode);
 		}
 		if (result < 0)
@@ -139,8 +139,12 @@ static int verify_ordered(unsigned mode1, const char *name1, unsigned mode2, con
 static int fsck_tree(struct tree *item, int strict, fsck_error error_func)
 {
 	int retval;
+	int has_null_sha1 = 0;
 	int has_full_path = 0;
 	int has_empty_name = 0;
+	int has_dot = 0;
+	int has_dotdot = 0;
+	int has_dotgit = 0;
 	int has_zero_pad = 0;
 	int has_bad_modes = 0;
 	int has_dup_entries = 0;
@@ -157,13 +161,22 @@ static int fsck_tree(struct tree *item, int strict, fsck_error error_func)
 	while (desc.size) {
 		unsigned mode;
 		const char *name;
+		const unsigned char *sha1;
 
-		tree_entry_extract(&desc, &name, &mode);
+		sha1 = tree_entry_extract(&desc, &name, &mode);
 
+		if (is_null_sha1(sha1))
+			has_null_sha1 = 1;
 		if (strchr(name, '/'))
 			has_full_path = 1;
 		if (!*name)
 			has_empty_name = 1;
+		if (!strcmp(name, "."))
+			has_dot = 1;
+		if (!strcmp(name, ".."))
+			has_dotdot = 1;
+		if (!strcmp(name, ".git"))
+			has_dotgit = 1;
 		has_zero_pad |= *(char *)desc.buffer == '0';
 		update_tree_entry(&desc);
 
@@ -207,10 +220,18 @@ static int fsck_tree(struct tree *item, int strict, fsck_error error_func)
 	}
 
 	retval = 0;
+	if (has_null_sha1)
+		retval += error_func(&item->object, FSCK_WARN, "contains entries pointing to null sha1");
 	if (has_full_path)
 		retval += error_func(&item->object, FSCK_WARN, "contains full pathnames");
 	if (has_empty_name)
 		retval += error_func(&item->object, FSCK_WARN, "contains empty pathname");
+	if (has_dot)
+		retval += error_func(&item->object, FSCK_WARN, "contains '.'");
+	if (has_dotdot)
+		retval += error_func(&item->object, FSCK_WARN, "contains '..'");
+	if (has_dotgit)
+		retval += error_func(&item->object, FSCK_WARN, "contains '.git'");
 	if (has_zero_pad)
 		retval += error_func(&item->object, FSCK_WARN, "contains zero-padded file modes");
 	if (has_bad_modes)

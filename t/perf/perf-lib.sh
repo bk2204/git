@@ -42,6 +42,7 @@ else
 fi
 
 TEST_NO_CREATE_REPO=t
+TEST_NO_MALLOC_CHECK=t
 
 . ../test-lib.sh
 
@@ -149,6 +150,7 @@ exit $ret' >&3 2>&4
 
 
 test_perf () {
+	test_start_
 	test "$#" = 3 && { test_prereq=$1; shift; } || test_prereq=
 	test "$#" = 2 ||
 	error "bug in the test script: not 2 or 3 parameters to test-expect-success"
@@ -159,16 +161,16 @@ test_perf () {
 		echo "$test_count" >>"$perf_results_dir"/$base.subtests
 		echo "$1" >"$perf_results_dir"/$base.$test_count.descr
 		if test -z "$verbose"; then
-			echo -n "perf $test_count - $1:"
+			printf "%s" "perf $test_count - $1:"
 		else
 			echo "perf $test_count - $1:"
 		fi
-		for i in $(seq 1 $GIT_PERF_REPEAT_COUNT); do
+		for i in $(test_seq 1 $GIT_PERF_REPEAT_COUNT); do
 			say >&3 "running: $2"
 			if test_run_perf_ "$2"
 			then
 				if test -z "$verbose"; then
-					echo -n " $i"
+					printf " %s" "$i"
 				else
 					echo "* timing run $i/$GIT_PERF_REPEAT_COUNT:"
 				fi
@@ -186,7 +188,7 @@ test_perf () {
 		base="$perf_results_dir"/"$perf_results_prefix$(basename "$0" .sh)"."$test_count"
 		"$TEST_DIRECTORY"/perf/min_time.perl test_time.* >"$base".times
 	fi
-	echo >&3 ""
+	test_finish_
 }
 
 # We extend test_done to print timings at the end (./run disables this

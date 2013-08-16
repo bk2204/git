@@ -36,66 +36,54 @@ $content"
     '
 
     test_expect_success "Type of $type is correct" '
-        test $type = "$(git cat-file -t $sha1)"
+	echo $type >expect &&
+	git cat-file -t $sha1 >actual &&
+	test_cmp expect actual
     '
 
     test_expect_success "Size of $type is correct" '
-        test $size = "$(git cat-file -s $sha1)"
+	echo $size >expect &&
+	git cat-file -s $sha1 >actual &&
+	test_cmp expect actual
     '
 
     test -z "$content" ||
     test_expect_success "Content of $type is correct" '
-	expect="$(maybe_remove_timestamp "$content" $no_ts)"
-	actual="$(maybe_remove_timestamp "$(git cat-file $type $sha1)" $no_ts)"
-
-        if test "z$expect" = "z$actual"
-	then
-		: happy
-	else
-		echo "Oops: expected $expect"
-		echo "but got $actual"
-		false
-        fi
+	maybe_remove_timestamp "$content" $no_ts >expect &&
+	maybe_remove_timestamp "$(git cat-file $type $sha1)" $no_ts >actual &&
+	test_cmp expect actual
     '
 
     test_expect_success "Pretty content of $type is correct" '
-	expect="$(maybe_remove_timestamp "$pretty_content" $no_ts)"
-	actual="$(maybe_remove_timestamp "$(git cat-file -p $sha1)" $no_ts)"
-        if test "z$expect" = "z$actual"
-	then
-		: happy
-	else
-		echo "Oops: expected $expect"
-		echo "but got $actual"
-		false
-        fi
+	maybe_remove_timestamp "$pretty_content" $no_ts >expect &&
+	maybe_remove_timestamp "$(git cat-file -p $sha1)" $no_ts >actual &&
+	test_cmp expect actual
     '
 
     test -z "$content" ||
     test_expect_success "--batch output of $type is correct" '
-	expect="$(maybe_remove_timestamp "$batch_output" $no_ts)"
-	actual="$(maybe_remove_timestamp "$(echo $sha1 | git cat-file --batch)" $no_ts)"
-        if test "z$expect" = "z$actual"
-	then
-		: happy
-	else
-		echo "Oops: expected $expect"
-		echo "but got $actual"
-		false
-        fi
+	maybe_remove_timestamp "$batch_output" $no_ts >expect &&
+	maybe_remove_timestamp "$(echo $sha1 | git cat-file --batch)" $no_ts >actual &&
+	test_cmp expect actual
     '
 
     test_expect_success "--batch-check output of $type is correct" '
-	expect="$sha1 $type $size"
-	actual="$(echo_without_newline $sha1 | git cat-file --batch-check)"
-        if test "z$expect" = "z$actual"
-	then
-		: happy
-	else
-		echo "Oops: expected $expect"
-		echo "but got $actual"
-		false
-        fi
+	echo "$sha1 $type $size" >expect &&
+	echo_without_newline $sha1 | git cat-file --batch-check >actual &&
+	test_cmp expect actual
+    '
+
+    test_expect_success "custom --batch-check format" '
+	echo "$type $sha1" >expect &&
+	echo $sha1 | git cat-file --batch-check="%(objecttype) %(objectname)" >actual &&
+	test_cmp expect actual
+    '
+
+    test_expect_success '--batch-check with %(rest)' '
+	echo "$type this is some extra content" >expect &&
+	echo "$sha1    this is some extra content" |
+		git cat-file --batch-check="%(objecttype) %(rest)" >actual &&
+	test_cmp expect actual
     '
 }
 
@@ -110,15 +98,23 @@ test_expect_success "setup" '
 
 run_tests 'blob' $hello_sha1 $hello_size "$hello_content" "$hello_content"
 
+test_expect_success '--batch-check without %(rest) considers whole line' '
+	echo "$hello_sha1 blob $hello_size" >expect &&
+	git update-index --add --cacheinfo 100644 $hello_sha1 "white space" &&
+	test_when_finished "git update-index --remove \"white space\"" &&
+	echo ":white space" | git cat-file --batch-check >actual &&
+	test_cmp expect actual
+'
+
 tree_sha1=$(git write-tree)
 tree_size=33
 tree_pretty_content="100644 blob $hello_sha1	hello"
 
 run_tests 'tree' $tree_sha1 $tree_size "" "$tree_pretty_content"
 
-commit_message="Intial commit"
+commit_message="Initial commit"
 commit_sha1=$(echo_without_newline "$commit_message" | git commit-tree $tree_sha1)
-commit_size=176
+commit_size=177
 commit_content="tree $tree_sha1
 author $GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL> 0000000000 +0000
 committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> 0000000000 +0000
@@ -135,14 +131,11 @@ tag_description="This is a tag"
 tag_content="$tag_header_without_timestamp 0000000000 +0000
 
 $tag_description"
-tag_pretty_content="$tag_header_without_timestamp Thu Jan 1 00:00:00 1970 +0000
-
-$tag_description"
 
 tag_sha1=$(echo_without_newline "$tag_content" | git mktag)
 tag_size=$(strlen "$tag_content")
 
-run_tests 'tag' $tag_sha1 $tag_size "$tag_content" "$tag_pretty_content" 1
+run_tests 'tag' $tag_sha1 $tag_size "$tag_content" "$tag_content" 1
 
 test_expect_success \
     "Reach a blob from a tag pointing to it" \

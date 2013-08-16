@@ -19,9 +19,6 @@ static struct strbuf email = STRBUF_INIT;
 static enum  {
 	TE_DONTCARE, TE_QP, TE_BASE64
 } transfer_encoding;
-static enum  {
-	TYPE_TEXT, TYPE_OTHER
-} message_type;
 
 static struct strbuf charset = STRBUF_INIT;
 static int patch_lines;
@@ -160,10 +157,9 @@ static int slurp_attr(const char *line, const char *name, struct strbuf *attr)
 	const char *ends, *ap = strcasestr(line, name);
 	size_t sz;
 
-	if (!ap) {
-		strbuf_setlen(attr, 0);
+	strbuf_setlen(attr, 0);
+	if (!ap)
 		return 0;
-	}
 	ap += strlen(name);
 	if (*ap == '"') {
 		ap++;
@@ -185,8 +181,6 @@ static void handle_content_type(struct strbuf *line)
 	struct strbuf *boundary = xmalloc(sizeof(struct strbuf));
 	strbuf_init(boundary, line->len);
 
-	if (!strcasestr(line->buf, "text/"))
-		 message_type = TYPE_OTHER;
 	if (slurp_attr(line->buf, "boundary=", boundary)) {
 		strbuf_insert(boundary, 0, "--", 2);
 		if (++content_top > &content[MAX_BOUNDARIES]) {
@@ -232,7 +226,9 @@ static void cleanup_subject(struct strbuf *subject)
 		case 'r': case 'R':
 			if (subject->len <= at + 3)
 				break;
-			if (!memcmp(subject->buf + at + 1, "e:", 2)) {
+			if ((subject->buf[at + 1] == 'e' ||
+			     subject->buf[at + 1] == 'E') &&
+			    subject->buf[at + 2] == ':') {
 				strbuf_remove(subject, at, 3);
 				continue;
 			}
@@ -481,37 +477,14 @@ static struct strbuf *decode_b_segment(const struct strbuf *b_seg)
 	return out;
 }
 
-/*
- * When there is no known charset, guess.
- *
- * Right now we assume that if the target is UTF-8 (the default),
- * and it already looks like UTF-8 (which includes US-ASCII as its
- * subset, of course) then that is what it is and there is nothing
- * to do.
- *
- * Otherwise, we default to assuming it is Latin1 for historical
- * reasons.
- */
-static const char *guess_charset(const struct strbuf *line, const char *target_charset)
-{
-	if (is_encoding_utf8(target_charset)) {
-		if (is_utf8(line->buf))
-			return NULL;
-	}
-	return "ISO8859-1";
-}
-
 static void convert_to_utf8(struct strbuf *line, const char *charset)
 {
 	char *out;
 
-	if (!charset || !*charset) {
-		charset = guess_charset(line, metainfo_charset);
-		if (!charset)
-			return;
-	}
+	if (!charset || !*charset)
+		return;
 
-	if (!strcasecmp(metainfo_charset, charset))
+	if (same_encoding(metainfo_charset, charset))
 		return;
 	out = reencode_string(line->buf, metainfo_charset, charset);
 	if (!out)
@@ -680,7 +653,6 @@ again:
 	/* set some defaults */
 	transfer_encoding = TE_DONTCARE;
 	strbuf_reset(&charset);
-	message_type = TYPE_TEXT;
 
 	/* slurp in this section's info */
 	while (read_one_header_line(&line, fin))
@@ -894,11 +866,6 @@ static void handle_body(void)
 			strbuf_insert(&line, 0, prev.buf, prev.len);
 			strbuf_reset(&prev);
 
-			/* binary data most likely doesn't have newlines */
-			if (message_type != TYPE_TEXT) {
-				handle_filter(&line);
-				break;
-			}
 			/*
 			 * This is a decoded line that may contain
 			 * multiple new lines.  Pass only one chunk

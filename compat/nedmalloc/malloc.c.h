@@ -484,6 +484,10 @@ MAX_RELEASE_CHECK_RATE   default: 4095 unless not HAVE_MMAP
 #define DLMALLOC_VERSION 20804
 #endif /* DLMALLOC_VERSION */
 
+#if defined(linux)
+#define _GNU_SOURCE 1
+#endif
+
 #ifndef WIN32
 #ifdef _WIN32
 #define WIN32 1
@@ -1802,7 +1806,7 @@ struct win32_mlock_t
 
 static MLOCK_T malloc_global_mutex = { 0, 0, 0};
 
-static FORCEINLINE long win32_getcurrentthreadid() {
+static FORCEINLINE long win32_getcurrentthreadid(void) {
 #ifdef _MSC_VER
 #if defined(_M_IX86)
   long *threadstruct=(long *)__readfsdword(0x18);
@@ -3598,8 +3602,8 @@ static void internal_malloc_stats(mstate m) {
      and choose its bk node as its replacement.
   2. If x was the last node of its size, but not a leaf node, it must
      be replaced with a leaf node (not merely one with an open left or
-     right), to make sure that lefts and rights of descendents
-     correspond properly to bit masks.  We use the rightmost descendent
+     right), to make sure that lefts and rights of descendants
+     correspond properly to bit masks.  We use the rightmost descendant
      of x.  We could use any other leaf, but this is easy to locate and
      tends to counteract removal of leftmosts elsewhere, and so keeps
      paths shorter than minimally guaranteed.  This doesn't loop much
@@ -4778,7 +4782,7 @@ void* dlmalloc(size_t bytes) {
 
 void dlfree(void* mem) {
   /*
-     Consolidate freed chunks with preceeding or succeeding bordering
+     Consolidate freed chunks with preceding or succeeding bordering
      free chunks, if they exist, and then place in a bin.  Intermixed
      with special cases for top, dv, mmapped chunks, and usage errors.
   */
@@ -5680,10 +5684,10 @@ History:
 	Wolfram Gloger (Gloger@lrz.uni-muenchen.de).
       * Use last_remainder in more cases.
       * Pack bins using idea from  colin@nyx10.cs.du.edu
-      * Use ordered bins instead of best-fit threshhold
+      * Use ordered bins instead of best-fit threshold
       * Eliminate block-local decls to simplify tracing and debugging.
       * Support another case of realloc via move into top
-      * Fix error occuring when initial sbrk_base not word-aligned.
+      * Fix error occurring when initial sbrk_base not word-aligned.
       * Rely on page size for units instead of SBRK_UNIT to
 	avoid surprises about sbrk alignment conventions.
       * Add mallinfo, mallopt. Thanks to Raymond Nijssen

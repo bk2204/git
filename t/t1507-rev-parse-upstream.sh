@@ -15,9 +15,17 @@ test_expect_success 'setup' '
 	test_commit 3 &&
 	(cd clone &&
 	 test_commit 4 &&
-	 git branch --track my-side origin/side)
-
+	 git branch --track my-side origin/side &&
+	 git branch --track local-master master &&
+	 git remote add -t master master-only .. &&
+	 git fetch master-only &&
+	 git branch bad-upstream &&
+	 git config branch.bad-upstream.remote master-only &&
+	 git config branch.bad-upstream.merge refs/heads/side
+	)
 '
+
+sq="'"
 
 full_name () {
 	(cd clone &&
@@ -27,6 +35,11 @@ full_name () {
 commit_subject () {
 	(cd clone &&
 	 git show -s --pretty=format:%s "$@")
+}
+
+error_message () {
+	(cd clone &&
+	 test_must_fail git rev-parse --verify "$@")
 }
 
 test_expect_success '@{upstream} resolves to correct full name' '
@@ -39,6 +52,10 @@ test_expect_success '@{u} resolves to correct full name' '
 
 test_expect_success 'my-side@{upstream} resolves to correct full name' '
 	test refs/remotes/origin/side = "$(full_name my-side@{u})"
+'
+
+test_expect_success 'refs/heads/my-side@{upstream} does not resolve to my-side{upstream}' '
+	test_must_fail full_name refs/heads/my-side@{upstream}
 '
 
 test_expect_success 'my-side@{u} resolves to correct commit' '
@@ -78,7 +95,6 @@ test_expect_success 'checkout -b new my-side@{u} forks from the same' '
 
 test_expect_success 'merge my-side@{u} records the correct name' '
 (
-	sq="'\''" &&
 	cd clone || exit
 	git checkout master || exit
 	git branch -D new ;# can fail but is ok
@@ -105,6 +121,64 @@ test_expect_success 'checkout other@{u}' '
 	git symbolic-ref HEAD >actual &&
 	echo refs/heads/master >expect &&
 	test_cmp expect actual
+'
+
+test_expect_success 'branch@{u} works when tracking a local branch' '
+	test refs/heads/master = "$(full_name local-master@{u})"
+'
+
+test_expect_success 'branch@{u} error message when no upstream' '
+	cat >expect <<-EOF &&
+	fatal: No upstream configured for branch ${sq}non-tracking${sq}
+	EOF
+	error_message non-tracking@{u} 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success '@{u} error message when no upstream' '
+	cat >expect <<-EOF &&
+	fatal: No upstream configured for branch ${sq}master${sq}
+	EOF
+	test_must_fail git rev-parse --verify @{u} 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'branch@{u} error message with misspelt branch' '
+	cat >expect <<-EOF &&
+	fatal: No such branch: ${sq}no-such-branch${sq}
+	EOF
+	error_message no-such-branch@{u} 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success '@{u} error message when not on a branch' '
+	cat >expect <<-EOF &&
+	fatal: HEAD does not point to a branch
+	EOF
+	git checkout HEAD^0 &&
+	test_must_fail git rev-parse --verify @{u} 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'branch@{u} error message if upstream branch not fetched' '
+	cat >expect <<-EOF &&
+	fatal: Upstream branch ${sq}refs/heads/side${sq} not stored as a remote-tracking branch
+	EOF
+	error_message bad-upstream@{u} 2>actual &&
+	test_i18ncmp expect actual
+'
+
+test_expect_success 'pull works when tracking a local branch' '
+(
+	cd clone &&
+	git checkout local-master &&
+	git pull
+)
+'
+
+# makes sense if the previous one succeeded
+test_expect_success '@{u} works when tracking a local branch' '
+	test refs/heads/master = "$(full_name @{u})"
 '
 
 cat >expect <<EOF

@@ -40,7 +40,7 @@ SYNOPSIS
 	     [ \--right-only ]
 	     [ \--cherry-mark ]
 	     [ \--cherry-pick ]
-	     [ \--encoding[=<encoding>] ]
+	     [ \--encoding=<encoding> ]
 	     [ \--(author|committer|grep)=<pattern> ]
 	     [ \--regexp-ignore-case | -i ]
 	     [ \--extended-regexp | -E ]
@@ -99,7 +99,7 @@ between the two operands.  The following two commands are equivalent:
 	$ git rev-list A...B
 -----------------------------------------------------------------------
 
-'rev-list' is a very essential git command, since it
+'rev-list' is a very essential Git command, since it
 provides the ability to build and traverse commit ancestry graphs. For
 this reason, it has a lot of different options that enables it to be
 used by commands as different as 'git bisect' and

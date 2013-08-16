@@ -867,23 +867,28 @@ static void sort_refs(struct ref_sort *sort, struct refinfo **refs, int num_refs
 static void print_value(struct refinfo *ref, int atom, int quote_style)
 {
 	struct atom_value *v;
+	struct strbuf sb = STRBUF_INIT;
 	get_value(ref, atom, &v);
 	switch (quote_style) {
 	case QUOTE_NONE:
 		fputs(v->s, stdout);
 		break;
 	case QUOTE_SHELL:
-		sq_quote_print(stdout, v->s);
+		sq_quote_buf(&sb, v->s);
 		break;
 	case QUOTE_PERL:
-		perl_quote_print(stdout, v->s);
+		perl_quote_buf(&sb, v->s);
 		break;
 	case QUOTE_PYTHON:
-		python_quote_print(stdout, v->s);
+		python_quote_buf(&sb, v->s);
 		break;
 	case QUOTE_TCL:
-		tcl_quote_print(stdout, v->s);
+		tcl_quote_buf(&sb, v->s);
 		break;
+	}
+	if (quote_style != QUOTE_NONE) {
+		fputs(sb.buf, stdout);
+		strbuf_release(&sb);
 	}
 }
 
@@ -962,7 +967,9 @@ static int opt_parse_sort(const struct option *opt, const char *arg, int unset)
 	if (!arg) /* should --no-sort void the list ? */
 		return -1;
 
-	*sort_tail = s = xcalloc(1, sizeof(*s));
+	s = xcalloc(1, sizeof(*s));
+	s->next = *sort_tail;
+	*sort_tail = s;
 
 	if (*arg == '-') {
 		s->reverse = 1;
@@ -974,7 +981,7 @@ static int opt_parse_sort(const struct option *opt, const char *arg, int unset)
 }
 
 static char const * const for_each_ref_usage[] = {
-	"git for-each-ref [options] [<pattern>]",
+	N_("git for-each-ref [options] [<pattern>]"),
 	NULL
 };
 
@@ -989,19 +996,19 @@ int cmd_for_each_ref(int argc, const char **argv, const char *prefix)
 
 	struct option opts[] = {
 		OPT_BIT('s', "shell", &quote_style,
-		        "quote placeholders suitably for shells", QUOTE_SHELL),
+			N_("quote placeholders suitably for shells"), QUOTE_SHELL),
 		OPT_BIT('p', "perl",  &quote_style,
-		        "quote placeholders suitably for perl", QUOTE_PERL),
+			N_("quote placeholders suitably for perl"), QUOTE_PERL),
 		OPT_BIT(0 , "python", &quote_style,
-		        "quote placeholders suitably for python", QUOTE_PYTHON),
+			N_("quote placeholders suitably for python"), QUOTE_PYTHON),
 		OPT_BIT(0 , "tcl",  &quote_style,
-		        "quote placeholders suitably for tcl", QUOTE_TCL),
+			N_("quote placeholders suitably for tcl"), QUOTE_TCL),
 
 		OPT_GROUP(""),
-		OPT_INTEGER( 0 , "count", &maxcount, "show only <n> matched refs"),
-		OPT_STRING(  0 , "format", &format, "format", "format to use for the output"),
-		OPT_CALLBACK(0 , "sort", sort_tail, "key",
-		            "field name to sort on", &opt_parse_sort),
+		OPT_INTEGER( 0 , "count", &maxcount, N_("show only <n> matched refs")),
+		OPT_STRING(  0 , "format", &format, N_("format"), N_("format to use for the output")),
+		OPT_CALLBACK(0 , "sort", sort_tail, N_("key"),
+			    N_("field name to sort on"), &opt_parse_sort),
 		OPT_END(),
 	};
 

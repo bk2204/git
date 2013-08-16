@@ -32,23 +32,60 @@ static int read_directory(const char *path, struct string_list *list)
 	return 0;
 }
 
+/*
+ * This should be "(standard input)" or something, but it will
+ * probably expose many more breakages in the way no-index code
+ * is bolted onto the diff callchain.
+ */
+static const char file_from_standard_input[] = "-";
+
 static int get_mode(const char *path, int *mode)
 {
 	struct stat st;
 
 	if (!path || !strcmp(path, "/dev/null"))
 		*mode = 0;
-#ifdef _WIN32
+#ifdef GIT_WINDOWS_NATIVE
 	else if (!strcasecmp(path, "nul"))
 		*mode = 0;
 #endif
-	else if (!strcmp(path, "-"))
+	else if (path == file_from_standard_input)
 		*mode = create_ce_mode(0666);
 	else if (lstat(path, &st))
 		return error("Could not access '%s'", path);
 	else
 		*mode = st.st_mode;
 	return 0;
+}
+
+static int populate_from_stdin(struct diff_filespec *s)
+{
+	struct strbuf buf = STRBUF_INIT;
+	size_t size = 0;
+
+	if (strbuf_read(&buf, 0, 0) < 0)
+		return error("error while reading from stdin %s",
+				     strerror(errno));
+
+	s->should_munmap = 0;
+	s->data = strbuf_detach(&buf, &size);
+	s->size = size;
+	s->should_free = 1;
+	s->is_stdin = 1;
+	return 0;
+}
+
+static struct diff_filespec *noindex_filespec(const char *name, int mode)
+{
+	struct diff_filespec *s;
+
+	if (!name)
+		name = "/dev/null";
+	s = alloc_filespec(name);
+	fill_filespec(s, null_sha1, 0, mode);
+	if (name == file_from_standard_input)
+		populate_from_stdin(s);
+	return s;
 }
 
 static int queue_diff(struct diff_options *o,
@@ -137,44 +174,21 @@ static int queue_diff(struct diff_options *o,
 			tmp_c = name1; name1 = name2; name2 = tmp_c;
 		}
 
-		if (!name1)
-			name1 = "/dev/null";
-		if (!name2)
-			name2 = "/dev/null";
-		d1 = alloc_filespec(name1);
-		d2 = alloc_filespec(name2);
-		fill_filespec(d1, null_sha1, mode1);
-		fill_filespec(d2, null_sha1, mode2);
-
+		d1 = noindex_filespec(name1, mode1);
+		d2 = noindex_filespec(name2, mode2);
 		diff_queue(&diff_queued_diff, d1, d2);
 		return 0;
 	}
-}
-
-static int path_outside_repo(const char *path)
-{
-	const char *work_tree;
-	size_t len;
-
-	if (!is_absolute_path(path))
-		return 0;
-	work_tree = get_git_work_tree();
-	if (!work_tree)
-		return 1;
-	len = strlen(work_tree);
-	if (strncmp(path, work_tree, len) ||
-	    (path[len] != '\0' && path[len] != '/'))
-		return 1;
-	return 0;
 }
 
 void diff_no_index(struct rev_info *revs,
 		   int argc, const char **argv,
 		   int nongit, const char *prefix)
 {
-	int i;
+	int i, prefixlen;
 	int no_index = 0;
-	unsigned options = 0;
+	unsigned deprecated_show_diff_q_option_used = 0;
+	const char *paths[2];
 
 	/* Were we asked to do --no-index explicitly? */
 	for (i = 1; i < argc; i++) {
@@ -197,8 +211,8 @@ void diff_no_index(struct rev_info *revs,
 		 * a colourful "diff" replacement.
 		 */
 		if ((argc != i + 2) ||
-		    (!path_outside_repo(argv[i]) &&
-		     !path_outside_repo(argv[i+1])))
+		    (path_inside_repo(prefix, argv[i]) &&
+		     path_inside_repo(prefix, argv[i+1])))
 			return;
 	}
 	if (argc != i + 2)
@@ -211,7 +225,7 @@ void diff_no_index(struct rev_info *revs,
 		if (!strcmp(argv[i], "--no-index"))
 			i++;
 		else if (!strcmp(argv[i], "-q")) {
-			options |= DIFF_SILENT_ON_REMOVED;
+			deprecated_show_diff_q_option_used = 1;
 			i++;
 		}
 		else if (!strcmp(argv[i], "--"))
@@ -224,46 +238,35 @@ void diff_no_index(struct rev_info *revs,
 		}
 	}
 
-	/*
-	 * If the user asked for our exit code then don't start a
-	 * pager or we would end up reporting its exit code instead.
-	 */
-	if (!DIFF_OPT_TST(&revs->diffopt, EXIT_WITH_STATUS))
-		setup_pager();
-
-	if (prefix) {
-		int len = strlen(prefix);
-		const char *paths[3];
-		memset(paths, 0, sizeof(paths));
-
-		for (i = 0; i < 2; i++) {
-			const char *p = argv[argc - 2 + i];
+	prefixlen = prefix ? strlen(prefix) : 0;
+	for (i = 0; i < 2; i++) {
+		const char *p = argv[argc - 2 + i];
+		if (!strcmp(p, "-"))
 			/*
-			 * stdin should be spelled as '-'; if you have
-			 * path that is '-', spell it as ./-.
+			 * stdin should be spelled as "-"; if you have
+			 * path that is "-", spell it as "./-".
 			 */
-			p = (strcmp(p, "-")
-			     ? xstrdup(prefix_filename(prefix, len, p))
-			     : p);
-			paths[i] = p;
-		}
-		diff_tree_setup_paths(paths, &revs->diffopt);
+			p = file_from_standard_input;
+		else if (prefixlen)
+			p = xstrdup(prefix_filename(prefix, prefixlen, p));
+		paths[i] = p;
 	}
-	else
-		diff_tree_setup_paths(argv + argc - 2, &revs->diffopt);
 	revs->diffopt.skip_stat_unmatch = 1;
 	if (!revs->diffopt.output_format)
 		revs->diffopt.output_format = DIFF_FORMAT_PATCH;
 
-	DIFF_OPT_SET(&revs->diffopt, EXIT_WITH_STATUS);
 	DIFF_OPT_SET(&revs->diffopt, NO_INDEX);
 
 	revs->max_count = -2;
-	if (diff_setup_done(&revs->diffopt) < 0)
-		die("diff_setup_done failed");
+	diff_setup_done(&revs->diffopt);
 
-	if (queue_diff(&revs->diffopt, revs->diffopt.pathspec.raw[0],
-		       revs->diffopt.pathspec.raw[1]))
+	if (deprecated_show_diff_q_option_used)
+		handle_deprecated_show_diff_q(&revs->diffopt);
+
+	setup_diff_pager(&revs->diffopt);
+	DIFF_OPT_SET(&revs->diffopt, EXIT_WITH_STATUS);
+
+	if (queue_diff(&revs->diffopt, paths[0], paths[1]))
 		exit(1);
 	diff_set_mnemonic_prefix(&revs->diffopt, "1/", "2/");
 	diffcore_std(&revs->diffopt);
@@ -273,5 +276,5 @@ void diff_no_index(struct rev_info *revs,
 	 * The return code for --no-index imitates diff(1):
 	 * 0 = no changes, 1 = changes, else error
 	 */
-	exit(revs->diffopt.found_changes);
+	exit(diff_result_code(&revs->diffopt, 0));
 }

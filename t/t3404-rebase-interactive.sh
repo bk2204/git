@@ -477,19 +477,11 @@ test_expect_success 'interrupted squash works as expected (case 2)' '
 	test $one = $(git rev-parse HEAD~2)
 '
 
-test_expect_success 'ignore patch if in upstream' '
-	HEAD=$(git rev-parse HEAD) &&
-	git checkout -b has-cherry-picked HEAD^ &&
+test_expect_success '--continue tries to commit, even for "edit"' '
 	echo unrelated > file7 &&
 	git add file7 &&
 	test_tick &&
 	git commit -m "unrelated change" &&
-	git cherry-pick $HEAD &&
-	EXPECT_COUNT=1 git rebase -i $HEAD &&
-	test $HEAD = $(git rev-parse HEAD^)
-'
-
-test_expect_success '--continue tries to commit, even for "edit"' '
 	parent=$(git rev-parse HEAD^) &&
 	test_tick &&
 	FAKE_LINES="edit 1" git rebase -i HEAD^ &&
@@ -692,7 +684,7 @@ test_expect_success 'rebase -i can copy notes' '
 	test_commit n2 &&
 	test_commit n3 &&
 	git notes add -m"a note" n3 &&
-	git rebase --onto n1 n2 &&
+	git rebase -i --onto n1 n2 &&
 	test "a note" = "$(git notes show HEAD)"
 '
 
@@ -934,6 +926,21 @@ test_expect_success 'rebase --edit-todo can be used to modify todo' '
 	test L = $(git cat-file commit HEAD | sed -ne \$p)
 '
 
+test_expect_success 'rebase -i produces readable reflog' '
+	git reset --hard &&
+	git branch -f branch-reflog-test H &&
+	git rebase -i --onto I F branch-reflog-test &&
+	cat >expect <<-\EOF &&
+	rebase -i (start): checkout I
+	rebase -i (pick): G
+	rebase -i (pick): H
+	rebase -i (finish): returning to refs/heads/branch-reflog-test
+	EOF
+	tail -n 4 .git/logs/HEAD |
+	sed -e "s/.*	//" >actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'rebase -i respects core.commentchar' '
 	git reset --hard &&
 	git checkout E^0 &&
@@ -942,9 +949,62 @@ test_expect_success 'rebase -i respects core.commentchar' '
 	sed -e "2,\$s/^/\\\\/" "$1" >"$1.tmp" &&
 	mv "$1.tmp" "$1"
 	EOF
+	test_when_finished "set_fake_editor" &&
 	test_set_editor "$(pwd)/remove-all-but-first.sh" &&
 	git rebase -i B &&
 	test B = $(git cat-file commit HEAD^ | sed -ne \$p)
+'
+
+test_expect_success 'rebase -i, with <onto> and <upstream> specified as :/quuxery' '
+	test_when_finished "git branch -D torebase" &&
+	git checkout -b torebase branch1 &&
+	upstream=$(git rev-parse ":/J") &&
+	onto=$(git rev-parse ":/A") &&
+	git rebase --onto $onto $upstream &&
+	git reset --hard branch1 &&
+	git rebase --onto ":/A" ":/J" &&
+	git checkout branch1
+'
+
+test_expect_success 'rebase -i with --strategy and -X' '
+	git checkout -b conflict-merge-use-theirs conflict-branch &&
+	git reset --hard HEAD^ &&
+	echo five >conflict &&
+	echo Z >file1 &&
+	git commit -a -m "one file conflict" &&
+	EDITOR=true git rebase -i --strategy=recursive -Xours conflict-branch &&
+	test $(git show conflict-branch:conflict) = $(cat conflict) &&
+	test $(cat file1) = Z
+'
+
+test_expect_success 'rebase -i error on commits with \ in message' '
+	current_head=$(git rev-parse HEAD)
+	test_when_finished "git rebase --abort; git reset --hard $current_head; rm -f error" &&
+	test_commit TO-REMOVE will-conflict old-content &&
+	test_commit "\temp" will-conflict new-content dummy &&
+	(
+	EDITOR=true &&
+	export EDITOR &&
+	test_must_fail git rebase -i HEAD^ --onto HEAD^^ 2>error
+	) &&
+	test_expect_code 1 grep  "	emp" error
+'
+
+test_expect_success 'short SHA-1 setup' '
+	test_when_finished "git checkout master" &&
+	git checkout --orphan collide &&
+	git rm -rf . &&
+	unset test_tick &&
+	test_commit collide1 collide &&
+	test_commit --notick collide2 collide &&
+	test_commit --notick "collide3 115158b5" collide collide3 collide3
+'
+
+test_expect_success 'short SHA-1 collide' '
+	test_when_finished "reset_rebase && git checkout master" &&
+	git checkout collide &&
+	FAKE_COMMIT_MESSAGE="collide2 815200e" \
+	FAKE_LINES="reword 1 2" git rebase -i HEAD~2
 '
 
 test_done

@@ -5,6 +5,7 @@
 #define DIFF_H
 
 #include "tree-walk.h"
+#include "pathspec.h"
 
 struct rev_info;
 struct diff_options;
@@ -103,12 +104,15 @@ enum diff_words_type {
 };
 
 struct diff_options {
-	const char *filter;
 	const char *orderfile;
 	const char *pickaxe;
 	const char *single_follow;
 	const char *a_prefix, *b_prefix;
 	unsigned flags;
+
+	/* diff-filter bits */
+	unsigned int filter;
+
 	int use_color;
 	int context;
 	int interhunkcontext;
@@ -179,8 +183,6 @@ const char *diff_line_prefix(struct diff_options *);
 
 extern const char mime_boundary_leader[];
 
-extern void diff_tree_setup_paths(const char **paths, struct diff_options *);
-extern void diff_tree_release_paths(struct diff_options *);
 extern int diff_tree(struct tree_desc *t1, struct tree_desc *t2,
 		     const char *base, struct diff_options *opt);
 extern int diff_tree_sha1(const unsigned char *old, const unsigned char *new,
@@ -337,6 +339,8 @@ extern struct userdiff_driver *get_textconv(struct diff_filespec *one);
 extern int parse_rename_score(const char **cp_p);
 
 extern long parse_algorithm_value(const char *value);
+
+extern void handle_deprecated_show_diff_q(struct diff_options *);
 
 extern int print_stat_summary(FILE *fp, int files,
 			      int insertions, int deletions);

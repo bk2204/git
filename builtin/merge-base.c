@@ -95,11 +95,11 @@ int cmd_merge_base(int argc, const char **argv, const char *prefix)
 	int is_ancestor = 0;
 
 	struct option options[] = {
-		OPT_BOOLEAN('a', "all", &show_all, N_("output all common ancestors")),
-		OPT_BOOLEAN(0, "octopus", &octopus, N_("find ancestors for a single n-way merge")),
-		OPT_BOOLEAN(0, "independent", &reduce, N_("list revs not reachable from others")),
-		OPT_BOOLEAN(0, "is-ancestor", &is_ancestor,
-			    N_("is the first one ancestor of the other?")),
+		OPT_BOOL('a', "all", &show_all, N_("output all common ancestors")),
+		OPT_BOOL(0, "octopus", &octopus, N_("find ancestors for a single n-way merge")),
+		OPT_BOOL(0, "independent", &reduce, N_("list revs not reachable from others")),
+		OPT_BOOL(0, "is-ancestor", &is_ancestor,
+			 N_("is the first one ancestor of the other?")),
 		OPT_END()
 	};
 
@@ -107,7 +107,7 @@ int cmd_merge_base(int argc, const char **argv, const char *prefix)
 	argc = parse_options(argc, argv, prefix, options, merge_base_usage, 0);
 	if (!octopus && !reduce && argc < 2)
 		usage_with_options(merge_base_usage, options);
-	if (is_ancestor && (show_all | octopus | reduce))
+	if (is_ancestor && (show_all || octopus || reduce))
 		die("--is-ancestor cannot be used with other options");
 	if (is_ancestor)
 		return handle_is_ancestor(argc, argv);

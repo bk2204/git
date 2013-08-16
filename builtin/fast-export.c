@@ -379,7 +379,7 @@ static void handle_tag(const char *name, struct tag *tag)
 	int tagged_mark;
 	struct commit *p;
 
-	/* Trees have no identifer in fast-export output, thus we have no way
+	/* Trees have no identifier in fast-export output, thus we have no way
 	 * to output tags of trees, tags of tags of trees, etc.  Simply omit
 	 * such tags.
 	 */
@@ -613,6 +613,8 @@ static void import_marks(char *input_file)
 		char *line_end, *mark_end;
 		unsigned char sha1[20];
 		struct object *object;
+		struct commit *commit;
+		enum object_type type;
 
 		line_end = strchr(line, '\n');
 		if (line[0] != ':' || !line_end)
@@ -621,22 +623,28 @@ static void import_marks(char *input_file)
 
 		mark = strtoumax(line + 1, &mark_end, 10);
 		if (!mark || mark_end == line + 1
-			|| *mark_end != ' ' || get_sha1(mark_end + 1, sha1))
+			|| *mark_end != ' ' || get_sha1_hex(mark_end + 1, sha1))
 			die("corrupt mark line: %s", line);
 
 		if (last_idnum < mark)
 			last_idnum = mark;
 
-		object = parse_object(sha1);
-		if (!object)
+		type = sha1_object_info(sha1, NULL);
+		if (type < 0)
+			die("object not found: %s", sha1_to_hex(sha1));
+
+		if (type != OBJ_COMMIT)
+			/* only commits */
 			continue;
+
+		commit = lookup_commit(sha1);
+		if (!commit)
+			die("not a commit? can't happen: %s", sha1_to_hex(sha1));
+
+		object = &commit->object;
 
 		if (object->flags & SHOWN)
 			error("Object %s already has a mark", sha1_to_hex(sha1));
-
-		if (object->type != OBJ_COMMIT)
-			/* only commits */
-			continue;
 
 		mark_object(object, mark);
 
@@ -666,11 +674,11 @@ int cmd_fast_export(int argc, const char **argv, const char *prefix)
 			     N_("Dump marks to this file")),
 		OPT_STRING(0, "import-marks", &import_filename, N_("file"),
 			     N_("Import marks from this file")),
-		OPT_BOOLEAN(0, "fake-missing-tagger", &fake_missing_tagger,
-			     N_("Fake a tagger when tags lack one")),
-		OPT_BOOLEAN(0, "full-tree", &full_tree,
-			     N_("Output full tree for each commit")),
-		OPT_BOOLEAN(0, "use-done-feature", &use_done_feature,
+		OPT_BOOL(0, "fake-missing-tagger", &fake_missing_tagger,
+			 N_("Fake a tagger when tags lack one")),
+		OPT_BOOL(0, "full-tree", &full_tree,
+			 N_("Output full tree for each commit")),
+		OPT_BOOL(0, "use-done-feature", &use_done_feature,
 			     N_("Use the done feature to terminate the stream")),
 		OPT_BOOL(0, "no-data", &no_data, N_("Skip output of blob data")),
 		OPT_END()

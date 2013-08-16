@@ -57,6 +57,35 @@ test_expect_success 'pulling into void does not overwrite untracked files' '
 	)
 '
 
+test_expect_success 'pulling into void does not overwrite staged files' '
+	git init cloned-staged-colliding &&
+	(
+		cd cloned-staged-colliding &&
+		echo "alternate content" >file &&
+		git add file &&
+		test_must_fail git pull .. master &&
+		echo "alternate content" >expect &&
+		test_cmp expect file &&
+		git cat-file blob :file >file.index &&
+		test_cmp expect file.index
+	)
+'
+
+
+test_expect_success 'pulling into void does not remove new staged files' '
+	git init cloned-staged-new &&
+	(
+		cd cloned-staged-new &&
+		echo "new tracked file" >newfile &&
+		git add newfile &&
+		git pull .. master &&
+		echo "new tracked file" >expect &&
+		test_cmp expect newfile &&
+		git cat-file blob :newfile >newfile.index &&
+		test_cmp expect newfile.index
+	)
+'
+
 test_expect_success 'test . as a remote' '
 
 	git branch copy master &&
@@ -117,6 +146,95 @@ test_expect_success 'branch.to-rebase.rebase should override pull.rebase' '
 	git pull . copy &&
 	test $(git rev-parse HEAD^) != $(git rev-parse copy) &&
 	test new = $(git show HEAD:file2)
+'
+
+# add a feature branch, keep-merge, that is merged into master, so the
+# test can try preserving the merge commit (or not) with various
+# --rebase flags/pull.rebase settings.
+test_expect_success 'preserve merge setup' '
+	git reset --hard before-rebase &&
+	git checkout -b keep-merge second^ &&
+	test_commit file3 &&
+	git checkout to-rebase &&
+	git merge keep-merge &&
+	git tag before-preserve-rebase
+'
+
+test_expect_success 'pull.rebase=false create a new merge commit' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase false &&
+	git pull . copy &&
+	test $(git rev-parse HEAD^1) = $(git rev-parse before-preserve-rebase) &&
+	test $(git rev-parse HEAD^2) = $(git rev-parse copy) &&
+	test file3 = $(git show HEAD:file3.t)
+'
+
+test_expect_success 'pull.rebase=true flattens keep-merge' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase true &&
+	git pull . copy &&
+	test $(git rev-parse HEAD^^) = $(git rev-parse copy) &&
+	test file3 = $(git show HEAD:file3.t)
+'
+
+test_expect_success 'pull.rebase=1 is treated as true and flattens keep-merge' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase 1 &&
+	git pull . copy &&
+	test $(git rev-parse HEAD^^) = $(git rev-parse copy) &&
+	test file3 = $(git show HEAD:file3.t)
+'
+
+test_expect_success 'pull.rebase=preserve rebases and merges keep-merge' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase preserve &&
+	git pull . copy &&
+	test $(git rev-parse HEAD^^) = $(git rev-parse copy) &&
+	test $(git rev-parse HEAD^2) = $(git rev-parse keep-merge)
+'
+
+test_expect_success 'pull.rebase=invalid fails' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase invalid &&
+	! git pull . copy
+'
+
+test_expect_success '--rebase=false create a new merge commit' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase true &&
+	git pull --rebase=false . copy &&
+	test $(git rev-parse HEAD^1) = $(git rev-parse before-preserve-rebase) &&
+	test $(git rev-parse HEAD^2) = $(git rev-parse copy) &&
+	test file3 = $(git show HEAD:file3.t)
+'
+
+test_expect_success '--rebase=true rebases and flattens keep-merge' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase preserve &&
+	git pull --rebase=true . copy &&
+	test $(git rev-parse HEAD^^) = $(git rev-parse copy) &&
+	test file3 = $(git show HEAD:file3.t)
+'
+
+test_expect_success '--rebase=preserve rebases and merges keep-merge' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase true &&
+	git pull --rebase=preserve . copy &&
+	test $(git rev-parse HEAD^^) = $(git rev-parse copy) &&
+	test $(git rev-parse HEAD^2) = $(git rev-parse keep-merge)
+'
+
+test_expect_success '--rebase=invalid fails' '
+	git reset --hard before-preserve-rebase &&
+	! git pull --rebase=invalid . copy
+'
+
+test_expect_success '--rebase overrides pull.rebase=preserve and flattens keep-merge' '
+	git reset --hard before-preserve-rebase &&
+	test_config pull.rebase preserve &&
+	git pull --rebase . copy &&
+	test $(git rev-parse HEAD^^) = $(git rev-parse copy) &&
+	test file3 = $(git show HEAD:file3.t)
 '
 
 test_expect_success '--rebase with rebased upstream' '
@@ -253,6 +371,57 @@ test_expect_success 'git pull --rebase against local branch' '
 	git pull --rebase . to-rebase &&
 	test "conflicting modification" = "$(cat file)" &&
 	test file = "$(cat file2)"
+'
+
+test_expect_success 'git pull that does not say how to integrate' '
+	git checkout -b other master^1 &&
+	>new &&
+	git add new &&
+	git commit -m "add new file" &&
+
+	git checkout -b test-to-integrate master &&
+
+	test_config branch.test-to-integrate.remote . &&
+	test_config branch.test-to-integrate.merge other &&
+
+	# need real integration
+	test_must_fail git pull &&
+	git reset --hard master &&
+
+
+	# configuration is explicit enough
+	for how in false true
+	do
+		test_config pull.rebase $how &&
+		git pull &&
+		git reset --hard master || break
+	done &&
+
+	# per branch configuration is explicit enough
+	test_unconfig pull.rebase &&
+	for how in false true
+	do
+		test_config branch.test-to-integrate.rebase $how &&
+		git pull &&
+		git reset --hard master || break
+	done &&
+
+	test_unconfig pull.rebase &&
+	test_unconfig branch.test-to-integrate &&
+
+	# already up to date
+	git reset --hard master &&
+	git branch -f other master^1
+	git pull &&
+
+	# fast forward
+	git reset --hard master &&
+	git checkout -B other master &&
+	>new &&
+	git add new &&
+	git commit -m "add new file" &&
+	git checkout -B test-to-integrate master &&
+	git pull
 '
 
 test_done

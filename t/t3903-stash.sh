@@ -200,17 +200,17 @@ test_expect_success 'apply -q is quiet' '
 	echo foo > file &&
 	git stash &&
 	git stash apply -q > output.out 2>&1 &&
-	test ! -s output.out
+	test_must_be_empty output.out
 '
 
 test_expect_success 'save -q is quiet' '
 	git stash save --quiet > output.out 2>&1 &&
-	test ! -s output.out
+	test_must_be_empty output.out
 '
 
 test_expect_success 'pop -q is quiet' '
 	git stash pop -q > output.out 2>&1 &&
-	test ! -s output.out
+	test_must_be_empty output.out
 '
 
 test_expect_success 'pop -q --index works and is quiet' '
@@ -219,13 +219,13 @@ test_expect_success 'pop -q --index works and is quiet' '
 	git stash save --quiet &&
 	git stash pop -q --index > output.out 2>&1 &&
 	test foo = "$(git show :file)" &&
-	test ! -s output.out
+	test_must_be_empty output.out
 '
 
 test_expect_success 'drop -q is quiet' '
 	git stash &&
 	git stash drop -q > output.out 2>&1 &&
-	test ! -s output.out
+	test_must_be_empty output.out
 '
 
 test_expect_success 'stash -k' '
@@ -336,41 +336,58 @@ test_expect_success SYMLINKS 'stash file to symlink (full stage)' '
 
 # This test creates a commit with a symlink used for the following tests
 
-test_expect_success SYMLINKS 'stash symlink to file' '
+test_expect_success 'stash symlink to file' '
 	git reset --hard &&
-	ln -s file filelink &&
-	git add filelink &&
+	test_ln_s_add file filelink &&
 	git commit -m "Add symlink" &&
 	rm filelink &&
 	cp file filelink &&
-	git stash save "symlink to file" &&
+	git stash save "symlink to file"
+'
+
+test_expect_success SYMLINKS 'this must have re-created the symlink' '
 	test -h filelink &&
-	case "$(ls -l filelink)" in *" filelink -> file") :;; *) false;; esac &&
+	case "$(ls -l filelink)" in *" filelink -> file") :;; *) false;; esac
+'
+
+test_expect_success 'unstash must re-create the file' '
 	git stash apply &&
 	! test -h filelink &&
 	test bar = "$(cat file)"
 '
 
-test_expect_success SYMLINKS 'stash symlink to file (stage rm)' '
+test_expect_success 'stash symlink to file (stage rm)' '
 	git reset --hard &&
 	git rm filelink &&
 	cp file filelink &&
-	git stash save "symlink to file (stage rm)" &&
+	git stash save "symlink to file (stage rm)"
+'
+
+test_expect_success SYMLINKS 'this must have re-created the symlink' '
 	test -h filelink &&
-	case "$(ls -l filelink)" in *" filelink -> file") :;; *) false;; esac &&
+	case "$(ls -l filelink)" in *" filelink -> file") :;; *) false;; esac
+'
+
+test_expect_success 'unstash must re-create the file' '
 	git stash apply &&
 	! test -h filelink &&
 	test bar = "$(cat file)"
 '
 
-test_expect_success SYMLINKS 'stash symlink to file (full stage)' '
+test_expect_success 'stash symlink to file (full stage)' '
 	git reset --hard &&
 	rm filelink &&
 	cp file filelink &&
 	git add filelink &&
-	git stash save "symlink to file (full stage)" &&
+	git stash save "symlink to file (full stage)"
+'
+
+test_expect_success SYMLINKS 'this must have re-created the symlink' '
 	test -h filelink &&
-	case "$(ls -l filelink)" in *" filelink -> file") :;; *) false;; esac &&
+	case "$(ls -l filelink)" in *" filelink -> file") :;; *) false;; esac
+'
+
+test_expect_success 'unstash must re-create the file' '
 	git stash apply &&
 	! test -h filelink &&
 	test bar = "$(cat file)"
@@ -635,6 +652,25 @@ test_expect_success 'stash where working directory contains "HEAD" file' '
 	test "$(git rev-parse stash^)" = "$(git rev-parse HEAD)" &&
 	git diff stash^..stash > output &&
 	test_cmp output expect
+'
+
+test_expect_success 'store called with invalid commit' '
+	test_must_fail git stash store foo
+'
+
+test_expect_success 'store updates stash ref and reflog' '
+	git stash clear &&
+	git reset --hard &&
+	echo quux >bazzy &&
+	git add bazzy &&
+	STASH_ID=$(git stash create) &&
+	git reset --hard &&
+	! grep quux bazzy &&
+	git stash store -m quuxery $STASH_ID &&
+	test $(cat .git/refs/stash) = $STASH_ID &&
+	grep $STASH_ID .git/logs/refs/stash &&
+	git stash pop &&
+	grep quux bazzy
 '
 
 test_done

@@ -23,6 +23,7 @@
 /git-cat-file
 /git-check-attr
 /git-check-ignore
+/git-check-mailmap
 /git-check-ref-format
 /git-checkout
 /git-checkout-index
@@ -125,6 +126,7 @@
 /git-remote-ftps
 /git-remote-fd
 /git-remote-ext
+/git-remote-testgit
 /git-remote-testpy
 /git-remote-testsvn
 /git-repack
@@ -190,6 +192,8 @@
 /test-mktemp
 /test-parse-options
 /test-path-utils
+/test-prio-queue
+/test-read-cache
 /test-regex
 /test-revision-walking
 /test-run-command
@@ -198,6 +202,7 @@
 /test-string-list
 /test-subprocess
 /test-svn-fe
+/test-urlmatch-normalization
 /test-wildmatch
 /common-cmds.h
 *.tar.gz
@@ -228,6 +233,7 @@
 /cscope*
 *.obj
 *.lib
+*.res
 *.sln
 *.suo
 *.ncb

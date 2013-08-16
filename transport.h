@@ -2,15 +2,19 @@
 #define TRANSPORT_H
 
 #include "cache.h"
+#include "run-command.h"
 #include "remote.h"
 
 struct git_transport_options {
 	unsigned thin : 1;
 	unsigned keep : 1;
 	unsigned followtags : 1;
+	unsigned check_self_contained_and_connected : 1;
+	unsigned self_contained_and_connected : 1;
 	int depth;
 	const char *uploadpack;
 	const char *receivepack;
+	struct push_cas_option *cas;
 };
 
 struct transport {
@@ -124,6 +128,9 @@ struct transport *transport_get(struct remote *, const char *);
 /* Transfer the data as a thin pack if not null */
 #define TRANS_OPT_THIN "thin"
 
+/* Check the current value of the remote ref */
+#define TRANS_OPT_CAS "cas"
+
 /* Keep the pack that was transferred if not null */
 #define TRANS_OPT_KEEP "keep"
 
@@ -168,7 +175,7 @@ int transport_connect(struct transport *transport, const char *name,
 int transport_helper_init(struct transport *transport, const char *name);
 int bidirectional_transfer_loop(int input, int output);
 
-/* common methods used by transport.c and builtin-send-pack.c */
+/* common methods used by transport.c and builtin/send-pack.c */
 void transport_verify_remote_names(int nr_heads, const char **heads);
 
 void transport_update_tracking_ref(struct remote *remote, struct ref *ref, int verbose);

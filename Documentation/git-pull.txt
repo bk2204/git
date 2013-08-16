@@ -3,7 +3,7 @@ git-pull(1)
 
 NAME
 ----
-git-pull - Fetch from and merge with another repository or a local branch
+git-pull - Fetch from and integrate with another repository or a local branch
 
 
 SYNOPSIS
@@ -97,17 +97,31 @@ must be given before the options meant for 'git fetch'.
 Options related to merging
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+With no repository or branch on the command line, `git pull` needs
+to be told how to integrate the changes with your history.
+
+This can be done via either `--merge` or `--rebase` option, but most
+people would want to decide which method matches the workflow of the
+project once, and set the configuration variable `pull.rebase` or
+`branch.<name>.rebase` to stick to it; see linkgit:git-config[1].
+
 include::merge-options.txt[]
 
 :git-pull: 1
 
 -r::
---rebase::
-	Rebase the current branch on top of the upstream branch after
-	fetching.  If there is a remote-tracking branch corresponding to
-	the upstream branch and the upstream branch was rebased since last
-	fetched, the rebase uses that information to avoid rebasing
-	non-local changes.
+--rebase[=false|true|preserve]::
+	When true, rebase the current branch on top of the upstream
+	branch after fetching. If there is a remote-tracking branch
+	corresponding to the upstream branch and the upstream branch
+	was rebased since last fetched, the rebase uses that information
+	to avoid rebasing non-local changes.
++
+When preserve, also rebase the current branch on top of the upstream
+branch, but pass `--preserve-merges` along to `git rebase` so that
+locally created merge commits will not be flattened.
++
+When false, merge the current branch into the upstream branch.
 +
 See `pull.rebase`, `branch.<name>.rebase` and `branch.autosetuprebase` in
 linkgit:git-config[1] if you want to make `git pull` always use
@@ -119,6 +133,7 @@ It rewrites history, which does not bode well when you
 published that history already.  Do *not* use this option
 unless you have read linkgit:git-rebase[1] carefully.
 
+--merge::
 --no-rebase::
 	Override earlier --rebase.
 

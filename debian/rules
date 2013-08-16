@@ -112,8 +112,11 @@ install-arch: deb-checkdir deb-checkuid build-arch-stamp
 	ln -s gitweb.cgi '$(GIT)'/usr/share/gitweb/index.cgi
 	# contrib hooks
 	install -d -m0755 '$(GIT)'/usr/share/git-core/contrib/hooks
-	install -m0644 contrib/hooks/* \
-	  '$(GIT)'/usr/share/git-core/contrib/hooks/
+	for i in post-receive-emial pre-auto-gc-battery setgitperms.perl \
+		update-paranoid; do \
+		install -m0644 contrib/hooks/$$i \
+		  '$(GIT)'/usr/share/git-core/contrib/hooks/; \
+	done
 	# contrib
 	install -d -m0755 '$(GIT)'/usr/share/doc/git
 	cp -R contrib '$(GIT)'/usr/share/doc/git/

@@ -163,7 +163,7 @@ install-indep-real: build-arch-stamp build-indep-stamp
 	install -d -m0755 '$(GIT)'-doc/usr/share/doc/git
 	ln -s ../git-doc '$(GIT)'-doc/usr/share/doc/git/html
 	# git-cvs, git-svn
-	for i in cvs; do \
+	for i in ; do \
 	  rm -rf '$(GIT)'-$$i && \
 	  install -d -m0755 '$(GIT)'-$$i/usr/lib/git-core && \
 	  install -m0755 '$(TMP)'/usr/lib/git-core/git-$$i* \
@@ -173,9 +173,6 @@ install-indep-real: build-arch-stamp build-indep-stamp
 	    '$(GIT)'-$$i/usr/share/man/man1/ && \
 	  gzip -9 '$(GIT)'-$$i/usr/share/man/man1/*.1 || exit 1; \
 	done
-	# git-cvs
-	install -d -m0755 '$(GIT)'-cvs/usr/bin
-	install -m0755 '$(TMP)'/usr/bin/git-cvsserver '$(GIT)'-cvs/usr/bin/
 	# git-arch
 	rm -rf '$(GIT)'-arch
 	install -d -m0755 '$(GIT)'-arch/usr/lib/git-core
@@ -286,12 +283,12 @@ binary-arch: install-arch git.deb
 	dpkg-shlibdeps '$(GIT)'/usr/bin/* '$(GIT)'/usr/lib/git-core/*
 	dpkg-gencontrol -isp -pgit -P'$(GIT)'
 	dpkg -b '$(GIT)' ..
-binary-indep: install-indep git-doc.deb git-arch.deb git-cvs.deb \
+binary-indep: install-indep git-doc.deb git-arch.deb \
 	  git-daemon-run.deb git-daemon-sysvinit.deb \
 	  git-email.deb git-gui.deb gitk.deb gitweb.deb \
 	  git-all.deb git-el.deb git-man.deb git-core.deb-DEBIAN
 	rm -f debian/substvars
-	for i in -doc -arch -cvs -daemon-run -daemon-sysvinit \
+	for i in -doc -arch -daemon-run -daemon-sysvinit \
 	 -email -gui k web -all -core -el -man; do \
 	  dpkg-gencontrol -isp -pgit$$i -P'$(GIT)'$$i && \
 	  dpkg -b '$(GIT)'$$i .. || exit 1; \

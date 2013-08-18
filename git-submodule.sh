@@ -1070,7 +1070,10 @@ cmd_summary() {
 		missing_src=
 		missing_dst=
 
+		test $status = D && missing_src=t
+
 		test $mod_src = 160000 &&
+		test -e "$name/.git" &&
 		! GIT_DIR="$name/.git" git-rev-parse -q --verify $sha1_src^0 >/dev/null &&
 		missing_src=t
 

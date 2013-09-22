@@ -109,6 +109,12 @@ static void hdr_cache_forever(void)
 	hdr_str("Cache-Control", "public, max-age=31536000");
 }
 
+static void hdr_fatal_error(void)
+{
+	hdr_nocache();
+	hdr_str("Content-Type", "text/plain");
+}
+
 static void end_headers(void)
 {
 	write_or_die(1, "\r\n", 2);
@@ -120,7 +126,7 @@ static NORETURN void not_found(const char *err, ...)
 	va_list params;
 
 	http_status(404, "Not Found");
-	hdr_nocache();
+	hdr_fatal_error();
 	end_headers();
 
 	va_start(params, err);
@@ -136,7 +142,7 @@ static NORETURN void forbidden(const char *err, ...)
 	va_list params;
 
 	http_status(403, "Forbidden");
-	hdr_nocache();
+	hdr_fatal_error();
 	end_headers();
 
 	va_start(params, err);
@@ -473,7 +479,7 @@ static void check_content_type(const char *accepted_type)
 
 	if (strcmp(actual_type, accepted_type)) {
 		http_status(415, "Unsupported Media Type");
-		hdr_nocache();
+		hdr_fatal_error();
 		end_headers();
 		format_write(1,
 			"Expected POST with Content-Type '%s',"
@@ -513,7 +519,7 @@ static NORETURN void die_webcgi(const char *err, va_list params)
 	if (!dead) {
 		dead = 1;
 		http_status(500, "Internal Server Error");
-		hdr_nocache();
+		hdr_fatal_error();
 		end_headers();
 
 		vreportf("fatal: ", err, params);

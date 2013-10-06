@@ -1,3 +1,9 @@
+git (1:1.8.4-2~bmc1) experimental; urgency=low
+
+  * debian/control: Build-Depends tcl instead of tcl8.5.
+
+ -- brian m. carlson <sandals@crustytoothpaste.net>  Sun, 06 Oct 2013 17:28:55 +0000
+
 git (1:1.8.4-1.1) experimental; urgency=low
 
   * debian/control: Build-Depends tcl instead of tcl8.5.

@@ -11,6 +11,7 @@
 int active_requests;
 int http_is_verbose;
 size_t http_post_buffer = 16 * LARGE_PACKET_MAX;
+int http_use_100_continue = 1;
 
 #if LIBCURL_VERSION_NUM >= 0x070a06
 #define LIBCURL_CAN_HANDLE_AUTH_ANY
@@ -210,6 +211,11 @@ static int http_options(const char *var, const char *value, void *cb)
 		http_post_buffer = git_config_int(var, value);
 		if (http_post_buffer < LARGE_PACKET_MAX)
 			http_post_buffer = LARGE_PACKET_MAX;
+		return 0;
+	}
+
+	if (!strcmp("http.continue", var)) {
+		http_use_100_continue = git_config_bool(var, value);
 		return 0;
 	}
 

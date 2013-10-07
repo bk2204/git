@@ -470,7 +470,12 @@ static int post_rpc(struct rpc_state *rpc)
 
 	headers = curl_slist_append(headers, rpc->hdr_content_type);
 	headers = curl_slist_append(headers, rpc->hdr_accept);
-	headers = curl_slist_append(headers, "Expect:");
+
+	/* Force it either on or off, since curl will try to decide based on how
+	 * much data is to be uploaded and we want consistency.
+	 */
+	headers = curl_slist_append(headers, http_use_100_continue ?
+		"Expect: 100-continue" : "Expect:");
 
 retry:
 	slot = get_active_slot();

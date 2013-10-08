@@ -1516,6 +1516,15 @@ http.postBuffer::
 	massive pack file locally.  Default is 1 MiB, which is
 	sufficient for most requests.
 
+http.continue::
+	Ensure that authentication succeeds before sending the pack data when
+	POSTing data using the smart HTTP transport.  This is done by
+	requesting a 100 Continue response.  For requests larger than
+	'http.postBuffer', this is required when using GSS-Negotiate
+	(Kerberos) authentication over HTTP.  However, some proxies do not
+	handle the protocol exchange gracefully; for them, this option must be
+	disabled.  Defaults to enabled.
+
 http.lowSpeedLimit, http.lowSpeedTime::
 	If the HTTP transfer speed is less than 'http.lowSpeedLimit'
 	for longer than 'http.lowSpeedTime' seconds, the transfer is aborted.

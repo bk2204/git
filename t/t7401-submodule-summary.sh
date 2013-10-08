@@ -104,6 +104,24 @@ EOF
 	test_cmp expected actual
 "
 
+test_expect_success 'no ignore=all setting has any effect' "
+	git config -f .gitmodules submodule.sm1.path sm1 &&
+	git config -f .gitmodules submodule.sm1.ignore all &&
+	git config submodule.sm1.ignore all &&
+	git config diff.ignoreSubmodules all &&
+	git submodule summary >actual &&
+	cat >expected <<-EOF &&
+* sm1 $head1...$head2 (1):
+  > Add foo3
+
+EOF
+	test_cmp expected actual &&
+	git config --unset diff.ignoreSubmodules &&
+	git config --remove-section submodule.sm1 &&
+	git config -f .gitmodules --remove-section submodule.sm1
+"
+
+
 commit_file sm1 &&
 head3=$(
 	cd sm1 &&
@@ -265,13 +283,11 @@ EOF
 test_expect_success '--for-status' "
 	git submodule summary --for-status HEAD^ >actual &&
 	test_i18ncmp actual - <<EOF
-# Submodule changes to be committed:
-#
-# * sm1 $head6...0000000:
-#
-# * sm2 0000000...$head7 (2):
-#   > Add foo9
-#
+* sm1 $head6...0000000:
+
+* sm2 0000000...$head7 (2):
+  > Add foo9
+
 EOF
 "
 

@@ -13,6 +13,7 @@
 #include "parse-options.h"
 #include "resolve-undo.h"
 #include "string-list.h"
+#include "pathspec.h"
 
 static int abbrev;
 static int show_deleted;
@@ -30,7 +31,7 @@ static int debug_mode;
 static const char *prefix;
 static int max_prefix_len;
 static int prefix_len;
-static const char **pathspec;
+static struct pathspec pathspec;
 static int error_unmatch;
 static char *ps_matched;
 static const char *with_tree;
@@ -63,7 +64,7 @@ static void show_dir_entry(const char *tag, struct dir_entry *ent)
 	if (len >= ent->len)
 		die("git ls-files: internal error - directory entry not superset of prefix");
 
-	if (!match_pathspec(pathspec, ent->name, ent->len, len, ps_matched))
+	if (!match_pathspec_depth(&pathspec, ent->name, ent->len, len, ps_matched))
 		return;
 
 	fputs(tag, stdout);
@@ -138,7 +139,7 @@ static void show_ce_entry(const char *tag, const struct cache_entry *ce)
 	if (len >= ce_namelen(ce))
 		die("git ls-files: internal error - cache entry not superset of prefix");
 
-	if (!match_pathspec(pathspec, ce->name, ce_namelen(ce), len, ps_matched))
+	if (!match_pathspec_depth(&pathspec, ce->name, ce_namelen(ce), len, ps_matched))
 		return;
 
 	if (tag && *tag && show_valid_bit &&
@@ -194,7 +195,7 @@ static void show_ru_info(void)
 		len = strlen(path);
 		if (len < max_prefix_len)
 			continue; /* outside of the prefix */
-		if (!match_pathspec(pathspec, path, len, max_prefix_len, ps_matched))
+		if (!match_pathspec_depth(&pathspec, path, len, max_prefix_len, ps_matched))
 			continue; /* uninterested */
 		for (i = 0; i < 3; i++) {
 			if (!ui->mode[i])
@@ -219,7 +220,9 @@ static void show_files(struct dir_struct *dir)
 
 	/* For cached/deleted files we don't need to even do the readdir */
 	if (show_others || show_killed) {
-		fill_directory(dir, pathspec);
+		if (!show_others)
+			dir->flags |= DIR_COLLECT_KILLED_ONLY;
+		fill_directory(dir, &pathspec);
 		if (show_others)
 			show_other_files(dir);
 		if (show_killed)
@@ -287,21 +290,6 @@ static void prune_cache(const char *prefix)
 	active_nr = last;
 }
 
-static void strip_trailing_slash_from_submodules(void)
-{
-	const char **p;
-
-	for (p = pathspec; *p != NULL; p++) {
-		int len = strlen(*p), pos;
-
-		if (len < 1 || (*p)[len - 1] != '/')
-			continue;
-		pos = cache_name_pos(*p, len - 1);
-		if (pos >= 0 && S_ISGITLINK(active_cache[pos]->ce_mode))
-			*p = xstrndup(*p, len - 1);
-	}
-}
-
 /*
  * Read the tree specified with --with-tree option
  * (typically, HEAD) into stage #1 and then
@@ -333,13 +321,12 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix)
 	}
 
 	if (prefix) {
-		static const char *(matchbuf[2]);
-		matchbuf[0] = prefix;
-		matchbuf[1] = NULL;
-		init_pathspec(&pathspec, matchbuf);
-		pathspec.items[0].nowildcard_len = pathspec.items[0].len;
+		static const char *(matchbuf[1]);
+		matchbuf[0] = NULL;
+		parse_pathspec(&pathspec, PATHSPEC_ALL_MAGIC,
+			       PATHSPEC_PREFER_CWD, prefix, matchbuf);
 	} else
-		init_pathspec(&pathspec, NULL);
+		memset(&pathspec, 0, sizeof(pathspec));
 	if (read_tree(tree, 1, &pathspec))
 		die("unable to read tree entries %s", tree_name);
 
@@ -364,15 +351,16 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix)
 	}
 }
 
-int report_path_error(const char *ps_matched, const char **pathspec, const char *prefix)
+int report_path_error(const char *ps_matched,
+		      const struct pathspec *pathspec,
+		      const char *prefix)
 {
 	/*
 	 * Make sure all pathspec matched; otherwise it is an error.
 	 */
 	struct strbuf sb = STRBUF_INIT;
-	const char *name;
 	int num, errors = 0;
-	for (num = 0; pathspec[num]; num++) {
+	for (num = 0; num < pathspec->nr; num++) {
 		int other, found_dup;
 
 		if (ps_matched[num])
@@ -380,13 +368,16 @@ int report_path_error(const char *ps_matched, const char **pathspec, const char 
 		/*
 		 * The caller might have fed identical pathspec
 		 * twice.  Do not barf on such a mistake.
+		 * FIXME: parse_pathspec should have eliminated
+		 * duplicate pathspec.
 		 */
 		for (found_dup = other = 0;
-		     !found_dup && pathspec[other];
+		     !found_dup && other < pathspec->nr;
 		     other++) {
 			if (other == num || !ps_matched[other])
 				continue;
-			if (!strcmp(pathspec[other], pathspec[num]))
+			if (!strcmp(pathspec->items[other].original,
+				    pathspec->items[num].original))
 				/*
 				 * Ok, we have a match already.
 				 */
@@ -395,9 +386,8 @@ int report_path_error(const char *ps_matched, const char **pathspec, const char 
 		if (found_dup)
 			continue;
 
-		name = quote_path_relative(pathspec[num], prefix, &sb);
 		error("pathspec '%s' did not match any file(s) known to git.",
-		      name);
+		      pathspec->items[num].original);
 		errors++;
 	}
 	strbuf_release(&sb);
@@ -461,24 +451,24 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 		{ OPTION_CALLBACK, 'z', NULL, NULL, NULL,
 			N_("paths are separated with NUL character"),
 			PARSE_OPT_NOARG, option_parse_z },
-		OPT_BOOLEAN('t', NULL, &show_tag,
+		OPT_BOOL('t', NULL, &show_tag,
 			N_("identify the file status with tags")),
-		OPT_BOOLEAN('v', NULL, &show_valid_bit,
+		OPT_BOOL('v', NULL, &show_valid_bit,
 			N_("use lowercase letters for 'assume unchanged' files")),
-		OPT_BOOLEAN('c', "cached", &show_cached,
+		OPT_BOOL('c', "cached", &show_cached,
 			N_("show cached files in the output (default)")),
-		OPT_BOOLEAN('d', "deleted", &show_deleted,
+		OPT_BOOL('d', "deleted", &show_deleted,
 			N_("show deleted files in the output")),
-		OPT_BOOLEAN('m', "modified", &show_modified,
+		OPT_BOOL('m', "modified", &show_modified,
 			N_("show modified files in the output")),
-		OPT_BOOLEAN('o', "others", &show_others,
+		OPT_BOOL('o', "others", &show_others,
 			N_("show other files in the output")),
 		OPT_BIT('i', "ignored", &dir.flags,
 			N_("show ignored files in the output"),
 			DIR_SHOW_IGNORED),
-		OPT_BOOLEAN('s', "stage", &show_stage,
+		OPT_BOOL('s', "stage", &show_stage,
 			N_("show staged contents' object name in the output")),
-		OPT_BOOLEAN('k', "killed", &show_killed,
+		OPT_BOOL('k', "killed", &show_killed,
 			N_("show files on the filesystem that need to be removed")),
 		OPT_BIT(0, "directory", &dir.flags,
 			N_("show 'other' directories' name only"),
@@ -486,9 +476,9 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 		OPT_NEGBIT(0, "empty-directory", &dir.flags,
 			N_("don't show empty directories"),
 			DIR_HIDE_EMPTY_DIRECTORIES),
-		OPT_BOOLEAN('u', "unmerged", &show_unmerged,
+		OPT_BOOL('u', "unmerged", &show_unmerged,
 			N_("show unmerged files in the output")),
-		OPT_BOOLEAN(0, "resolve-undo", &show_resolve_undo,
+		OPT_BOOL(0, "resolve-undo", &show_resolve_undo,
 			    N_("show resolve-undo information")),
 		{ OPTION_CALLBACK, 'x', "exclude", &exclude_list, N_("pattern"),
 			N_("skip files matching pattern"),
@@ -504,12 +494,12 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 		{ OPTION_SET_INT, 0, "full-name", &prefix_len, NULL,
 			N_("make the output relative to the project top directory"),
 			PARSE_OPT_NOARG | PARSE_OPT_NONEG, NULL },
-		OPT_BOOLEAN(0, "error-unmatch", &error_unmatch,
+		OPT_BOOL(0, "error-unmatch", &error_unmatch,
 			N_("if any <file> is not in the index, treat this as an error")),
 		OPT_STRING(0, "with-tree", &with_tree, N_("tree-ish"),
 			N_("pretend that paths removed since <tree-ish> are still present")),
 		OPT__ABBREV(&abbrev),
-		OPT_BOOLEAN(0, "debug", &debug_mode, N_("show debugging data")),
+		OPT_BOOL(0, "debug", &debug_mode, N_("show debugging data")),
 		OPT_END()
 	};
 
@@ -555,23 +545,18 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 	if (require_work_tree && !is_inside_work_tree())
 		setup_work_tree();
 
-	pathspec = get_pathspec(prefix, argv);
-
-	/* be nice with submodule paths ending in a slash */
-	if (pathspec)
-		strip_trailing_slash_from_submodules();
+	parse_pathspec(&pathspec, 0,
+		       PATHSPEC_PREFER_CWD |
+		       PATHSPEC_STRIP_SUBMODULE_SLASH_CHEAP,
+		       prefix, argv);
 
 	/* Find common prefix for all pathspec's */
-	max_prefix = common_prefix(pathspec);
+	max_prefix = common_prefix(&pathspec);
 	max_prefix_len = max_prefix ? strlen(max_prefix) : 0;
 
 	/* Treat unmatching pathspec elements as errors */
-	if (pathspec && error_unmatch) {
-		int num;
-		for (num = 0; pathspec[num]; num++)
-			;
-		ps_matched = xcalloc(1, num);
-	}
+	if (pathspec.nr && error_unmatch)
+		ps_matched = xcalloc(1, pathspec.nr);
 
 	if ((dir.flags & DIR_SHOW_IGNORED) && !exc_given)
 		die("ls-files --ignored needs some exclude pattern");
@@ -598,7 +583,7 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 
 	if (ps_matched) {
 		int bad;
-		bad = report_path_error(ps_matched, pathspec, prefix);
+		bad = report_path_error(ps_matched, &pathspec, prefix);
 		if (bad)
 			fprintf(stderr, "Did you forget to 'git add'?\n");
 

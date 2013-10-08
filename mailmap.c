@@ -52,6 +52,20 @@ static void free_mailmap_entry(void *p, const char *s)
 	string_list_clear_func(&me->namemap, free_mailmap_info);
 }
 
+/*
+ * On some systems (e.g. MinGW 4.0), string.h has _only_ inline
+ * definition of strcasecmp and no non-inline implementation is
+ * supplied anywhere, which is, eh, "unusual"; we cannot take an
+ * address of such a function to store it in namemap.cmp.  This is
+ * here as a workaround---do not assign strcasecmp directly to
+ * namemap.cmp until we know no systems that matter have such an
+ * "unusual" string.h.
+ */
+static int namemap_cmp(const char *a, const char *b)
+{
+	return strcasecmp(a, b);
+}
+
 static void add_mapping(struct string_list *map,
 			char *new_name, char *new_email,
 			char *old_name, char *old_email)
@@ -75,7 +89,7 @@ static void add_mapping(struct string_list *map,
 		item = string_list_insert_at_index(map, index, old_email);
 		me = xcalloc(1, sizeof(struct mailmap_entry));
 		me->namemap.strdup_strings = 1;
-		me->namemap.cmp = strcasecmp;
+		me->namemap.cmp = namemap_cmp;
 		item->util = me;
 	}
 
@@ -153,8 +167,7 @@ static void read_mailmap_line(struct string_list *map, char *buffer,
 		if (!strncmp(buffer, abbrev, abblen)) {
 			char *cp;
 
-			if (repo_abbrev)
-				free(*repo_abbrev);
+			free(*repo_abbrev);
 			*repo_abbrev = xmalloc(len);
 
 			for (cp = buffer + abblen; isspace(*cp); cp++)
@@ -193,20 +206,17 @@ static int read_mailmap_file(struct string_list *map, const char *filename,
 	return 0;
 }
 
-static void read_mailmap_buf(struct string_list *map,
-			     const char *buf, unsigned long len,
-			     char **repo_abbrev)
+static void read_mailmap_string(struct string_list *map, char *buf,
+				char **repo_abbrev)
 {
-	while (len) {
-		const char *end = strchrnul(buf, '\n');
-		unsigned long linelen = end - buf + 1;
-		char *line = xmemdupz(buf, linelen);
+	while (*buf) {
+		char *end = strchrnul(buf, '\n');
 
-		read_mailmap_line(map, line, repo_abbrev);
+		if (*end)
+			*end++ = '\0';
 
-		free(line);
-		buf += linelen;
-		len -= linelen;
+		read_mailmap_line(map, buf, repo_abbrev);
+		buf = end;
 	}
 }
 
@@ -230,7 +240,7 @@ static int read_mailmap_blob(struct string_list *map,
 	if (type != OBJ_BLOB)
 		return error("mailmap is not a blob: %s", name);
 
-	read_mailmap_buf(map, buf, size, repo_abbrev);
+	read_mailmap_string(map, buf, repo_abbrev);
 
 	free(buf);
 	return 0;
@@ -241,7 +251,7 @@ int read_mailmap(struct string_list *map, char **repo_abbrev)
 	int err = 0;
 
 	map->strdup_strings = 1;
-	map->cmp = strcasecmp;
+	map->cmp = namemap_cmp;
 
 	if (!git_mailmap_blob && is_bare_repository())
 		git_mailmap_blob = "HEAD:.mailmap";

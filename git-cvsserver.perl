@@ -4167,7 +4167,7 @@ sub convertToDbMode
     #  this half-converted form, but it isn't currently worth the
     #  backwards compatibility headaches.
 
-    $mode=~/^\d\d(\d)\d{3}$/;
+    $mode=~/^\d{3}(\d)\d\d$/;
     my $userBits=$1;
 
     my $dbMode = "";
@@ -4338,7 +4338,7 @@ sub getAnyHead
 =head2 getRevisionDirMap
 
 A "revision dir map" contains all the plain-file filenames associated
-with a particular revision (treeish), organized by directory:
+with a particular revision (tree-ish), organized by directory:
 
   $type = $out->{$dir}{$fullName}
 

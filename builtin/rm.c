@@ -11,6 +11,7 @@
 #include "parse-options.h"
 #include "string-list.h"
 #include "submodule.h"
+#include "pathspec.h"
 
 static const char * const builtin_rm_usage[] = {
 	N_("git rm [options] [--] <file>..."),
@@ -267,10 +268,10 @@ static int ignore_unmatch = 0;
 static struct option builtin_rm_options[] = {
 	OPT__DRY_RUN(&show_only, N_("dry run")),
 	OPT__QUIET(&quiet, N_("do not list removed files")),
-	OPT_BOOLEAN( 0 , "cached",         &index_only, N_("only remove from the index")),
+	OPT_BOOL( 0 , "cached",         &index_only, N_("only remove from the index")),
 	OPT__FORCE(&force, N_("override the up-to-date check")),
-	OPT_BOOLEAN('r', NULL,             &recursive,  N_("allow recursive removal")),
-	OPT_BOOLEAN( 0 , "ignore-unmatch", &ignore_unmatch,
+	OPT_BOOL('r', NULL,             &recursive,  N_("allow recursive removal")),
+	OPT_BOOL( 0 , "ignore-unmatch", &ignore_unmatch,
 				N_("exit with a zero status even if nothing matched")),
 	OPT_END(),
 };
@@ -278,9 +279,10 @@ static struct option builtin_rm_options[] = {
 int cmd_rm(int argc, const char **argv, const char *prefix)
 {
 	int i, newfd;
-	const char **pathspec;
+	struct pathspec pathspec;
 	char *seen;
 
+	gitmodules_config();
 	git_config(git_default_config, NULL);
 
 	argc = parse_options(argc, argv, prefix, builtin_rm_options,
@@ -296,46 +298,35 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 	if (read_cache() < 0)
 		die(_("index file corrupt"));
 
-	/*
-	 * Drop trailing directory separators from directories so we'll find
-	 * submodules in the index.
-	 */
-	for (i = 0; i < argc; i++) {
-		size_t pathlen = strlen(argv[i]);
-		if (pathlen && is_dir_sep(argv[i][pathlen - 1]) &&
-		    is_directory(argv[i])) {
-			do {
-				pathlen--;
-			} while (pathlen && is_dir_sep(argv[i][pathlen - 1]));
-			argv[i] = xmemdupz(argv[i], pathlen);
-		}
-	}
+	parse_pathspec(&pathspec, 0,
+		       PATHSPEC_PREFER_CWD |
+		       PATHSPEC_STRIP_SUBMODULE_SLASH_CHEAP,
+		       prefix, argv);
+	refresh_index(&the_index, REFRESH_QUIET, &pathspec, NULL, NULL);
 
-	pathspec = get_pathspec(prefix, argv);
-	refresh_index(&the_index, REFRESH_QUIET, pathspec, NULL, NULL);
-
-	seen = NULL;
-	for (i = 0; pathspec[i] ; i++)
-		/* nothing */;
-	seen = xcalloc(i, 1);
+	seen = xcalloc(pathspec.nr, 1);
 
 	for (i = 0; i < active_nr; i++) {
 		const struct cache_entry *ce = active_cache[i];
-		if (!match_pathspec(pathspec, ce->name, ce_namelen(ce), 0, seen))
+		if (!match_pathspec_depth(&pathspec, ce->name, ce_namelen(ce), 0, seen))
 			continue;
 		ALLOC_GROW(list.entry, list.nr + 1, list.alloc);
 		list.entry[list.nr].name = ce->name;
-		list.entry[list.nr++].is_submodule = S_ISGITLINK(ce->ce_mode);
+		list.entry[list.nr].is_submodule = S_ISGITLINK(ce->ce_mode);
+		if (list.entry[list.nr++].is_submodule &&
+		    !is_staging_gitmodules_ok())
+			die (_("Please, stage your changes to .gitmodules or stash them to proceed"));
 	}
 
-	if (pathspec) {
-		const char *match;
+	if (pathspec.nr) {
+		const char *original;
 		int seen_any = 0;
-		for (i = 0; (match = pathspec[i]) != NULL ; i++) {
+		for (i = 0; i < pathspec.nr; i++) {
+			original = pathspec.items[i].original;
 			if (!seen[i]) {
 				if (!ignore_unmatch) {
 					die(_("pathspec '%s' did not match any files"),
-					    match);
+					    original);
 				}
 			}
 			else {
@@ -343,10 +334,10 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 			}
 			if (!recursive && seen[i] == MATCHED_RECURSIVELY)
 				die(_("not removing '%s' recursively without -r"),
-				    *match ? match : ".");
+				    *original ? original : ".");
 		}
 
-		if (! seen_any)
+		if (!seen_any)
 			exit(0);
 	}
 
@@ -396,13 +387,15 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 	 * in the middle)
 	 */
 	if (!index_only) {
-		int removed = 0;
+		int removed = 0, gitmodules_modified = 0;
 		for (i = 0; i < list.nr; i++) {
 			const char *path = list.entry[i].name;
 			if (list.entry[i].is_submodule) {
 				if (is_empty_dir(path)) {
 					if (!rmdir(path)) {
 						removed = 1;
+						if (!remove_path_from_gitmodules(path))
+							gitmodules_modified = 1;
 						continue;
 					}
 				} else {
@@ -410,9 +403,14 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 					strbuf_addstr(&buf, path);
 					if (!remove_dir_recursively(&buf, 0)) {
 						removed = 1;
+						if (!remove_path_from_gitmodules(path))
+							gitmodules_modified = 1;
 						strbuf_release(&buf);
 						continue;
-					}
+					} else if (!file_exists(path))
+						/* Submodule was removed by user */
+						if (!remove_path_from_gitmodules(path))
+							gitmodules_modified = 1;
 					strbuf_release(&buf);
 					/* Fallthrough and let remove_path() fail. */
 				}
@@ -424,6 +422,8 @@ int cmd_rm(int argc, const char **argv, const char *prefix)
 			if (!removed)
 				die_errno("git rm: '%s'", path);
 		}
+		if (gitmodules_modified)
+			stage_updated_gitmodules();
 	}
 
 	if (active_cache_changed) {

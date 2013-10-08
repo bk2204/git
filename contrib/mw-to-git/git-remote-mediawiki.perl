@@ -590,6 +590,9 @@ sub mw_capabilities {
 	print {*STDOUT} "import\n";
 	print {*STDOUT} "list\n";
 	print {*STDOUT} "push\n";
+	if ($dumb_push) {
+		print {*STDOUT} "no-private-update\n";
+	}
 	print {*STDOUT} "\n";
 	return;
 }
@@ -622,6 +625,9 @@ sub fetch_mw_revisions_for_page {
 		rvstartid => $fetch_from,
 		rvlimit => 500,
 		pageids => $id,
+
+		# Let MediaWiki know that we support the latest API.
+		continue => '',
 	};
 
 	my $revnum = 0;
@@ -637,8 +643,15 @@ sub fetch_mw_revisions_for_page {
 			push(@page_revs, $page_rev_ids);
 			$revnum++;
 		}
-		last if (!$result->{'query-continue'});
-		$query->{rvstartid} = $result->{'query-continue'}->{revisions}->{rvstartid};
+
+		if ($result->{'query-continue'}) { # For legacy APIs
+			$query->{rvstartid} = $result->{'query-continue'}->{revisions}->{rvstartid};
+		} elsif ($result->{continue}) { # For newer APIs
+			$query->{rvstartid} = $result->{continue}->{rvcontinue};
+			$query->{continue} = $result->{continue}->{continue};
+		} else {
+			last;
+		}
 	}
 	if ($shallow_import && @page_revs) {
 		print {*STDERR} "  Found 1 revision (shallow import).\n";
@@ -1211,7 +1224,6 @@ sub mw_push_revision {
 		}
 		if (!$dumb_push) {
 			run_git(qq(notes --ref=${remotename}/mediawiki add -f -m "mediawiki_revision: ${mw_revision}" ${sha1_commit}));
-			run_git(qq(update-ref -m "Git-MediaWiki push" refs/mediawiki/${remotename}/master ${sha1_commit} ${sha1_child}));
 		}
 	}
 

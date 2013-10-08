@@ -30,13 +30,18 @@ enum {
 	TAGS_SET = 2
 };
 
-static int all, append, dry_run, force, keep, multiple, prune, update_head_ok, verbosity;
+static int fetch_prune_config = -1; /* unspecified */
+static int prune = -1; /* unspecified */
+#define PRUNE_BY_DEFAULT 0 /* do we prune by default? */
+
+static int all, append, dry_run, force, keep, multiple, update_head_ok, verbosity;
 static int progress = -1, recurse_submodules = RECURSE_SUBMODULES_DEFAULT;
 static int tags = TAGS_DEFAULT, unshallow;
 static const char *depth;
 static const char *upload_pack;
 static struct strbuf default_rla = STRBUF_INIT;
-static struct transport *transport;
+static struct transport *gtransport;
+static struct transport *gsecondary;
 static const char *submodule_prefix = "";
 static const char *recurse_submodules_default;
 
@@ -54,30 +59,39 @@ static int option_parse_recurse_submodules(const struct option *opt,
 	return 0;
 }
 
+static int git_fetch_config(const char *k, const char *v, void *cb)
+{
+	if (!strcmp(k, "fetch.prune")) {
+		fetch_prune_config = git_config_bool(k, v);
+		return 0;
+	}
+	return 0;
+}
+
 static struct option builtin_fetch_options[] = {
 	OPT__VERBOSITY(&verbosity),
-	OPT_BOOLEAN(0, "all", &all,
-		    N_("fetch from all remotes")),
-	OPT_BOOLEAN('a', "append", &append,
-		    N_("append to .git/FETCH_HEAD instead of overwriting")),
+	OPT_BOOL(0, "all", &all,
+		 N_("fetch from all remotes")),
+	OPT_BOOL('a', "append", &append,
+		 N_("append to .git/FETCH_HEAD instead of overwriting")),
 	OPT_STRING(0, "upload-pack", &upload_pack, N_("path"),
 		   N_("path to upload pack on remote end")),
 	OPT__FORCE(&force, N_("force overwrite of local branch")),
-	OPT_BOOLEAN('m', "multiple", &multiple,
-		    N_("fetch from multiple remotes")),
+	OPT_BOOL('m', "multiple", &multiple,
+		 N_("fetch from multiple remotes")),
 	OPT_SET_INT('t', "tags", &tags,
 		    N_("fetch all tags and associated objects"), TAGS_SET),
 	OPT_SET_INT('n', NULL, &tags,
 		    N_("do not fetch all tags (--no-tags)"), TAGS_UNSET),
-	OPT_BOOLEAN('p', "prune", &prune,
-		    N_("prune remote-tracking branches no longer on remote")),
+	OPT_BOOL('p', "prune", &prune,
+		 N_("prune remote-tracking branches no longer on remote")),
 	{ OPTION_CALLBACK, 0, "recurse-submodules", NULL, N_("on-demand"),
 		    N_("control recursive fetching of submodules"),
 		    PARSE_OPT_OPTARG, option_parse_recurse_submodules },
-	OPT_BOOLEAN(0, "dry-run", &dry_run,
-		    N_("dry run")),
-	OPT_BOOLEAN('k', "keep", &keep, N_("keep downloaded pack")),
-	OPT_BOOLEAN('u', "update-head-ok", &update_head_ok,
+	OPT_BOOL(0, "dry-run", &dry_run,
+		 N_("dry run")),
+	OPT_BOOL('k', "keep", &keep, N_("keep downloaded pack")),
+	OPT_BOOL('u', "update-head-ok", &update_head_ok,
 		    N_("allow updating of HEAD ref")),
 	OPT_BOOL(0, "progress", &progress, N_("force progress reporting")),
 	OPT_STRING(0, "depth", &depth, N_("depth"),
@@ -95,8 +109,10 @@ static struct option builtin_fetch_options[] = {
 
 static void unlock_pack(void)
 {
-	if (transport)
-		transport_unlock_pack(transport);
+	if (gtransport)
+		transport_unlock_pack(gtransport);
+	if (gsecondary)
+		transport_unlock_pack(gsecondary);
 }
 
 static void unlock_pack_on_signal(int signo)
@@ -246,7 +262,8 @@ static int s_update_ref(const char *action,
 		rla = default_rla.buf;
 	snprintf(msg, sizeof(msg), "%s: %s", rla, action);
 	lock = lock_any_ref_for_update(ref->name,
-				       check_old ? ref->old_sha1 : NULL, 0);
+				       check_old ? ref->old_sha1 : NULL,
+				       0, NULL);
 	if (!lock)
 		return errno == ENOTDIR ? STORE_REF_ERROR_DF_CONFLICT :
 					  STORE_REF_ERROR_OTHER;
@@ -720,6 +737,48 @@ static int truncate_fetch_head(void)
 	return 0;
 }
 
+static void set_option(struct transport *transport, const char *name, const char *value)
+{
+	int r = transport_set_option(transport, name, value);
+	if (r < 0)
+		die(_("Option \"%s\" value \"%s\" is not valid for %s"),
+		    name, value, transport->url);
+	if (r > 0)
+		warning(_("Option \"%s\" is ignored for %s\n"),
+			name, transport->url);
+}
+
+static struct transport *prepare_transport(struct remote *remote)
+{
+	struct transport *transport;
+	transport = transport_get(remote, NULL);
+	transport_set_verbosity(transport, verbosity, progress);
+	if (upload_pack)
+		set_option(transport, TRANS_OPT_UPLOADPACK, upload_pack);
+	if (keep)
+		set_option(transport, TRANS_OPT_KEEP, "yes");
+	if (depth)
+		set_option(transport, TRANS_OPT_DEPTH, depth);
+	return transport;
+}
+
+static void backfill_tags(struct transport *transport, struct ref *ref_map)
+{
+	if (transport->cannot_reuse) {
+		gsecondary = prepare_transport(transport->remote);
+		transport = gsecondary;
+	}
+
+	transport_set_option(transport, TRANS_OPT_FOLLOWTAGS, NULL);
+	transport_set_option(transport, TRANS_OPT_DEPTH, "0");
+	fetch_refs(transport, ref_map);
+
+	if (gsecondary) {
+		transport_disconnect(gsecondary);
+		gsecondary = NULL;
+	}
+}
+
 static int do_fetch(struct transport *transport,
 		    struct refspec *refs, int ref_count)
 {
@@ -771,7 +830,10 @@ static int do_fetch(struct transport *transport,
 		goto cleanup;
 	}
 	if (prune) {
-		/* If --tags was specified, pretend the user gave us the canonical tags refspec */
+		/*
+		 * If --tags was specified, pretend that the user gave us
+		 * the canonical tags refspec
+		 */
 		if (tags == TAGS_SET) {
 			const char *tags_str = "refs/tags/*:refs/tags/*";
 			struct refspec *tags_refspec, *refspec;
@@ -803,28 +865,14 @@ static int do_fetch(struct transport *transport,
 		struct ref **tail = &ref_map;
 		ref_map = NULL;
 		find_non_local_tags(transport, &ref_map, &tail);
-		if (ref_map) {
-			transport_set_option(transport, TRANS_OPT_FOLLOWTAGS, NULL);
-			transport_set_option(transport, TRANS_OPT_DEPTH, "0");
-			fetch_refs(transport, ref_map);
-		}
+		if (ref_map)
+			backfill_tags(transport, ref_map);
 		free_refs(ref_map);
 	}
 
  cleanup:
 	string_list_clear(&existing_refs, 1);
 	return retcode;
-}
-
-static void set_option(const char *name, const char *value)
-{
-	int r = transport_set_option(transport, name, value);
-	if (r < 0)
-		die(_("Option \"%s\" value \"%s\" is not valid for %s"),
-			name, value, transport->url);
-	if (r > 0)
-		warning(_("Option \"%s\" is ignored for %s\n"),
-			name, transport->url);
 }
 
 static int get_one_remote_for_fetch(struct remote *remote, void *priv)
@@ -882,7 +930,7 @@ static void add_options_to_argv(struct argv_array *argv)
 {
 	if (dry_run)
 		argv_array_push(argv, "--dry-run");
-	if (prune)
+	if (prune > 0)
 		argv_array_push(argv, "--prune");
 	if (update_head_ok)
 		argv_array_push(argv, "--update-head-ok");
@@ -949,14 +997,17 @@ static int fetch_one(struct remote *remote, int argc, const char **argv)
 		die(_("No remote repository specified.  Please, specify either a URL or a\n"
 		    "remote name from which new revisions should be fetched."));
 
-	transport = transport_get(remote, NULL);
-	transport_set_verbosity(transport, verbosity, progress);
-	if (upload_pack)
-		set_option(TRANS_OPT_UPLOADPACK, upload_pack);
-	if (keep)
-		set_option(TRANS_OPT_KEEP, "yes");
-	if (depth)
-		set_option(TRANS_OPT_DEPTH, depth);
+	gtransport = prepare_transport(remote);
+
+	if (prune < 0) {
+		/* no command line request */
+		if (0 <= gtransport->remote->prune)
+			prune = gtransport->remote->prune;
+		else if (0 <= fetch_prune_config)
+			prune = fetch_prune_config;
+		else
+			prune = PRUNE_BY_DEFAULT;
+	}
 
 	if (argc > 0) {
 		int j = 0;
@@ -983,10 +1034,10 @@ static int fetch_one(struct remote *remote, int argc, const char **argv)
 	sigchain_push_common(unlock_pack_on_signal);
 	atexit(unlock_pack);
 	refspec = parse_fetch_refspec(ref_nr, refs);
-	exit_code = do_fetch(transport, refspec, ref_nr);
+	exit_code = do_fetch(gtransport, refspec, ref_nr);
 	free_refspec(ref_nr, refspec);
-	transport_disconnect(transport);
-	transport = NULL;
+	transport_disconnect(gtransport);
+	gtransport = NULL;
 	return exit_code;
 }
 
@@ -1006,6 +1057,8 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	strbuf_addstr(&default_rla, "fetch");
 	for (i = 1; i < argc; i++)
 		strbuf_addf(&default_rla, " %s", argv[i]);
+
+	git_config(git_fetch_config, NULL);
 
 	argc = parse_options(argc, argv, prefix,
 			     builtin_fetch_options, builtin_fetch_usage, 0);

@@ -9,7 +9,7 @@ git - the stupid content tracker
 SYNOPSIS
 --------
 [verse]
-'git' [--version] [--help] [-c <name>=<value>]
+'git' [--version] [--help] [-C <path>] [-c <name>=<value>]
     [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]
     [-p|--paginate|--no-pager] [--no-replace-objects] [--bare]
     [--git-dir=<path>] [--work-tree=<path>] [--namespace=<name>]
@@ -43,9 +43,10 @@ unreleased) version of Git, that is available from 'master'
 branch of the `git.git` repository.
 Documentation for older releases are available here:
 
-* link:v1.8.4/git.html[documentation for release 1.8.4]
+* link:v1.8.4.1/git.html[documentation for release 1.8.4.1]
 
 * release notes for
+  link:RelNotes/1.8.4.1.txt[1.8.4.1],
   link:RelNotes/1.8.4.txt[1.8.4].
 
 * link:v1.8.3.4/git.html[documentation for release 1.8.3.4]
@@ -395,6 +396,20 @@ displayed. See linkgit:git-help[1] for more information,
 because `git --help ...` is converted internally into `git
 help ...`.
 
+-C <path>::
+	Run as if git was started in '<path>' instead of the current working
+	directory.  When multiple `-C` options are given, each subsequent
+	non-absolute `-C <path>` is interpreted relative to the preceding `-C
+	<path>`.
++
+This option affects options that expect path name like `--git-dir` and
+`--work-tree` in that their interpretations of the path names would be
+made relative to the working directory caused by the `-C` option. For
+example the following invocations are equivalent:
+
+    git --git-dir=a.git --work-tree=b -C c status
+    git --git-dir=c/a.git --work-tree=c/b status
+
 -c <name>=<value>::
 	Pass a configuration parameter to the command. The value
 	given will override values from configuration files.
@@ -457,10 +472,25 @@ help ...`.
 	linkgit:git-replace[1] for more information.
 
 --literal-pathspecs::
-	Treat pathspecs literally, rather than as glob patterns. This is
-	equivalent to setting the `GIT_LITERAL_PATHSPECS` environment
+	Treat pathspecs literally (i.e. no globbing, no pathspec magic).
+	This is equivalent to setting the `GIT_LITERAL_PATHSPECS` environment
 	variable to `1`.
 
+--glob-pathspecs:
+	Add "glob" magic to all pathspec. This is equivalent to setting
+	the `GIT_GLOB_PATHSPECS` environment variable to `1`. Disabling
+	globbing on individual pathspecs can be done using pathspec
+	magic ":(literal)"
+
+--noglob-pathspecs:
+	Add "literal" magic to all pathspec. This is equivalent to setting
+	the `GIT_NOGLOB_PATHSPECS` environment variable to `1`. Enabling
+	globbing on individual pathspecs can be done using pathspec
+	magic ":(glob)"
+
+--icase-pathspecs:
+	Add "icase" magic to all pathspec. This is equivalent to setting
+	the `GIT_ICASE_PATHSPECS` environment variable to `1`.
 
 GIT COMMANDS
 ------------
@@ -823,7 +853,7 @@ for further details.
 'GIT_FLUSH'::
 	If this environment variable is set to "1", then commands such
 	as 'git blame' (in incremental mode), 'git rev-list', 'git log',
-	'git check-attr', 'git check-ignore', and 'git whatchanged' will
+	'git check-attr' and 'git check-ignore' will
 	force a flush of the output stream after each record have been
 	flushed. If this
 	variable is set to "0", the output of these commands will be done
@@ -866,6 +896,28 @@ GIT_LITERAL_PATHSPECS::
 	glob `*.c` matches. You might want this if you are feeding
 	literal paths to Git (e.g., paths previously given to you by
 	`git ls-tree`, `--raw` diff output, etc).
+
+GIT_GLOB_PATHSPECS::
+	Setting this variable to `1` will cause Git to treat all
+	pathspecs as glob patterns (aka "glob" magic).
+
+GIT_NOGLOB_PATHSPECS::
+	Setting this variable to `1` will cause Git to treat all
+	pathspecs as literal (aka "literal" magic).
+
+GIT_ICASE_PATHSPECS::
+	Setting this variable to `1` will cause Git to treat all
+	pathspecs as case-insensitive.
+
+'GIT_REFLOG_ACTION'::
+	When a ref is updated, reflog entries are created to keep
+	track of the reason why the ref was updated (which is
+	typically the name of the high-level command that updated
+	the ref), in addition to the old and new values of the ref.
+	A scripted Porcelain command can use set_reflog_action
+	helper function in `git-sh-setup` to set its name to this
+	variable when it is invoked as the top level command by the
+	end user, to be recorded in the body of the reflog.
 
 
 Discussion[[Discussion]]

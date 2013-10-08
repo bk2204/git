@@ -677,11 +677,13 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 		return -1;
 
 	sp++; /* beginning of type name, or closing brace for empty */
-	if (!strncmp(commit_type, sp, 6) && sp[6] == '}')
+	if (!prefixcmp(sp, "commit}"))
 		expected_type = OBJ_COMMIT;
-	else if (!strncmp(tree_type, sp, 4) && sp[4] == '}')
+	else if (!prefixcmp(sp, "tag}"))
+		expected_type = OBJ_TAG;
+	else if (!prefixcmp(sp, "tree}"))
 		expected_type = OBJ_TREE;
-	else if (!strncmp(blob_type, sp, 4) && sp[4] == '}')
+	else if (!prefixcmp(sp, "blob}"))
 		expected_type = OBJ_BLOB;
 	else if (!prefixcmp(sp, "object}"))
 		expected_type = OBJ_ANY;
@@ -1004,6 +1006,28 @@ int get_sha1_mb(const char *name, unsigned char *sha1)
 	return st;
 }
 
+/* parse @something syntax, when 'something' is not {.*} */
+static int interpret_empty_at(const char *name, int namelen, int len, struct strbuf *buf)
+{
+	const char *next;
+
+	if (len || name[1] == '{')
+		return -1;
+
+	/* make sure it's a single @, or @@{.*}, not @foo */
+	next = strchr(name + len + 1, '@');
+	if (next && next[1] != '{')
+		return -1;
+	if (!next)
+		next = name + namelen;
+	if (next != name + 1)
+		return -1;
+
+	strbuf_reset(buf);
+	strbuf_add(buf, "HEAD", 4);
+	return 1;
+}
+
 static int reinterpret(const char *name, int namelen, int len, struct strbuf *buf)
 {
 	/* we have extra data, which might need further processing */
@@ -1012,7 +1036,7 @@ static int reinterpret(const char *name, int namelen, int len, struct strbuf *bu
 	int ret;
 
 	strbuf_add(buf, name + len, namelen - len);
-	ret = interpret_branch_name(buf->buf, &tmp);
+	ret = interpret_branch_name(buf->buf, buf->len, &tmp);
 	/* that data was not interpreted, remove our cruft */
 	if (ret < 0) {
 		strbuf_setlen(buf, used);
@@ -1046,13 +1070,15 @@ static int reinterpret(const char *name, int namelen, int len, struct strbuf *bu
  * If the input was ok but there are not N branch switches in the
  * reflog, it returns 0.
  */
-int interpret_branch_name(const char *name, struct strbuf *buf)
+int interpret_branch_name(const char *name, int namelen, struct strbuf *buf)
 {
 	char *cp;
 	struct branch *upstream;
-	int namelen = strlen(name);
 	int len = interpret_nth_prior_checkout(name, buf);
 	int tmp_len;
+
+	if (!namelen)
+		namelen = strlen(name);
 
 	if (!len) {
 		return len; /* syntax Ok, not enough switches */
@@ -1066,9 +1092,15 @@ int interpret_branch_name(const char *name, struct strbuf *buf)
 	cp = strchr(name, '@');
 	if (!cp)
 		return -1;
+
+	len = interpret_empty_at(name, namelen, cp - name, buf);
+	if (len > 0)
+		return reinterpret(name, namelen, len, buf);
+
 	tmp_len = upstream_mark(cp, namelen - (cp - name));
 	if (!tmp_len)
 		return -1;
+
 	len = cp + tmp_len - name;
 	cp = xstrndup(name, cp - name);
 	upstream = branch_get(*cp ? cp : NULL);
@@ -1100,7 +1132,7 @@ int interpret_branch_name(const char *name, struct strbuf *buf)
 int strbuf_branchname(struct strbuf *sb, const char *name)
 {
 	int len = strlen(name);
-	int used = interpret_branch_name(name, sb);
+	int used = interpret_branch_name(name, len, sb);
 
 	if (used == len)
 		return 0;
@@ -1130,13 +1162,13 @@ int get_sha1(const char *name, unsigned char *sha1)
 }
 
 /*
- * Many callers know that the user meant to name a committish by
+ * Many callers know that the user meant to name a commit-ish by
  * syntactical positions where the object name appears.  Calling this
  * function allows the machinery to disambiguate shorter-than-unique
- * abbreviated object names between committish and others.
+ * abbreviated object names between commit-ish and others.
  *
  * Note that this does NOT error out when the named object is not a
- * committish. It is merely to give a hint to the disambiguation
+ * commit-ish. It is merely to give a hint to the disambiguation
  * machinery.
  */
 int get_sha1_committish(const char *name, unsigned char *sha1)

@@ -185,12 +185,40 @@ test_expect_success 'blame -L Y,X (undocumented)' '
 	check_count -L6,3 B 1 B1 1 B2 1 D 1
 '
 
+test_expect_success 'blame -L -X' '
+	test_must_fail $PROG -L-1 file
+'
+
+test_expect_success 'blame -L 0' '
+	test_must_fail $PROG -L0 file
+'
+
+test_expect_success 'blame -L ,0' '
+	test_must_fail $PROG -L,0 file
+'
+
+test_expect_success 'blame -L ,+0' '
+	test_must_fail $PROG -L,+0 file
+'
+
+test_expect_success 'blame -L X,+0' '
+	test_must_fail $PROG -L1,+0 file
+'
+
 test_expect_success 'blame -L X,+1' '
 	check_count -L3,+1 B2 1
 '
 
 test_expect_success 'blame -L X,+N' '
 	check_count -L3,+4 B 1 B1 1 B2 1 D 1
+'
+
+test_expect_success 'blame -L ,-0' '
+	test_must_fail $PROG -L,-0 file
+'
+
+test_expect_success 'blame -L X,-0' '
+	test_must_fail $PROG -L1,-0 file
 '
 
 test_expect_success 'blame -L X,-1' '
@@ -225,12 +253,103 @@ test_expect_success 'blame -L /RE/,-N' '
 	check_count -L/99/,-3 B 1 B2 1 D 1
 '
 
+# 'file' ends with an incomplete line, so 'wc' reports one fewer lines than
+# git-blame sees, hence the last line is actually $(wc...)+1.
+test_expect_success 'blame -L X (X == nlines)' '
+	n=$(expr $(wc -l <file) + 1) &&
+	check_count -L$n C 1
+'
+
+test_expect_success 'blame -L X (X == nlines + 1)' '
+	n=$(expr $(wc -l <file) + 2) &&
+	test_must_fail $PROG -L$n file
+'
+
 test_expect_success 'blame -L X (X > nlines)' '
 	test_must_fail $PROG -L12345 file
 '
 
+test_expect_success 'blame -L ,Y (Y == nlines)' '
+	n=$(expr $(wc -l <file) + 1) &&
+	check_count -L,$n A 1 B 1 B1 1 B2 1 "A U Thor" 1 C 1 D 1 E 1
+'
+
+test_expect_success 'blame -L ,Y (Y == nlines + 1)' '
+	n=$(expr $(wc -l <file) + 2) &&
+	test_must_fail $PROG -L,$n file
+'
+
 test_expect_success 'blame -L ,Y (Y > nlines)' '
 	test_must_fail $PROG -L,12345 file
+'
+
+test_expect_success 'blame -L multiple (disjoint)' '
+	check_count -L2,3 -L6,7 A 1 B1 1 B2 1 "A U Thor" 1
+'
+
+test_expect_success 'blame -L multiple (disjoint: unordered)' '
+	check_count -L6,7 -L2,3 A 1 B1 1 B2 1 "A U Thor" 1
+'
+
+test_expect_success 'blame -L multiple (adjacent)' '
+	check_count -L2,3 -L4,5 A 1 B 1 B2 1 D 1
+'
+
+test_expect_success 'blame -L multiple (adjacent: unordered)' '
+	check_count -L4,5 -L2,3 A 1 B 1 B2 1 D 1
+'
+
+test_expect_success 'blame -L multiple (overlapping)' '
+	check_count -L2,4 -L3,5 A 1 B 1 B2 1 D 1
+'
+
+test_expect_success 'blame -L multiple (overlapping: unordered)' '
+	check_count -L3,5 -L2,4 A 1 B 1 B2 1 D 1
+'
+
+test_expect_success 'blame -L multiple (superset/subset)' '
+	check_count -L2,8 -L3,5 A 1 B 1 B1 1 B2 1 C 1 D 1 "A U Thor" 1
+'
+
+test_expect_success 'blame -L multiple (superset/subset: unordered)' '
+	check_count -L3,5 -L2,8 A 1 B 1 B1 1 B2 1 C 1 D 1 "A U Thor" 1
+'
+
+test_expect_success 'blame -L /RE/ (relative)' '
+	check_count -L3,3 -L/fox/ B1 1 B2 1 C 1 D 1 "A U Thor" 1
+'
+
+test_expect_success 'blame -L /RE/ (relative: no preceding range)' '
+	check_count -L/dog/ A 1 B 1 B1 1 B2 1 C 1 D 1 "A U Thor" 1
+'
+
+test_expect_success 'blame -L /RE/ (relative: adjacent)' '
+	check_count -L1,1 -L/dog/,+1 A 1 E 1
+'
+
+test_expect_success 'blame -L /RE/ (relative: not found)' '
+	test_must_fail $PROG -L4,4 -L/dog/ file
+'
+
+test_expect_success 'blame -L /RE/ (relative: end-of-file)' '
+	test_must_fail $PROG -L, -L/$/ file
+'
+
+test_expect_success 'blame -L ^/RE/ (absolute)' '
+	check_count -L3,3 -L^/dog/,+2 A 1 B2 1
+'
+
+test_expect_success 'blame -L ^/RE/ (absolute: no preceding range)' '
+	check_count -L^/dog/,+2 A 1 B2 1
+'
+
+test_expect_success 'blame -L ^/RE/ (absolute: not found)' '
+	test_must_fail $PROG -L4,4 -L^/tambourine/ file
+'
+
+test_expect_success 'blame -L ^/RE/ (absolute: end-of-file)' '
+	n=$(expr $(wc -l <file) + 1) &&
+	check_count -L$n -L^/$/,+2 A 1 C 1 E 1
 '
 
 test_expect_success 'setup -L :regex' '
@@ -275,12 +394,139 @@ test_expect_success 'blame -L :nomatch' '
 	test_must_fail $PROG -L:nomatch hello.c
 '
 
-test_expect_success 'blame -L bogus' '
-	test_must_fail $PROG -L file &&
-	test_must_fail $PROG -L1,+ file &&
-	test_must_fail $PROG -L1,- file &&
-	test_must_fail $PROG -LX file &&
-	test_must_fail $PROG -L1,X file &&
-	test_must_fail $PROG -L1,+N file &&
+test_expect_success 'blame -L :RE (relative)' '
+	check_count -f hello.c -L3,3 -L:ma.. F 1 H 4
+'
+
+test_expect_success 'blame -L :RE (relative: no preceding range)' '
+	check_count -f hello.c -L:ma.. F 4 G 1
+'
+
+test_expect_success 'blame -L :RE (relative: not found)' '
+	test_must_fail $PROG -L3,3 -L:tambourine hello.c
+'
+
+test_expect_success 'blame -L :RE (relative: end-of-file)' '
+	test_must_fail $PROG -L, -L:main hello.c
+'
+
+test_expect_success 'blame -L ^:RE (absolute)' '
+	check_count -f hello.c -L3,3 -L^:ma.. F 4 G 1
+'
+
+test_expect_success 'blame -L ^:RE (absolute: no preceding range)' '
+	check_count -f hello.c -L^:ma.. F 4 G 1
+'
+
+test_expect_success 'blame -L ^:RE (absolute: not found)' '
+	test_must_fail $PROG -L4,4 -L^:tambourine hello.c
+'
+
+test_expect_success 'blame -L ^:RE (absolute: end-of-file)' '
+	n=$(printf "%d" $(wc -l <hello.c)) &&
+	check_count -f hello.c -L$n -L^:ma.. F 4 G 1 H 1
+'
+
+test_expect_success 'setup incremental' '
+	(
+	GIT_AUTHOR_NAME=I &&
+	export GIT_AUTHOR_NAME &&
+	GIT_AUTHOR_EMAIL=I@test.git &&
+	export GIT_AUTHOR_EMAIL &&
+	>incremental &&
+	git add incremental &&
+	git commit -m "step 0" &&
+	printf "partial" >>incremental &&
+	git commit -a -m "step 0.5" &&
+	echo >>incremental &&
+	git commit -a -m "step 1"
+	)
+'
+
+test_expect_success 'blame empty' '
+	check_count -h HEAD^^ -f incremental
+'
+
+test_expect_success 'blame -L 0 empty' '
+	test_must_fail $PROG -L0 incremental HEAD^^
+'
+
+test_expect_success 'blame -L 1 empty' '
+	test_must_fail $PROG -L1 incremental HEAD^^
+'
+
+test_expect_success 'blame -L 2 empty' '
+	test_must_fail $PROG -L2 incremental HEAD^^
+'
+
+test_expect_success 'blame half' '
+	check_count -h HEAD^ -f incremental I 1
+'
+
+test_expect_success 'blame -L 0 half' '
+	test_must_fail $PROG -L0 incremental HEAD^
+'
+
+test_expect_success 'blame -L 1 half' '
+	check_count -h HEAD^ -f incremental -L1 I 1
+'
+
+test_expect_success 'blame -L 2 half' '
+	test_must_fail $PROG -L2 incremental HEAD^
+'
+
+test_expect_success 'blame -L 3 half' '
+	test_must_fail $PROG -L3 incremental HEAD^
+'
+
+test_expect_success 'blame full' '
+	check_count -f incremental I 1
+'
+
+test_expect_success 'blame -L 0 full' '
+	test_must_fail $PROG -L0 incremental
+'
+
+test_expect_success 'blame -L 1 full' '
+	check_count -f incremental -L1 I 1
+'
+
+test_expect_success 'blame -L 2 full' '
+	test_must_fail $PROG -L2 incremental
+'
+
+test_expect_success 'blame -L 3 full' '
+	test_must_fail $PROG -L3 incremental
+'
+
+test_expect_success 'blame -L' '
+	test_must_fail $PROG -L file
+'
+
+test_expect_success 'blame -L X,+' '
+	test_must_fail $PROG -L1,+ file
+'
+
+test_expect_success 'blame -L X,-' '
+	test_must_fail $PROG -L1,- file
+'
+
+test_expect_success 'blame -L X (non-numeric X)' '
+	test_must_fail $PROG -LX file
+'
+
+test_expect_success 'blame -L X,Y (non-numeric Y)' '
+	test_must_fail $PROG -L1,Y file
+'
+
+test_expect_success 'blame -L X,+N (non-numeric N)' '
+	test_must_fail $PROG -L1,+N file
+'
+
+test_expect_success 'blame -L X,-N (non-numeric N)' '
 	test_must_fail $PROG -L1,-N file
+'
+
+test_expect_success 'blame -L ,^/RE/' '
+	test_must_fail $PROG -L1,^/99/ file
 '

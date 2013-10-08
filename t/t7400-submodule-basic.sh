@@ -18,6 +18,16 @@ test_expect_success 'setup - initial commit' '
 	git branch initial
 '
 
+test_expect_success 'configuration parsing' '
+	test_when_finished "rm -f .gitmodules" &&
+	cat >.gitmodules <<-\EOF &&
+	[submodule "s"]
+		path
+		ignore
+	EOF
+	test_must_fail git status
+'
+
 test_expect_success 'setup - repository in init subdirectory' '
 	mkdir init &&
 	(
@@ -471,7 +481,7 @@ test_expect_success 'do not add files from a submodule' '
 
 '
 
-test_expect_success 'gracefully add submodule with a trailing slash' '
+test_expect_success 'gracefully add/reset submodule with a trailing slash' '
 
 	git reset --hard &&
 	git commit -m "commit subproject" init &&
@@ -485,7 +495,9 @@ test_expect_success 'gracefully add submodule with a trailing slash' '
 	git add init/ &&
 	test_must_fail git diff --exit-code --cached init &&
 	test $commit = $(git ls-files --stage |
-		sed -n "s/^160000 \([^ ]*\).*/\1/p")
+		sed -n "s/^160000 \([^ ]*\).*/\1/p") &&
+	git reset init/ &&
+	git diff --exit-code --cached init
 
 '
 
@@ -773,13 +785,11 @@ test_expect_success 'submodule add --name allows to replace a submodule with ano
 			test_cmp expect .git
 		) &&
 		echo "repo" >expect &&
-		git config -f .gitmodules submodule.repo.path >actual &&
-		test_cmp expect actual &&
+		test_must_fail git config -f .gitmodules submodule.repo.path &&
 		git config -f .gitmodules submodule.repo_new.path >actual &&
 		test_cmp expect actual&&
 		echo "$submodurl/repo" >expect &&
-		git config -f .gitmodules submodule.repo.url >actual &&
-		test_cmp expect actual &&
+		test_must_fail git config -f .gitmodules submodule.repo.url &&
 		echo "$submodurl/bare.git" >expect &&
 		git config -f .gitmodules submodule.repo_new.url >actual &&
 		test_cmp expect actual &&
@@ -799,12 +809,8 @@ test_expect_success 'submodule add with an existing name fails unless forced' '
 		git rm repo &&
 		test_must_fail git submodule add -q --name repo_new "$submodurl/repo.git" repo &&
 		test ! -d repo &&
-		echo "repo" >expect &&
-		git config -f .gitmodules submodule.repo_new.path >actual &&
-		test_cmp expect actual&&
-		echo "$submodurl/bare.git" >expect &&
-		git config -f .gitmodules submodule.repo_new.url >actual &&
-		test_cmp expect actual &&
+		test_must_fail git config -f .gitmodules submodule.repo_new.path &&
+		test_must_fail git config -f .gitmodules submodule.repo_new.url &&
 		echo "$submodurl/bare.git" >expect &&
 		git config submodule.repo_new.url >actual &&
 		test_cmp expect actual &&
@@ -958,7 +964,6 @@ test_expect_success 'submodule with UTF-8 name' '
 		git add sub &&
 		git commit -m "init sub"
 	) &&
-	test_config core.precomposeunicode true &&
 	git submodule add ./"$svname" &&
 	git submodule >&2 &&
 	test -n "$(git submodule | grep "$svname")"

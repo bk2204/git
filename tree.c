@@ -47,7 +47,7 @@ static int read_one_entry_quick(const unsigned char *sha1, const char *base, int
 }
 
 static int read_tree_1(struct tree *tree, struct strbuf *base,
-		       int stage, struct pathspec *pathspec,
+		       int stage, const struct pathspec *pathspec,
 		       read_tree_fn_t fn, void *context)
 {
 	struct tree_desc desc;
@@ -116,7 +116,7 @@ static int read_tree_1(struct tree *tree, struct strbuf *base,
 
 int read_tree_recursive(struct tree *tree,
 			const char *base, int baselen,
-			int stage, struct pathspec *pathspec,
+			int stage, const struct pathspec *pathspec,
 			read_tree_fn_t fn, void *context)
 {
 	struct strbuf sb = STRBUF_INIT;
@@ -223,6 +223,14 @@ int parse_tree(struct tree *item)
 			     sha1_to_hex(item->object.sha1));
 	}
 	return parse_tree_buffer(item, buffer, size);
+}
+
+void free_tree_buffer(struct tree *tree)
+{
+	free(tree->buffer);
+	tree->buffer = NULL;
+	tree->size = 0;
+	tree->object.parsed = 0;
 }
 
 struct tree *parse_tree_indirect(const unsigned char *sha1)

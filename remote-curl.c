@@ -6,6 +6,7 @@
 #include "exec_cmd.h"
 #include "run-command.h"
 #include "pkt-line.h"
+#include "string-list.h"
 #include "sideband.h"
 #include "argv-array.h"
 
@@ -16,11 +17,13 @@ struct options {
 	int verbosity;
 	unsigned long depth;
 	unsigned progress : 1,
+		check_self_contained_and_connected : 1,
 		followtags : 1,
 		dry_run : 1,
 		thin : 1;
 };
 static struct options options;
+static struct string_list cas_options = STRING_LIST_INIT_DUP;
 
 static int set_option(const char *name, const char *value)
 {
@@ -65,6 +68,22 @@ static int set_option(const char *name, const char *value)
 			options.dry_run = 0;
 		else
 			return -1;
+		return 0;
+	}
+	else if (!strcmp(name, "check-connectivity")) {
+		if (!strcmp(value, "true"))
+			options.check_self_contained_and_connected = 1;
+		else if (!strcmp(value, "false"))
+			options.check_self_contained_and_connected = 0;
+		else
+			return -1;
+		return 0;
+	}
+	else if (!strcmp(name, "cas")) {
+		struct strbuf val = STRBUF_INIT;
+		strbuf_addf(&val, "--" CAS_OPT_NAME "=%s", value);
+		string_list_append(&cas_options, val.buf);
+		strbuf_release(&val);
 		return 0;
 	}
 	else {
@@ -451,7 +470,12 @@ static int post_rpc(struct rpc_state *rpc)
 
 	headers = curl_slist_append(headers, rpc->hdr_content_type);
 	headers = curl_slist_append(headers, rpc->hdr_accept);
-	headers = curl_slist_append(headers, "Expect:");
+
+	/* Force it either on or off, since curl will try to decide based on how
+	 * much data is to be uploaded and we want consistency.
+	 */
+	headers = curl_slist_append(headers, http_use_100_continue ?
+		"Expect: 100-continue" : "Expect:");
 
 retry:
 	slot = get_active_slot();
@@ -654,7 +678,7 @@ static int fetch_git(struct discovery *heads,
 	struct strbuf preamble = STRBUF_INIT;
 	char *depth_arg = NULL;
 	int argc = 0, i, err;
-	const char *argv[15];
+	const char *argv[16];
 
 	argv[argc++] = "fetch-pack";
 	argv[argc++] = "--stateless-rpc";
@@ -668,6 +692,8 @@ static int fetch_git(struct discovery *heads,
 		argv[argc++] = "-v";
 		argv[argc++] = "-v";
 	}
+	if (options.check_self_contained_and_connected)
+		argv[argc++] = "--check-self-contained-and-connected";
 	if (!options.progress)
 		argv[argc++] = "--no-progress";
 	if (options.depth) {
@@ -790,6 +816,7 @@ static int push_git(struct discovery *heads, int nr_spec, char **specs)
 	struct rpc_state rpc;
 	int i, err;
 	struct argv_array args;
+	struct string_list_item *cas_option;
 
 	argv_array_init(&args);
 	argv_array_pushl(&args, "send-pack", "--stateless-rpc", "--helper-status",
@@ -804,6 +831,8 @@ static int push_git(struct discovery *heads, int nr_spec, char **specs)
 	else if (options.verbosity > 1)
 		argv_array_push(&args, "--verbose");
 	argv_array_push(&args, options.progress ? "--progress" : "--no-progress");
+	for_each_string_list_item(cas_option, &cas_options)
+		argv_array_push(&args, cas_option->string);
 	argv_array_push(&args, url);
 	for (i = 0; i < nr_spec; i++)
 		argv_array_push(&args, specs[i]);
@@ -939,6 +968,7 @@ int main(int argc, const char **argv)
 			printf("fetch\n");
 			printf("option\n");
 			printf("push\n");
+			printf("check-connectivity\n");
 			printf("\n");
 			fflush(stdout);
 		} else {

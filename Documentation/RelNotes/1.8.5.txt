@@ -1,0 +1,338 @@
+Git v1.8.5 Release Notes
+========================
+
+Backward compatibility notes (for Git 2.0)
+------------------------------------------
+
+When "git push [$there]" does not say what to push, we have used the
+traditional "matching" semantics so far (all your branches were sent
+to the remote as long as there already are branches of the same name
+over there).  In Git 2.0, the default will change to the "simple"
+semantics that pushes:
+
+ - only the current branch to the branch with the same name, and only
+   when the current branch is set to integrate with that remote
+   branch, if you are pushing to the same remote as you fetch from; or
+
+ - only the current branch to the branch with the same name, if you
+   are pushing to a remote that is not where you usually fetch from.
+
+Use the user preference configuration variable "push.default" to
+change this.  If you are an old-timer who is used to the "matching"
+semantics, you can set the variable to "matching" to keep the
+traditional behaviour.  If you want to live in the future early, you
+can set it to "simple" today without waiting for Git 2.0.
+
+When "git add -u" (and "git add -A") is run inside a subdirectory and
+does not specify which paths to add on the command line, it
+will operate on the entire tree in Git 2.0 for consistency
+with "git commit -a" and other commands.  There will be no
+mechanism to make plain "git add -u" behave like "git add -u .".
+Current users of "git add -u" (without a pathspec) should start
+training their fingers to explicitly say "git add -u ."
+before Git 2.0 comes.  A warning is issued when these commands are
+run without a pathspec and when you have local changes outside the
+current directory, because the behaviour in Git 2.0 will be different
+from today's version in such a situation.
+
+In Git 2.0, "git add <path>" will behave as "git add -A <path>", so
+that "git add dir/" will notice paths you removed from the directory
+and record the removal.  Versions before Git 2.0, including this
+release, will keep ignoring removals, but the users who rely on this
+behaviour are encouraged to start using "git add --ignore-removal <path>"
+now before 2.0 is released.
+
+
+Updates since v1.8.4
+--------------------
+
+Foreign interfaces, subsystems and ports.
+
+ * "git-svn" used with SVN 1.8.0 when talking over https:// connection
+   dumped core due to a bug in the serf library that SVN uses.  Work
+   it around on our side, even though the SVN side is being fixed.
+
+ * On MacOS X, we detected if the filesystem needs the "pre-composed
+   unicode strings" workaround, but did not automatically enable it.
+   Now we do.
+
+ * remote-hg remote helper misbehaved when interacting with a local Hg
+   repository relative to the home directory, e.g. "clone hg::~/there".
+
+ * imap-send ported to OS X uses Apple's security framework instead of
+   OpenSSL one.
+
+ * Subversion 1.8.0 that was recently released breaks older subversion
+   clients coming over http/https in various ways.
+
+ * "git fast-import" treats an empty path given to "ls" as the root of
+   the tree.
+
+
+UI, Workflows & Features
+
+ * Instead of typing four capital letters "HEAD", you can say "@" now,
+   e.g. "git log @".
+
+ * "git check-ignore" follows the same rule as "git add" and "git
+   status" in that the ignore/exclude mechanism does not take effect
+   on paths that are already tracked.  With "--no-index" option, it
+   can be used to diagnose which paths that should have been ignored
+   have been mistakenly added to the index.
+
+ * Some irrelevant "advice" messages that are shared with "git status"
+   output have been removed from the commit log template.
+
+ * "update-refs" learnt a "--stdin" option to read multiple update
+   requests and perform them in an all-or-none fashion.
+
+ * Just like "make -C <directory>", "git -C <directory> ..." tells Git
+   to go there before doing anything else.
+
+ * Just like "git checkout -" knows to check out and "git merge -"
+   knows to merge the branch you were previously on, "git cherry-pick"
+   now understands "git cherry-pick -" to pick from the previous
+   branch.
+
+ * "git status" now omits the prefix to make its output a comment in a
+   commit log editor, which is not necessary for human consumption.
+
+ * Make "foo^{tag}" to peel a tag to itself, i.e. no-op., and fail if
+   "foo" is not a tag.  "git rev-parse --verify v1.0^{tag}" would be
+   a more convenient way to say "test $(git cat-file -t v1.0) = tag".
+
+ * "git branch -v -v" (and "git status") did not distinguish among a
+   branch that does not build on any other branch, a branch that is in
+   sync with the branch it builds on, and a branch that is configured
+   to build on some other branch that no longer exists.
+
+ * A packfile that stores the same object more than once is broken and
+   will be rejected by "git index-pack" that is run when receiving
+   data over the wire.
+
+ * Earlier we started rejecting an attempt to add 0{40} object name to
+   the index and to tree objects, but it sometimes is necessary to
+   allow so to be able to use tools like filter-branch to correct such
+   broken tree objects.  "filter-branch" can again be used to to do
+   so.
+
+ * "git config" did not provide a way to set or access numbers larger
+   than a native "int" on the platform; it now provides 64-bit signed
+   integers on all platforms.
+
+ * "git pull --rebase" always chose to do the bog-standard flattening
+   rebase.  You can tell it to run "rebase --preserve-merges" by
+   setting "pull.rebase" configuration to "preserve".
+
+ * "git push --no-thin" actually disables the "thin pack transfer"
+   optimization.
+
+ * Magic pathspecs like ":(icase)makefile" that matches both
+   Makefile and makefile can be used in more places.
+
+ * The "http.*" variables can now be specified per URL that the
+   configuration applies.  For example,
+
+   [http]
+       sslVerify = true
+   [http "https://weak.example.com/"]
+       sslVerify = false
+
+   would flip http.sslVerify off only when talking to that specified
+   site.
+
+ * "git mv A B" when moving a submodule A has been taught to
+   relocate its working tree and to adjust the paths in the
+   .gitmodules file.
+
+ * "git blame" can now take more than one -L option to discover the
+   origin of multiple blocks of the lines.
+
+ * The http transport clients can optionally ask to save cookies
+   with http.savecookies configuration variable.
+
+ * "git push" learned a more fine grained control over a blunt
+   "--force" when requesting a non-fast-forward update with the
+   "--force-with-lease=<refname>:<expected object name>" option.
+
+ * "git diff --diff-filter=<classes of changes>" can now take
+   lowercase letters (e.g. "--diff-filter=d") to mean "show
+   everything but these classes".  "git diff-files -q" is now a
+   deprecated synonym for "git diff-files --diff-filter=d".
+
+ * "git fetch" (hence "git pull" as well) learned to check
+   "fetch.prune" and "remote.*.prune" configuration variables and
+   to behave as if the "--prune" command line option was given.
+
+ * "git check-ignore -z" applied the NUL termination to both its input
+   (with --stdin) and its output, but "git check-attr -z" ignored the
+   option on the output side. Make both honor -z on the input and
+   output side the same way.
+
+ * "git whatchanged" may still be used by old timers, but mention of
+   it in documents meant for new users will only waste readers' time
+   wonderig what the difference is between it and "git log".  Make it
+   less prominent in the general part of the documentation and explain
+   that it is merely a "git log" with different default behaviour in
+   its own document.
+
+
+Performance, Internal Implementation, etc.
+
+ * If a build-time fallback is set to "cat" instead of "less", we
+   should apply the same "no subprocess or pipe" optimization as we
+   apply to user-supplied GIT_PAGER=cat.
+
+ * Many commands use --dashed-option as a operation mode selector
+   (e.g. "git tag --delete") that the user can use at most one
+   (e.g. "git tag --delete --verify" is a nonsense) and you cannot
+   negate (e.g. "git tag --no-delete" is a nonsense).  parse-options
+   API learned a new OPT_CMDMODE macro to make it easier to implement
+   such a set of options.
+
+ * OPT_BOOLEAN() in parse-options API was misdesigned to be "counting
+   up" but many subcommands expect it to behave as "on/off". Update
+   them to use OPT_BOOL() which is a proper boolean.
+
+ * "git gc" exits early without doing a double-work when it detects
+   that another instance of itself is already running.
+
+ * Under memory pressure and/or file descriptor pressure, we used to
+   close pack windows that are not used and also closed filehandle to
+   an open but unused packfiles. These are now controlled separately
+   to better cope with the load.
+
+Also contains various documentation updates and code clean-ups.
+
+
+Fixes since v1.8.4
+------------------
+
+Unless otherwise noted, all the fixes since v1.8.4 in the maintenance
+track are contained in this release (see release notes to them for
+details).
+
+ * When running "fetch -q", a long silence while the sender side
+   computes the set of objects to send can be mistaken by proxies as
+   dropped connection.  The server side has been taught to send a
+   small empty messages to keep the connection alive.
+   (merge 115dedd jk/upload-pack-keepalive later to maint).
+
+ * "git rebase" had a portability regression in v1.8.4 to trigger a
+   bug in some BSD shell implementations.
+   (merge 99855dd mm/rebase-continue-freebsd-WB later to maint).
+
+ * "git branch --track" had a minor regression in v1.8.3.2 and later
+   that made it impossible to base your local work on anything but a
+   local branch of the upstream repository you are tracking from.
+   (merge b0f49ff jh/checkout-auto-tracking later to maint).
+
+ * When the webserver responds with "405 Method Not Allowed", "git
+   http-backend" should tell the client what methods are allowed with
+   the "Allow" header.
+   (merge 9247be0 bc/http-backend-allow-405 later to maint).
+
+ * When there is no sufficient overlap between old and new history
+   during a "git fetch" into a shallow repository, objects that the
+   sending side knows the receiving end has were unnecessarily sent.
+   (merge f21d2a7 nd/fetch-into-shallow later to maint).
+
+ * "git cvsserver" computed the permission mode bits incorrectly for
+   executable files.
+   (merge 1b48d56 jc/cvsserver-perm-bit-fix later to maint).
+
+ * When send-email comes up with an error message to die with upon
+   failure to start an SSL session, it tried to read the error string
+   from a wrong place.
+   (merge 6cb0c88 bc/send-email-ssl-die-message-fix later to maint).
+
+ * The implementation of "add -i" has a crippling code to work around
+   ActiveState Perl limitation but it by mistake also triggered on Git
+   for Windows where MSYS perl is used.
+   (merge df17e77 js/add-i-mingw later to maint).
+
+ * We made sure that we notice the user-supplied GIT_DIR is actually a
+   gitfile, but did not do the same when the default ".git" is a
+   gitfile.
+   (merge 487a2b7 nd/git-dir-pointing-at-gitfile later to maint).
+
+ * When an object is not found after checking the packfiles and then
+   loose object directory, read_sha1_file() re-checks the packfiles to
+   prevent racing with a concurrent repacker; teach the same logic to
+   has_sha1_file().
+   (merge 45e8a74 jk/has-sha1-file-retry-packed later to maint).
+
+ * "git commit --author=$name", when $name is not in the canonical
+   "A. U. Thor <au.thor@example.xz>" format, looks for a matching name
+   from existing history, but did not consult mailmap to grab the
+   preferred author name.
+   (merge ea16794 ap/commit-author-mailmap later to maint).
+
+ * "git ls-files -k" needs to crawl only the part of the working tree
+   that may overlap the paths in the index to find killed files, but
+   shared code with the logic to find all the untracked files, which
+   made it unnecessarily inefficient.
+   (merge 680be04 jc/ls-files-killed-optim later to maint).
+
+ * The commit object names in the insn sheet that was prepared at the
+   beginning of "rebase -i" session can become ambiguous as the
+   rebasing progresses and the repository gains more commits. Make
+   sure the internal record is kept with full 40-hex object names.
+   (merge 75c6976 es/rebase-i-no-abbrev later to maint).
+
+ * "git rebase --preserve-merges" internally used the merge machinery
+   and as a side effect, left merge summary message in the log, but
+   when rebasing, there should not be a need for merge summary.
+   (merge a9f739c rt/rebase-p-no-merge-summary later to maint).
+
+ * A call to xread() was used without a loop around to cope with short
+   read in the codepath to stream new contents to a pack.
+   (merge e92527c js/xread-in-full later to maint).
+
+ * "git rebase -i" forgot that the comment character can be
+   configurable while reading its insn sheet.
+   (merge 7bca7af es/rebase-i-respect-core-commentchar later to maint).
+
+ * The mailmap support code read past the allocated buffer when the
+   mailmap file ended with an incomplete line.
+   (merge f972a16 jk/mailmap-incomplete-line later to maint).
+
+ * We used to send a large request to read(2)/write(2) as a single
+   system call, which was bad from the latency point of view when
+   the operation needs to be killed, and also triggered an error on
+   broken 64-bit systems that refuse to take more than 2GB read or
+   write in one go.
+   (merge a487916 sp/clip-read-write-to-8mb later to maint).
+
+ * "git fetch" that auto-followed tags incorrectly reused the
+   connection with Git-aware transport helper (like the sample "ext::"
+   helper shipped with Git).
+   (merge 0f73f8b jc/transport-do-not-use-connect-twice-in-fetch later to maint).
+
+ * "git log --full-diff -- <pathspec>" showed a huge diff for paths
+   outside the given <pathspec> for each commit, instead of showing
+   the change relative to the parent of the commit.  "git reflog -p"
+   had a similar problem.
+   (merge 838f9a1 tr/log-full-diff-keep-true-parents later to maint).
+
+ * Setting submodule.*.path configuration variable to true (without
+   giving "= value") caused Git to segfault.
+   (merge 4b05440 jl/some-submodule-config-are-not-boolean later to maint).
+
+ * "git rebase -i" (there could be others, as the root cause is pretty
+   generic) fed a random, data dependeant string to 'echo' and
+   expects it to come out literally, corrupting its error message.
+   (merge 89b0230 mm/no-shell-escape-in-die-message later to maint).
+
+ * Some people still use rather old versions of bash, which cannot
+   grok some constructs like 'printf -v varname' the prompt and
+   completion code started to use recently.
+   (merge a44aa69 bc/completion-for-bash-3.0 later to maint).
+
+ * Code to read configuration from a blob object did not compile on
+   platforms with fgetc() etc. implemented as macros.
+   (merge 49d6cfa hv/config-from-blob later to maint-1.8.3).
+
+ * The recent "short-cut clone connectivity check" topic broke a
+   shallow repository when a fetch operation tries to auto-follow tags.
+   (merge 6da8bdc nd/fetch-pack-shallow-fix later to maint-1.8.3).

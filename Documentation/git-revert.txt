@@ -8,7 +8,7 @@ git-revert - Revert some existing commits
 SYNOPSIS
 --------
 [verse]
-'git revert' [--[no-]edit] [-n] [-m parent-number] [-s] <commit>...
+'git revert' [--[no-]edit] [-n] [-m parent-number] [-s] [-S[<keyid>]] <commit>...
 'git revert' --continue
 'git revert' --quit
 'git revert' --abort
@@ -93,6 +93,10 @@ effect to your index in a row.
 --strategy-option=<option>::
 	Pass the merge strategy-specific option through to the
 	merge strategy.  See linkgit:git-merge[1] for details.
+
+-S[<keyid>]::
+--gpg-sign[=<keyid>]::
+	GPG-sign any created commits.
 
 SEQUENCER SUBCOMMANDS
 ---------------------

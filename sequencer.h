@@ -37,6 +37,8 @@ struct replay_opts {
 
 	int mainline;
 
+	const char *sign_commit;
+
 	/* Merge strategy */
 	const char *strategy;
 	const char **xopts;

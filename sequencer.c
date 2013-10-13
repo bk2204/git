@@ -403,6 +403,11 @@ static int run_git_commit(const char *defmsg, struct replay_opts *opts,
 		argv_array_push(&array, "-F");
 		argv_array_push(&array, defmsg);
 	}
+	if (opts->sign_commit) {
+		argv_array_push(&array, "-S");
+		if (strcmp(opts->sign_commit, ""))
+			argv_array_push(&array, opts->sign_commit);
+	}
 
 	if (allow_empty)
 		argv_array_push(&array, "--allow-empty");
@@ -806,6 +811,8 @@ static int populate_opts_cb(const char *key, const char *value, void *data)
 		opts->allow_ff = git_config_bool_or_int(key, value, &error_flag);
 	else if (!strcmp(key, "options.mainline"))
 		opts->mainline = git_config_int(key, value);
+	else if (!strcmp(key, "options.sign-commit"))
+		git_config_string(&opts->sign_commit, key, value);
 	else if (!strcmp(key, "options.strategy"))
 		git_config_string(&opts->strategy, key, value);
 	else if (!strcmp(key, "options.strategy-option")) {
@@ -981,6 +988,8 @@ static void save_opts(struct replay_opts *opts)
 	}
 	if (opts->strategy)
 		git_config_set_in_file(opts_file, "options.strategy", opts->strategy);
+	if (opts->sign_commit)
+		git_config_set_in_file(opts_file, "options.sign-commit", opts->sign_commit);
 	if (opts->xopts) {
 		int i;
 		for (i = 0; i < opts->xopts_nr; i++)

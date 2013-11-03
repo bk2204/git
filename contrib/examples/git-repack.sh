@@ -4,6 +4,7 @@
 #
 
 OPTIONS_KEEPDASHDASH=
+OPTIONS_STUCKLONG=
 OPTIONS_SPEC="\
 git repack [options]
 --

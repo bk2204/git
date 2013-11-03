@@ -4,6 +4,7 @@
 #
 
 OPTIONS_KEEPDASHDASH=
+OPTIONS_STUCKLONG=
 OPTIONS_SPEC="\
 git merge [options] <remote>...
 git merge [options] <msg> HEAD <remote>

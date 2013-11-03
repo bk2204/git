@@ -8,6 +8,7 @@
 # See git-sh-setup why.
 unset CDPATH
 
+OPTIONS_STUCKLONG=
 OPTIONS_SPEC="\
 git-clone [options] [--] <repo> [<dir>]
 --

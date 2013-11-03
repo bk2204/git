@@ -1,6 +1,7 @@
 #!/bin/sh
 
 OPTIONS_KEEPDASHDASH=t
+OPTIONS_STUCKLONG=
 OPTIONS_SPEC="\
 git-checkout [options] [<branch>] [<paths>...]
 --

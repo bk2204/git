@@ -719,4 +719,11 @@ void warn_on_inaccessible(const char *path);
 /* Get the passwd entry for the UID of the current process. */
 struct passwd *xgetpwuid_self(void);
 
+#define SHA1_BUFFER_SIZE 20
+#define SHA1_STRING_SIZE 40
+
+/* For now, let's stick with SHA-1. */
+#define SHA_BUFFER_SIZE SHA1_BUFFER_SIZE
+#define SHA_STRING_SIZE SHA1_STRING_SIZE
+
 #endif

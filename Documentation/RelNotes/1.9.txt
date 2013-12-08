@@ -68,7 +68,7 @@ Updates since v1.8.5
 
 Foreign interfaces, subsystems and ports.
 
- * The HTTP transport, when talking GSS-Negotinate, uses "100
+ * The HTTP transport, when talking GSS-Negotiate, uses "100
    Continue" response to avoid having to rewind and resend a large
    payload, which may not be always doable.
 

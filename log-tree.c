@@ -131,9 +131,16 @@ static int add_ref_decoration(const char *refname, const unsigned char *sha1, in
 		refname = prettify_refname(refname);
 	add_name_decoration(type, refname, obj);
 	while (obj->type == OBJ_TAG) {
-		obj = ((struct tag *)obj)->tagged;
-		if (!obj)
-			break;
+		struct object *tagged = ((struct tag *)obj)->tagged;
+		if (!tagged) {
+			obj = parse_object(obj->sha1);
+			if (!obj)
+				break;
+			tagged = ((struct tag *)obj)->tagged;
+			if (!tagged)
+				break;
+		}
+		obj = tagged;
 		add_name_decoration(DECORATION_REF_TAG, refname, obj);
 	}
 	return 0;

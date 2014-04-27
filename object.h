@@ -1,6 +1,14 @@
 #ifndef OBJECT_H
 #define OBJECT_H
 
+/* The length in bytes and in hex digits of an object name (SHA-1 value). */
+#define GIT_SHA1_RAWSZ 20
+#define GIT_SHA1_HEXSZ 40
+
+struct object_id {
+	unsigned char sha1[GIT_SHA1_RAWSZ];
+};
+
 struct object_list {
 	struct object *item;
 	struct object_list *next;

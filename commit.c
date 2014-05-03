@@ -55,12 +55,12 @@ struct commit *lookup_commit(const unsigned char *sha1)
 
 struct commit *lookup_commit_reference_by_name(const char *name)
 {
-	unsigned char sha1[20];
+	struct object_id oid;
 	struct commit *commit;
 
-	if (get_sha1_committish(name, sha1))
+	if (get_sha1_committish(name, oid.sha1))
 		return NULL;
-	commit = lookup_commit_reference(sha1);
+	commit = lookup_commit_reference(oid.sha1);
 	if (parse_commit(commit))
 		return NULL;
 	return commit;
@@ -99,7 +99,7 @@ static int commit_graft_alloc, commit_graft_nr;
 static const unsigned char *commit_graft_sha1_access(size_t index, void *table)
 {
 	struct commit_graft **commit_graft_table = table;
-	return commit_graft_table[index]->sha1;
+	return commit_graft_table[index]->oid.sha1;
 }
 
 static int commit_graft_pos(const unsigned char *sha1)
@@ -110,7 +110,7 @@ static int commit_graft_pos(const unsigned char *sha1)
 
 int register_commit_graft(struct commit_graft *graft, int ignore_dups)
 {
-	int pos = commit_graft_pos(graft->sha1);
+	int pos = commit_graft_pos(graft->oid.sha1);
 
 	if (0 <= pos) {
 		if (ignore_dups)
@@ -148,12 +148,12 @@ struct commit_graft *read_graft_line(char *buf, int len)
 	i = (len + 1) / 41 - 1;
 	graft = xmalloc(sizeof(*graft) + 20 * i);
 	graft->nr_parent = i;
-	if (get_sha1_hex(buf, graft->sha1))
+	if (get_sha1_hex(buf, graft->oid.sha1))
 		goto bad_graft_data;
 	for (i = 40; i < len; i += 41) {
 		if (buf[i] != ' ')
 			goto bad_graft_data;
-		if (get_sha1_hex(buf + i + 1, graft->parent[i/41]))
+		if (get_sha1_hex(buf + i + 1, graft->parent[i/41].sha1))
 			goto bad_graft_data;
 	}
 	return graft;
@@ -302,7 +302,7 @@ int parse_commit_buffer(struct commit *item, const void *buffer, unsigned long s
 {
 	const char *tail = buffer;
 	const char *bufptr = buffer;
-	unsigned char parent[20];
+	struct object_id parent;
 	struct commit_list **pptr;
 	struct commit_graft *graft;
 
@@ -312,10 +312,10 @@ int parse_commit_buffer(struct commit *item, const void *buffer, unsigned long s
 	tail += size;
 	if (tail <= bufptr + 46 || memcmp(bufptr, "tree ", 5) || bufptr[45] != '\n')
 		return error("bogus commit object %s", sha1_to_hex(item->object.sha1));
-	if (get_sha1_hex(bufptr + 5, parent) < 0)
+	if (get_sha1_hex(bufptr + 5, parent.sha1) < 0)
 		return error("bad tree pointer in commit %s",
 			     sha1_to_hex(item->object.sha1));
-	item->tree = lookup_tree(parent);
+	item->tree = lookup_tree(parent.sha1);
 	bufptr += 46; /* "tree " + "hex sha1" + "\n" */
 	pptr = &item->parents;
 
@@ -324,7 +324,7 @@ int parse_commit_buffer(struct commit *item, const void *buffer, unsigned long s
 		struct commit *new_parent;
 
 		if (tail <= bufptr + 48 ||
-		    get_sha1_hex(bufptr + 7, parent) ||
+		    get_sha1_hex(bufptr + 7, parent.sha1) ||
 		    bufptr[47] != '\n')
 			return error("bad parents in commit %s", sha1_to_hex(item->object.sha1));
 		bufptr += 48;
@@ -334,7 +334,7 @@ int parse_commit_buffer(struct commit *item, const void *buffer, unsigned long s
 		 */
 		if (graft && (graft->nr_parent < 0 || grafts_replace_parents))
 			continue;
-		new_parent = lookup_commit(parent);
+		new_parent = lookup_commit(parent.sha1);
 		if (new_parent)
 			pptr = &commit_list_insert(new_parent, pptr)->next;
 	}
@@ -342,7 +342,7 @@ int parse_commit_buffer(struct commit *item, const void *buffer, unsigned long s
 		int i;
 		struct commit *new_parent;
 		for (i = 0; i < graft->nr_parent; i++) {
-			new_parent = lookup_commit(graft->parent[i]);
+			new_parent = lookup_commit(graft->parent[i].sha1);
 			if (!new_parent)
 				continue;
 			pptr = &commit_list_insert(new_parent, pptr)->next;
@@ -1580,10 +1580,10 @@ struct commit *get_merge_parent(const char *name)
 {
 	struct object *obj;
 	struct commit *commit;
-	unsigned char sha1[20];
-	if (get_sha1(name, sha1))
+	struct object_id oid;
+	if (get_sha1(name, oid.sha1))
 		return NULL;
-	obj = parse_object(sha1);
+	obj = parse_object(oid.sha1);
 	commit = (struct commit *)peel_to_type(name, 0, obj, OBJ_COMMIT);
 	if (commit && !commit->util) {
 		struct merge_remote_desc *desc;

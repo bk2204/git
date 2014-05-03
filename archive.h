@@ -2,6 +2,7 @@
 #define ARCHIVE_H
 
 #include "pathspec.h"
+#include "object.h"
 
 struct archiver_args {
 	const char *base;

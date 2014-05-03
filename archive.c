@@ -354,7 +354,7 @@ static void parse_treeish_arg(const char **argv,
 	time_t archive_time;
 	struct tree *tree;
 	const struct commit *commit;
-	unsigned char sha1[20];
+	struct object_id oid;
 
 	/* Remotes are only allowed to fetch actual refs */
 	if (remote && !remote_allow_unreachable) {
@@ -362,15 +362,15 @@ static void parse_treeish_arg(const char **argv,
 		const char *colon = strchrnul(name, ':');
 		int refnamelen = colon - name;
 
-		if (!dwim_ref(name, refnamelen, sha1, &ref))
+		if (!dwim_ref(name, refnamelen, oid.sha1, &ref))
 			die("no such ref: %.*s", refnamelen, name);
 		free(ref);
 	}
 
-	if (get_sha1(name, sha1))
+	if (get_sha1(name, oid.sha1))
 		die("Not a valid object name");
 
-	commit = lookup_commit_reference_gently(sha1, 1);
+	commit = lookup_commit_reference_gently(oid.sha1, 1);
 	if (commit) {
 		commit_sha1 = commit->object.sha1;
 		archive_time = commit->date;
@@ -379,21 +379,21 @@ static void parse_treeish_arg(const char **argv,
 		archive_time = time(NULL);
 	}
 
-	tree = parse_tree_indirect(sha1);
+	tree = parse_tree_indirect(oid.sha1);
 	if (tree == NULL)
 		die("not a tree object");
 
 	if (prefix) {
-		unsigned char tree_sha1[20];
+		struct object_id tree_oid;
 		unsigned int mode;
 		int err;
 
 		err = get_tree_entry(tree->object.sha1, prefix,
-				     tree_sha1, &mode);
+				     tree_oid.sha1, &mode);
 		if (err || !S_ISDIR(mode))
 			die("current working directory is untracked");
 
-		tree = parse_tree_indirect(tree_sha1);
+		tree = parse_tree_indirect(tree_oid.sha1);
 	}
 	ar_args->tree = tree;
 	ar_args->commit_sha1 = commit_sha1;

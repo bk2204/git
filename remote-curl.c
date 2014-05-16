@@ -426,8 +426,8 @@ static int run_slot(struct active_request_slot *slot,
 	err = run_one_slot(slot, results);
 
 	if (err != HTTP_OK && err != HTTP_REAUTH) {
-		error("RPC failed; result=%d, HTTP code = %ld",
-		      results->curl_result, results->http_code);
+		error("RPC failed; result=%d, HTTP code = %ld (%s)",
+		      results->curl_result, results->http_code, curl_errorstr);
 	}
 
 	return err;

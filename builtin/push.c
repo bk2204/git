@@ -29,11 +29,8 @@ struct refspec_set {
 	int refspec_alloc;
 };
 
-static struct refspec_set refspec_set;
-
-static void add_refspec(const char *ref)
+static void add_refspec(struct refspec_set *set, const char *ref)
 {
-	struct refspec_set *set = &refspec_set;
 	set->refspec_nr++;
 	ALLOC_GROW(set->refspec, set->refspec_nr, set->refspec_alloc);
 	set->refspec[set->refspec_nr-1] = ref;
@@ -76,7 +73,8 @@ static const char *map_refspec(const char *ref,
 	return ref;
 }
 
-static void set_refspecs(const char **refs, int nr, const char *repo)
+static void set_refspecs(struct refspec_set *set, const char **refs, int nr,
+		const char *repo)
 {
 	struct remote *remote = NULL;
 	struct ref *local_refs = NULL;
@@ -108,7 +106,7 @@ static void set_refspecs(const char **refs, int nr, const char *repo)
 			}
 			ref = map_refspec(ref, remote, local_refs);
 		}
-		add_refspec(ref);
+		add_refspec(set, ref);
 	}
 }
 
@@ -165,8 +163,8 @@ static const char message_detached_head_die[] =
 	   "\n"
 	   "    git push %s HEAD:<name-of-remote-branch>\n");
 
-static void setup_push_upstream(struct remote *remote, struct branch *branch,
-				int triangular, int simple)
+static void setup_push_upstream(struct remote *remote, struct refspec_set *set,
+		struct branch *branch, int triangular, int simple)
 {
 	struct strbuf refspec = STRBUF_INIT;
 
@@ -196,14 +194,15 @@ static void setup_push_upstream(struct remote *remote, struct branch *branch,
 	}
 
 	strbuf_addf(&refspec, "%s:%s", branch->name, branch->merge[0]->src);
-	add_refspec(refspec.buf);
+	add_refspec(set, refspec.buf);
 }
 
-static void setup_push_current(struct remote *remote, struct branch *branch)
+static void setup_push_current(struct remote *remote, struct refspec_set *set,
+		struct branch *branch)
 {
 	if (!branch)
 		die(_(message_detached_head_die), remote->name);
-	add_refspec(branch->name);
+	add_refspec(set, branch->name);
 }
 
 static char warn_unspecified_push_default_msg[] =
@@ -243,7 +242,8 @@ static int is_workflow_triangular(struct remote *remote)
 	return (fetch_remote && fetch_remote != remote);
 }
 
-static void setup_default_push_refspecs(struct remote *remote)
+static void setup_default_push_refspecs(struct remote *remote,
+		struct refspec_set *set)
 {
 	struct branch *branch = branch_get(NULL);
 	int triangular = is_workflow_triangular(remote);
@@ -251,7 +251,7 @@ static void setup_default_push_refspecs(struct remote *remote)
 	switch (push_default) {
 	default:
 	case PUSH_DEFAULT_MATCHING:
-		add_refspec(":");
+		add_refspec(set, ":");
 		break;
 
 	case PUSH_DEFAULT_UNSPECIFIED:
@@ -260,17 +260,17 @@ static void setup_default_push_refspecs(struct remote *remote)
 
 	case PUSH_DEFAULT_SIMPLE:
 		if (triangular)
-			setup_push_current(remote, branch);
+			setup_push_current(remote, set, branch);
 		else
-			setup_push_upstream(remote, branch, triangular, 1);
+			setup_push_upstream(remote, set, branch, triangular, 1);
 		break;
 
 	case PUSH_DEFAULT_UPSTREAM:
-		setup_push_upstream(remote, branch, triangular, 0);
+		setup_push_upstream(remote, set, branch, triangular, 0);
 		break;
 
 	case PUSH_DEFAULT_CURRENT:
-		setup_push_current(remote, branch);
+		setup_push_current(remote, set, branch);
 		break;
 
 	case PUSH_DEFAULT_NOTHING:
@@ -342,7 +342,8 @@ static void advise_ref_needs_force(void)
 	advise(_(message_advice_ref_needs_force));
 }
 
-static int push_with_options(struct transport *transport, int flags)
+static int push_with_options(struct transport *transport,
+		struct refspec_set *set, int flags)
 {
 	int err;
 	unsigned int reject_reasons;
@@ -363,7 +364,7 @@ static int push_with_options(struct transport *transport, int flags)
 
 	if (verbosity > 0)
 		fprintf(stderr, _("Pushing to %s\n"), transport->url);
-	err = transport_push(transport, refspec_set.refspec_nr, refspec_set.refspec, flags,
+	err = transport_push(transport, set->refspec_nr, set->refspec, flags,
 			     &reject_reasons);
 	if (err != 0)
 		error(_("failed to push some refs to '%s'"), transport->url);
@@ -387,13 +388,12 @@ static int push_with_options(struct transport *transport, int flags)
 	return 1;
 }
 
-static int do_push(const char *repo, int flags)
+static int do_push(const char *repo, struct refspec_set *set, int flags)
 {
 	int i, errs;
 	struct remote *remote = pushremote_get(repo);
 	const char **url;
 	int url_nr;
-	struct refspec_set *set = &refspec_set;
 
 	if (!remote) {
 		if (repo)
@@ -433,7 +433,7 @@ static int do_push(const char *repo, int flags)
 			set->refspec = remote->push_refspec;
 			set->refspec_nr = remote->push_refspec_nr;
 		} else if (!(flags & TRANSPORT_PUSH_MIRROR))
-			setup_default_push_refspecs(remote);
+			setup_default_push_refspecs(remote, set);
 	}
 	errs = 0;
 	url_nr = push_url_of_remote(remote, &url);
@@ -441,14 +441,14 @@ static int do_push(const char *repo, int flags)
 		for (i = 0; i < url_nr; i++) {
 			struct transport *transport =
 				transport_get(remote, url[i]);
-			if (push_with_options(transport, flags))
+			if (push_with_options(transport, set, flags))
 				errs++;
 		}
 	} else {
 		struct transport *transport =
 			transport_get(remote, NULL);
 
-		if (push_with_options(transport, flags))
+		if (push_with_options(transport, set, flags))
 			errs++;
 	}
 	return !!errs;
@@ -495,6 +495,7 @@ int cmd_push(int argc, const char **argv, const char *prefix)
 	int rc;
 	int atomic = 0;
 	const char *repo = NULL;	/* default repository */
+	struct refspec_set set = {0};
 	struct option options[] = {
 		OPT__VERBOSITY(&verbosity),
 		OPT_STRING( 0 , "repo", &repo, N_("repository"), N_("repository")),
@@ -539,17 +540,17 @@ int cmd_push(int argc, const char **argv, const char *prefix)
 		die(_("--delete doesn't make sense without any refs"));
 
 	if (tags)
-		add_refspec("refs/tags/*");
+		add_refspec(&set, "refs/tags/*");
 
 	if (atomic)
 		flags |= TRANSPORT_PUSH_ATOMIC;
 
 	if (argc > 0) {
 		repo = argv[0];
-		set_refspecs(argv + 1, argc - 1, repo);
+		set_refspecs(&set, argv + 1, argc - 1, repo);
 	}
 
-	rc = do_push(repo, flags);
+	rc = do_push(repo, &set, flags);
 	if (rc == -1)
 		usage_with_options(push_usage, options);
 	else

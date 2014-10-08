@@ -23,15 +23,20 @@ static int progress = -1;
 
 static struct push_cas_option cas;
 
-static const char **refspec;
-static int refspec_nr;
-static int refspec_alloc;
+struct refspec_set {
+	const char **refspec;
+	int refspec_nr;
+	int refspec_alloc;
+};
+
+static struct refspec_set refspec_set;
 
 static void add_refspec(const char *ref)
 {
-	refspec_nr++;
-	ALLOC_GROW(refspec, refspec_nr, refspec_alloc);
-	refspec[refspec_nr-1] = ref;
+	struct refspec_set *set = &refspec_set;
+	set->refspec_nr++;
+	ALLOC_GROW(set->refspec, set->refspec_nr, set->refspec_alloc);
+	set->refspec[set->refspec_nr-1] = ref;
 }
 
 static const char *map_refspec(const char *ref,
@@ -358,7 +363,7 @@ static int push_with_options(struct transport *transport, int flags)
 
 	if (verbosity > 0)
 		fprintf(stderr, _("Pushing to %s\n"), transport->url);
-	err = transport_push(transport, refspec_nr, refspec, flags,
+	err = transport_push(transport, refspec_set.refspec_nr, refspec_set.refspec, flags,
 			     &reject_reasons);
 	if (err != 0)
 		error(_("failed to push some refs to '%s'"), transport->url);
@@ -388,6 +393,7 @@ static int do_push(const char *repo, int flags)
 	struct remote *remote = pushremote_get(repo);
 	const char **url;
 	int url_nr;
+	struct refspec_set *set = &refspec_set;
 
 	if (!remote) {
 		if (repo)
@@ -405,14 +411,14 @@ static int do_push(const char *repo, int flags)
 	if (remote->mirror)
 		flags |= (TRANSPORT_PUSH_MIRROR|TRANSPORT_PUSH_FORCE);
 
-	if ((flags & TRANSPORT_PUSH_ALL) && refspec) {
-		if (!strcmp(*refspec, "refs/tags/*"))
+	if ((flags & TRANSPORT_PUSH_ALL) && set->refspec) {
+		if (!strcmp(*set->refspec, "refs/tags/*"))
 			return error(_("--all and --tags are incompatible"));
 		return error(_("--all can't be combined with refspecs"));
 	}
 
-	if ((flags & TRANSPORT_PUSH_MIRROR) && refspec) {
-		if (!strcmp(*refspec, "refs/tags/*"))
+	if ((flags & TRANSPORT_PUSH_MIRROR) && set->refspec) {
+		if (!strcmp(*set->refspec, "refs/tags/*"))
 			return error(_("--mirror and --tags are incompatible"));
 		return error(_("--mirror can't be combined with refspecs"));
 	}
@@ -422,10 +428,10 @@ static int do_push(const char *repo, int flags)
 		return error(_("--all and --mirror are incompatible"));
 	}
 
-	if (!refspec && !(flags & TRANSPORT_PUSH_ALL)) {
+	if (!set->refspec && !(flags & TRANSPORT_PUSH_ALL)) {
 		if (remote->push_refspec_nr) {
-			refspec = remote->push_refspec;
-			refspec_nr = remote->push_refspec_nr;
+			set->refspec = remote->push_refspec;
+			set->refspec_nr = remote->push_refspec_nr;
 		} else if (!(flags & TRANSPORT_PUSH_MIRROR))
 			setup_default_push_refspecs(remote);
 	}

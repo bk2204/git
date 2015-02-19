@@ -38,6 +38,10 @@ The ssh and git protocols additionally support ~username expansion:
 - git://host.xz{startsb}:port{endsb}/~{startsb}user{endsb}/path/to/repo.git/
 - {startsb}user@{endsb}host.xz:/~{startsb}user{endsb}/path/to/repo.git/
 
+For backwards compatibility reasons, Git, when using ssh URLs, accepts
+some URLs containing IPv6 literals that are missing the brackets. This
+syntax is deprecated, and other protocol handlers do not permit this.
+
 For local repositories, also supported by Git natively, the following
 syntaxes may be used:
 

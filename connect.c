@@ -749,10 +749,15 @@ struct child_process *git_connect(int fd[2], const char *url,
 					conn->use_shell = 1;
 					putty = 0;
 				} else {
+					char *plink, *tplink;
+
 					ssh = getenv("GIT_SSH");
 					if (!ssh)
 						ssh = "ssh";
-					putty = !!strcasestr(ssh, "plink");
+					plink = strcasestr(ssh, "plink");
+					tplink = strcasestr(ssh, "tortoiseplink");
+					putty = plink == ssh || (plink && is_dir_sep(plink[-1])) ||
+						tplink == ssh || (tplink && is_dir_sep(tplink[-1]));
 				}
 
 				argv_array_push(&conn->args, ssh);

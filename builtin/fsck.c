@@ -482,13 +482,14 @@ static int fsck_handle_reflog(const char *logname, const unsigned char *sha1, in
 	return 0;
 }
 
-static int fsck_handle_ref(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
+static int fsck_handle_ref(const char *refname, const struct object_id *oid,
+			   int flag, void *cb_data)
 {
 	struct object *obj;
 
-	obj = parse_object(sha1);
+	obj = parse_object(oid->hash);
 	if (!obj) {
-		error("%s: invalid sha1 pointer %s", refname, sha1_to_hex(sha1));
+		error("%s: invalid sha1 pointer %s", refname, oid_to_hex(oid));
 		errors_found |= ERROR_REACHABLE;
 		/* We'll continue with the rest despite the error.. */
 		return 0;
@@ -504,14 +505,12 @@ static int fsck_handle_ref(const char *refname, const unsigned char *sha1, int f
 
 static void get_default_heads(void)
 {
-	struct each_ref_fn_sha1_adapter wrapped_fsck_handle_ref =
-		{fsck_handle_ref, NULL};
 	struct each_ref_fn_sha1_adapter wrapped_fsck_handle_reflog =
 		{fsck_handle_reflog, NULL};
 
 	if (head_points_at && !is_null_oid(&head_sha1))
-		fsck_handle_ref("HEAD", head_sha1.hash, 0, NULL);
-	for_each_rawref(each_ref_fn_adapter, &wrapped_fsck_handle_ref);
+		fsck_handle_ref("HEAD", &head_sha1, 0, NULL);
+	for_each_rawref(fsck_handle_ref, NULL);
 	if (include_reflogs)
 		for_each_reflog(each_ref_fn_adapter, &wrapped_fsck_handle_reflog);
 

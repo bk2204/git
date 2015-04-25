@@ -866,7 +866,7 @@ static void free_remote_ref_states(struct ref_states *states)
 }
 
 static int append_ref_to_tracked_list(const char *refname,
-	const unsigned char *sha1, int flags, void *cb_data)
+	const struct object_id *oid, int flags, void *cb_data)
 {
 	struct ref_states *states = cb_data;
 	struct refspec refspec;
@@ -909,10 +909,7 @@ static int get_remote_ref_states(const char *name,
 		if (query & GET_PUSH_REF_STATES)
 			get_push_ref_states(remote_refs, states);
 	} else {
-		struct each_ref_fn_sha1_adapter wrapped_append_ref_to_tracked_list =
-			{append_ref_to_tracked_list, states};
-
-		for_each_ref(each_ref_fn_adapter, &wrapped_append_ref_to_tracked_list);
+		for_each_ref(append_ref_to_tracked_list, states);
 		string_list_sort(&states->tracked);
 		get_push_ref_states_noquery(states);
 	}

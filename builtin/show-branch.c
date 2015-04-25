@@ -424,11 +424,12 @@ static int append_remote_ref(const char *refname, const struct object_id *oid,
 	return append_ref(refname + ofs, oid->hash, 0);
 }
 
-static int append_tag_ref(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
+static int append_tag_ref(const char *refname, const struct object_id *oid,
+			  int flag, void *cb_data)
 {
 	if (!starts_with(refname, "refs/tags/"))
 		return 0;
-	return append_ref(refname + 5, sha1, 0);
+	return append_ref(refname + 5, oid->hash, 0);
 }
 
 static const char *match_ref_pattern = NULL;
@@ -461,7 +462,7 @@ static int append_matching_ref(const char *refname, const struct object_id *oid,
 	if (starts_with(refname, "refs/heads/"))
 		return append_head_ref(refname, oid, flag, cb_data);
 	if (starts_with(refname, "refs/tags/"))
-		return append_tag_ref(refname, oid->hash, flag, cb_data);
+		return append_tag_ref(refname, oid, flag, cb_data);
 	return append_ref(refname, oid->hash, 0);
 }
 

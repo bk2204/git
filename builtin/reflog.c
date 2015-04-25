@@ -313,14 +313,14 @@ static int should_expire_reflog_ent(unsigned char *osha1, unsigned char *nsha1,
 	return 0;
 }
 
-static int push_tip_to_list(const char *refname, const unsigned char *sha1,
+static int push_tip_to_list(const char *refname, const struct object_id *oid,
 			    int flags, void *cb_data)
 {
 	struct commit_list **list = cb_data;
 	struct commit *tip_commit;
 	if (flags & REF_ISSYMREF)
 		return 0;
-	tip_commit = lookup_commit_reference_gently(sha1, 1);
+	tip_commit = lookup_commit_reference_gently(oid->hash, 1);
 	if (!tip_commit)
 		return 0;
 	commit_list_insert(tip_commit, list);
@@ -352,10 +352,8 @@ static void reflog_expiry_prepare(const char *refname,
 	if (cb->unreachable_expire_kind != UE_ALWAYS) {
 		if (cb->unreachable_expire_kind == UE_HEAD) {
 			struct commit_list *elem;
-			struct each_ref_fn_sha1_adapter wrapped_push_tip_to_list =
-				{push_tip_to_list, &cb->tips};
 
-			for_each_ref(each_ref_fn_adapter, &wrapped_push_tip_to_list);
+			for_each_ref(push_tip_to_list, &cb->tips);
 			for (elem = cb->tips; elem; elem = elem->next)
 				commit_list_insert(elem->item, &cb->mark_list);
 		} else {

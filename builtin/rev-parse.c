@@ -198,9 +198,9 @@ static int show_reference(const char *refname, const struct object_id *oid, int 
 	return 0;
 }
 
-static int anti_reference(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
+static int anti_reference(const char *refname, const struct object_id *oid, int flag, void *cb_data)
 {
-	show_rev(REVERSED, sha1, refname);
+	show_rev(REVERSED, oid->hash, refname);
 	return 0;
 }
 
@@ -511,8 +511,6 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 	unsigned int flags = 0;
 	const char *name = NULL;
 	struct object_context unused;
-	struct each_ref_fn_sha1_adapter wrapped_anti_reference =
-		{anti_reference, NULL};
 
 	if (argc > 1 && !strcmp("--parseopt", argv[1]))
 		return cmd_parseopt(argc - 1, argv + 1, prefix);
@@ -662,9 +660,8 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 				continue;
 			}
 			if (!strcmp(arg, "--bisect")) {
-				for_each_ref_in("refs/bisect/good",
-						each_ref_fn_adapter, &wrapped_anti_reference);
 				for_each_ref_in("refs/bisect/bad", show_reference, NULL);
+				for_each_ref_in("refs/bisect/good", anti_reference, NULL);
 				continue;
 			}
 			if (starts_with(arg, "--branches=")) {

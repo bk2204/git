@@ -617,20 +617,17 @@ static void submodule_collect_changed_cb(struct diff_queue_struct *q,
 	}
 }
 
-static int add_sha1_to_array(const char *ref, const unsigned char *sha1,
+static int add_sha1_to_array(const char *ref, const struct object_id *oid,
 			     int flags, void *data)
 {
-	sha1_array_append(data, sha1);
+	sha1_array_append(data, oid->hash);
 	return 0;
 }
 
 void check_for_new_submodule_commits(unsigned char new_sha1[20])
 {
 	if (!initialized_fetch_ref_tips) {
-		struct each_ref_fn_sha1_adapter wrapped_add_sha1_to_array =
-			{add_sha1_to_array, &ref_tips_before_fetch};
-
-		for_each_ref(each_ref_fn_adapter, &wrapped_add_sha1_to_array);
+		for_each_ref(add_sha1_to_array, &ref_tips_before_fetch);
 		initialized_fetch_ref_tips = 1;
 	}
 

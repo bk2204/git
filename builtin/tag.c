@@ -215,7 +215,7 @@ free_return:
 	free(buf);
 }
 
-static int show_reference(const char *refname, const unsigned char *sha1,
+static int show_reference(const char *refname, const struct object_id *oid,
 			  int flag, void *cb_data)
 {
 	struct tag_filter *filter = cb_data;
@@ -224,14 +224,14 @@ static int show_reference(const char *refname, const unsigned char *sha1,
 		if (filter->with_commit) {
 			struct commit *commit;
 
-			commit = lookup_commit_reference_gently(sha1, 1);
+			commit = lookup_commit_reference_gently(oid->hash, 1);
 			if (!commit)
 				return 0;
 			if (!contains(commit, filter->with_commit))
 				return 0;
 		}
 
-		if (points_at.nr && !match_points_at(refname, sha1))
+		if (points_at.nr && !match_points_at(refname, oid->hash))
 			return 0;
 
 		if (!filter->lines) {
@@ -242,7 +242,7 @@ static int show_reference(const char *refname, const unsigned char *sha1,
 			return 0;
 		}
 		printf("%-15s ", refname);
-		show_tag_lines(sha1, filter->lines);
+		show_tag_lines(oid->hash, filter->lines);
 		putchar('\n');
 	}
 
@@ -260,8 +260,6 @@ static int list_tags(const char **patterns, int lines,
 		     struct commit_list *with_commit, int sort)
 {
 	struct tag_filter filter;
-	struct each_ref_fn_sha1_adapter wrapped_show_reference =
-		{show_reference, (void *)&filter};
 
 	filter.patterns = patterns;
 	filter.lines = lines;
@@ -270,7 +268,7 @@ static int list_tags(const char **patterns, int lines,
 	memset(&filter.tags, 0, sizeof(filter.tags));
 	filter.tags.strdup_strings = 1;
 
-	for_each_tag_ref(each_ref_fn_adapter, &wrapped_show_reference);
+	for_each_tag_ref(show_reference, (void *)&filter);
 	if (sort) {
 		int i;
 		if ((sort & SORT_MASK) == VERCMP_SORT)

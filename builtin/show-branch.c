@@ -409,7 +409,8 @@ static int append_head_ref(const char *refname, const struct object_id *oid,
 	return append_ref(refname + ofs, oid->hash, 0);
 }
 
-static int append_remote_ref(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
+static int append_remote_ref(const char *refname, const struct object_id *oid,
+			     int flag, void *cb_data)
 {
 	unsigned char tmp[20];
 	int ofs = 13;
@@ -418,9 +419,9 @@ static int append_remote_ref(const char *refname, const unsigned char *sha1, int
 	/* If both heads/foo and tags/foo exists, get_sha1 would
 	 * get confused.
 	 */
-	if (get_sha1(refname + ofs, tmp) || hashcmp(tmp, sha1))
+	if (get_sha1(refname + ofs, tmp) || hashcmp(tmp, oid->hash))
 		ofs = 5;
-	return append_ref(refname + ofs, sha1, 0);
+	return append_ref(refname + ofs, oid->hash, 0);
 }
 
 static int append_tag_ref(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
@@ -474,10 +475,8 @@ static void snarf_refs(int head, int remotes)
 	}
 	if (remotes) {
 		int orig_cnt = ref_name_cnt;
-		struct each_ref_fn_sha1_adapter wrapped_append_remote_ref =
-			{append_remote_ref, NULL};
 
-		for_each_ref(each_ref_fn_adapter, &wrapped_append_remote_ref);
+		for_each_ref(append_remote_ref, NULL);
 		sort_ref_range(orig_cnt, ref_name_cnt);
 	}
 }

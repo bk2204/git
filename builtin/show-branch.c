@@ -397,14 +397,14 @@ static int append_ref(const char *refname, const unsigned char *sha1,
 static int append_head_ref(const char *refname, const struct object_id *oid,
 			   int flag, void *cb_data)
 {
-	unsigned char tmp[20];
+	struct object_id tmp;
 	int ofs = 11;
 	if (!starts_with(refname, "refs/heads/"))
 		return 0;
 	/* If both heads/foo and tags/foo exists, get_sha1 would
 	 * get confused.
 	 */
-	if (get_sha1(refname + ofs, tmp) || hashcmp(tmp, oid->hash))
+	if (get_sha1(refname + ofs, tmp.hash) || oidcmp(&tmp, oid))
 		ofs = 5;
 	return append_ref(refname + ofs, oid->hash, 0);
 }

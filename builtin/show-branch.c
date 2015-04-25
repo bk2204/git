@@ -369,10 +369,10 @@ static void sort_ref_range(int bottom, int top)
 	      compare_ref_name);
 }
 
-static int append_ref(const char *refname, const unsigned char *sha1,
+static int append_ref(const char *refname, const struct object_id *oid,
 		      int allow_dups)
 {
-	struct commit *commit = lookup_commit_reference_gently(sha1, 1);
+	struct commit *commit = lookup_commit_reference_gently(oid->hash, 1);
 	int i;
 
 	if (!commit)
@@ -406,7 +406,7 @@ static int append_head_ref(const char *refname, const struct object_id *oid,
 	 */
 	if (get_sha1(refname + ofs, tmp.hash) || oidcmp(&tmp, oid))
 		ofs = 5;
-	return append_ref(refname + ofs, oid->hash, 0);
+	return append_ref(refname + ofs, oid, 0);
 }
 
 static int append_remote_ref(const char *refname, const struct object_id *oid,
@@ -421,7 +421,7 @@ static int append_remote_ref(const char *refname, const struct object_id *oid,
 	 */
 	if (get_sha1(refname + ofs, tmp.hash) || oidcmp(&tmp, oid))
 		ofs = 5;
-	return append_ref(refname + ofs, oid->hash, 0);
+	return append_ref(refname + ofs, oid, 0);
 }
 
 static int append_tag_ref(const char *refname, const struct object_id *oid,
@@ -429,7 +429,7 @@ static int append_tag_ref(const char *refname, const struct object_id *oid,
 {
 	if (!starts_with(refname, "refs/tags/"))
 		return 0;
-	return append_ref(refname + 5, oid->hash, 0);
+	return append_ref(refname + 5, oid, 0);
 }
 
 static const char *match_ref_pattern = NULL;
@@ -463,7 +463,7 @@ static int append_matching_ref(const char *refname, const struct object_id *oid,
 		return append_head_ref(refname, oid, flag, cb_data);
 	if (starts_with(refname, "refs/tags/"))
 		return append_tag_ref(refname, oid, flag, cb_data);
-	return append_ref(refname, oid->hash, 0);
+	return append_ref(refname, oid, 0);
 }
 
 static void snarf_refs(int head, int remotes)
@@ -538,7 +538,7 @@ static void append_one_rev(const char *av)
 {
 	struct object_id revkey;
 	if (!get_sha1(av, revkey.hash)) {
-		append_ref(av, revkey.hash, 0);
+		append_ref(av, &revkey, 0);
 		return;
 	}
 	if (strchr(av, '*') || strchr(av, '?') || strchr(av, '[')) {
@@ -788,7 +788,7 @@ int cmd_show_branch(int ac, const char **av, const char *prefix)
 						msg);
 			free(logmsg);
 			sprintf(nth_desc, "%s@{%d}", *av, base+i);
-			append_ref(nth_desc, oid.hash, 1);
+			append_ref(nth_desc, &oid, 1);
 		}
 		free(ref);
 	}

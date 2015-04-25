@@ -2097,14 +2097,14 @@ static void ll_find_deltas(struct object_entry **list, unsigned list_size,
 #define ll_find_deltas(l, s, w, d, p)	find_deltas(l, &s, w, d, p)
 #endif
 
-static int add_ref_tag(const char *path, const unsigned char *sha1, int flag, void *cb_data)
+static int add_ref_tag(const char *path, const struct object_id *oid, int flag, void *cb_data)
 {
 	unsigned char peeled[20];
 
 	if (starts_with(path, "refs/tags/") && /* is a tag? */
 	    !peel_ref(path, peeled)        && /* peelable? */
 	    packlist_find(&to_pack, peeled, NULL))      /* object packed? */
-		add_object_entry(sha1, OBJ_TAG, NULL, 0);
+		add_object_entry(oid->hash, OBJ_TAG, NULL, 0);
 	return 0;
 }
 
@@ -2784,12 +2784,8 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 		argv_array_clear(&rp);
 	}
 	cleanup_preferred_base();
-	if (include_tag && nr_result) {
-		struct each_ref_fn_sha1_adapter wrapped_add_ref_tag =
-			{add_ref_tag, NULL};
-
-		for_each_ref(each_ref_fn_adapter, &wrapped_add_ref_tag);
-	}
+	if (include_tag && nr_result)
+		for_each_ref(add_ref_tag, NULL);
 	stop_progress(&progress_state);
 
 	if (non_empty && !nr_result)

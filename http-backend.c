@@ -402,8 +402,8 @@ static void get_info_refs(char *arg)
 	strbuf_release(&buf);
 }
 
-static int show_head_ref(const char *refname, const unsigned char *sha1,
-	int flag, void *cb_data)
+static int show_head_ref(const char *refname, const struct object_id *oid,
+			 int flag, void *cb_data)
 {
 	struct strbuf *buf = cb_data;
 
@@ -416,7 +416,7 @@ static int show_head_ref(const char *refname, const unsigned char *sha1,
 
 		strbuf_addf(buf, "ref: %s\n", target_nons);
 	} else {
-		strbuf_addf(buf, "%s\n", sha1_to_hex(sha1));
+		strbuf_addf(buf, "%s\n", oid_to_hex(oid));
 	}
 
 	return 0;
@@ -425,11 +425,9 @@ static int show_head_ref(const char *refname, const unsigned char *sha1,
 static void get_head(char *arg)
 {
 	struct strbuf buf = STRBUF_INIT;
-	struct each_ref_fn_sha1_adapter wrapped_show_head_ref =
-		{show_head_ref, &buf};
 
 	select_getanyfile();
-	head_ref_namespaced(each_ref_fn_adapter, &wrapped_show_head_ref);
+	head_ref_namespaced(show_head_ref, &buf);
 	send_strbuf("text/plain", &buf);
 	strbuf_release(&buf);
 }

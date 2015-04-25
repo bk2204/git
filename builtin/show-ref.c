@@ -17,9 +17,9 @@ static int deref_tags, show_head, tags_only, heads_only, found_match, verify,
 static const char **pattern;
 static const char *exclude_existing_arg;
 
-static void show_one(const char *refname, const unsigned char *sha1)
+static void show_one(const char *refname, const struct object_id *oid)
 {
-	const char *hex = find_unique_abbrev(sha1, abbrev);
+	const char *hex = find_unique_abbrev(oid->hash, abbrev);
 	if (hash_only)
 		printf("%s\n", hex);
 	else
@@ -77,7 +77,7 @@ match:
 	if (quiet)
 		return 0;
 
-	show_one(refname, oid->hash);
+	show_one(refname, oid);
 
 	if (!deref_tags)
 		return 0;
@@ -215,7 +215,7 @@ int cmd_show_ref(int argc, const char **argv, const char *prefix)
 			if (starts_with(*pattern, "refs/") &&
 			    !read_ref(*pattern, oid.hash)) {
 				if (!quiet)
-					show_one(*pattern, oid.hash);
+					show_one(*pattern, &oid);
 			}
 			else if (!quiet)
 				die("'%s' - not a valid ref", *pattern);

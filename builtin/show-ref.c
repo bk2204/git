@@ -26,7 +26,8 @@ static void show_one(const char *refname, const unsigned char *sha1)
 		printf("%s %s\n", hex, refname);
 }
 
-static int show_ref(const char *refname, const unsigned char *sha1, int flag, void *cbdata)
+static int show_ref(const char *refname, const struct object_id *oid,
+		    int flag, void *cbdata)
 {
 	const char *hex;
 	unsigned char peeled[20];
@@ -69,14 +70,14 @@ match:
 	 * detect and return error if the repository is corrupt and
 	 * ref points at a nonexistent object.
 	 */
-	if (!has_sha1_file(sha1))
+	if (!has_sha1_file(oid->hash))
 		die("git show-ref: bad ref %s (%s)", refname,
-		    sha1_to_hex(sha1));
+		    oid_to_hex(oid));
 
 	if (quiet)
 		return 0;
 
-	show_one(refname, sha1);
+	show_one(refname, oid->hash);
 
 	if (!deref_tags)
 		return 0;
@@ -192,9 +193,6 @@ static const struct option show_ref_options[] = {
 
 int cmd_show_ref(int argc, const char **argv, const char *prefix)
 {
-	struct each_ref_fn_sha1_adapter wrapped_show_ref =
-		{show_ref, NULL};
-
 	if (argc == 2 && !strcmp(argv[1], "-h"))
 		usage_with_options(show_ref_usage, show_ref_options);
 
@@ -229,8 +227,8 @@ int cmd_show_ref(int argc, const char **argv, const char *prefix)
 	}
 
 	if (show_head)
-		head_ref(each_ref_fn_adapter, &wrapped_show_ref);
-	for_each_ref(each_ref_fn_adapter, &wrapped_show_ref);
+		head_ref(show_ref, NULL);
+	for_each_ref(show_ref, NULL);
 	if (!found_match) {
 		if (verify && !quiet)
 			die("No match");

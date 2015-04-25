@@ -88,7 +88,8 @@ match:
 	return 0;
 }
 
-static int add_existing(const char *refname, const unsigned char *sha1, int flag, void *cbdata)
+static int add_existing(const char *refname, const struct object_id *oid,
+			int flag, void *cbdata)
 {
 	struct string_list *list = (struct string_list *)cbdata;
 	string_list_insert(list, refname);
@@ -109,10 +110,8 @@ static int exclude_existing(const char *match)
 	static struct string_list existing_refs = STRING_LIST_INIT_DUP;
 	char buf[1024];
 	int matchlen = match ? strlen(match) : 0;
-	struct each_ref_fn_sha1_adapter wrapped_add_existing =
-		{add_existing, &existing_refs};
 
-	for_each_ref(each_ref_fn_adapter, &wrapped_add_existing);
+	for_each_ref(add_existing, &existing_refs);
 	while (fgets(buf, sizeof(buf), stdin)) {
 		char *ref;
 		int len = strlen(buf);

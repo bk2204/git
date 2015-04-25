@@ -476,7 +476,8 @@ static int fsck_handle_reflog_ent(unsigned char *osha1, unsigned char *nsha1,
 	return 0;
 }
 
-static int fsck_handle_reflog(const char *logname, const unsigned char *sha1, int flag, void *cb_data)
+static int fsck_handle_reflog(const char *logname, const struct object_id *oid,
+			      int flag, void *cb_data)
 {
 	for_each_reflog_ent(logname, fsck_handle_reflog_ent, NULL);
 	return 0;
@@ -505,14 +506,11 @@ static int fsck_handle_ref(const char *refname, const struct object_id *oid,
 
 static void get_default_heads(void)
 {
-	struct each_ref_fn_sha1_adapter wrapped_fsck_handle_reflog =
-		{fsck_handle_reflog, NULL};
-
 	if (head_points_at && !is_null_oid(&head_sha1))
 		fsck_handle_ref("HEAD", &head_sha1, 0, NULL);
 	for_each_rawref(fsck_handle_ref, NULL);
 	if (include_reflogs)
-		for_each_reflog(each_ref_fn_adapter, &wrapped_fsck_handle_reflog);
+		for_each_reflog(fsck_handle_reflog, NULL);
 
 	/*
 	 * Not having any default heads isn't really fatal, but

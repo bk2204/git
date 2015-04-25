@@ -475,11 +475,10 @@ static void paint_down(struct paint_info *info, const unsigned char *sha1,
 	free(tmp);
 }
 
-static int mark_uninteresting(const char *refname,
-			      const unsigned char *sha1,
+static int mark_uninteresting(const char *refname, const struct object_id *oid,
 			      int flags, void *cb_data)
 {
-	struct commit *commit = lookup_commit_reference_gently(sha1, 1);
+	struct commit *commit = lookup_commit_reference_gently(oid->hash, 1);
 	if (!commit)
 		return 0;
 	commit->object.flags |= UNINTERESTING;
@@ -512,8 +511,6 @@ void assign_shallow_commits_to_refs(struct shallow_info *info,
 	unsigned int i, nr;
 	int *shallow, nr_shallow = 0;
 	struct paint_info pi;
-	struct each_ref_fn_sha1_adapter wrapped_mark_uninteresting =
-		{mark_uninteresting, NULL};
 
 	trace_printf_key(&trace_shallow, "shallow: assign_shallow_commits_to_refs\n");
 	shallow = xmalloc(sizeof(*shallow) * (info->nr_ours + info->nr_theirs));
@@ -544,8 +541,8 @@ void assign_shallow_commits_to_refs(struct shallow_info *info,
 	 * connect to old refs. If not (e.g. force ref updates) it'll
 	 * have to go down to the current shallow commits.
 	 */
-	head_ref(each_ref_fn_adapter, &wrapped_mark_uninteresting);
-	for_each_ref(each_ref_fn_adapter, &wrapped_mark_uninteresting);
+	head_ref(mark_uninteresting, NULL);
+	for_each_ref(mark_uninteresting, NULL);
 
 	/* Mark potential bottoms so we won't go out of bound */
 	for (i = 0; i < nr_shallow; i++) {

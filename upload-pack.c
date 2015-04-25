@@ -693,9 +693,10 @@ static int mark_our_ref(const char *refname, const unsigned char *sha1)
 	return 0;
 }
 
-static int check_ref(const char *refname, const unsigned char *sha1, int flag, void *cb_data)
+static int check_ref(const char *refname, const struct object_id *oid,
+		     int flag, void *cb_data)
 {
-	mark_our_ref(refname, sha1);
+	mark_our_ref(refname, oid->hash);
 	return 0;
 }
 
@@ -772,11 +773,8 @@ static void upload_pack(void)
 		advertise_shallow_grafts(1);
 		packet_flush(1);
 	} else {
-		struct each_ref_fn_sha1_adapter wrapped_check_ref =
-			{check_ref, NULL};
-
-		head_ref_namespaced(each_ref_fn_adapter, &wrapped_check_ref);
-		for_each_namespaced_ref(each_ref_fn_adapter, &wrapped_check_ref);
+		head_ref_namespaced(check_ref, NULL);
+		for_each_namespaced_ref(check_ref, NULL);
 	}
 	string_list_clear(&symref, 1);
 	if (advertise_refs)

@@ -554,7 +554,7 @@ struct rename_info {
 };
 
 static int read_remote_branches(const char *refname,
-	const unsigned char *sha1, int flags, void *cb_data)
+	const struct object_id *oid, int flags, void *cb_data)
 {
 	struct rename_info *rename = cb_data;
 	struct strbuf buf = STRBUF_INIT;
@@ -620,8 +620,6 @@ static int mv(int argc, const char **argv)
 	struct string_list remote_branches = STRING_LIST_INIT_NODUP;
 	struct rename_info rename;
 	int i, refspec_updated = 0;
-	struct each_ref_fn_sha1_adapter wrapped_read_remote_branches =
-		{read_remote_branches, &rename};
 
 	if (argc != 3)
 		usage_with_options(builtin_remote_rename_usage, options);
@@ -699,7 +697,7 @@ static int mv(int argc, const char **argv)
 	 * First remove symrefs, then rename the rest, finally create
 	 * the new symrefs.
 	 */
-	for_each_ref(each_ref_fn_adapter, &wrapped_read_remote_branches);
+	for_each_ref(read_remote_branches, &rename);
 	for (i = 0; i < remote_branches.nr; i++) {
 		struct string_list_item *item = remote_branches.items + i;
 		int flag = 0;

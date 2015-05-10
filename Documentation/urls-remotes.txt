@@ -33,7 +33,9 @@ config file would appear like this:
 ------------
 
 The `<pushurl>` is used for pushes only. It is optional and defaults
-to `<url>`.
+to `<url>`.  If multiple `url` or `pushurl` entries are specified,
+linkgit:git-push[1] will push to all of them, but linkgit:git-fetch[1] and
+linkgit:git-pull[1] will ignore all but the first.
 
 Named file in `$GIT_DIR/remotes`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

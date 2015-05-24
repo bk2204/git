@@ -946,6 +946,9 @@ extern int has_sha1_pack(const unsigned char *sha1);
  */
 extern int has_sha1_file(const unsigned char *sha1);
 
+/* Same as the above, except for struct object_id. */
+extern int has_object_file(const struct object_id *oid);
+
 /*
  * Return true iff an alternate object database has a loose object
  * with the specified name.  This function does not respect replace

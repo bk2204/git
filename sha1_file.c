@@ -3180,6 +3180,11 @@ int has_sha1_file(const unsigned char *sha1)
 	return find_pack_entry(sha1, &e);
 }
 
+int has_object_file(const struct object_id *oid)
+{
+	return has_sha1_file(oid->hash);
+}
+
 static void check_tree(const void *buf, size_t size)
 {
 	struct tree_desc desc;

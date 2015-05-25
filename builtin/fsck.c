@@ -328,13 +328,13 @@ static int fsck_obj(struct object *obj)
 	return 0;
 }
 
-static int fsck_sha1(const unsigned char *sha1)
+static int fsck_oid(const struct object_id *oid)
 {
-	struct object *obj = parse_object(sha1);
+	struct object *obj = parse_object(oid->hash);
 	if (!obj) {
 		errors_found |= ERROR_OBJECT;
 		return error("%s: object corrupt or missing",
-			     sha1_to_hex(sha1));
+			     oid_to_hex(oid));
 	}
 	obj->flags |= HAS_OBJ;
 	return fsck_obj(obj);
@@ -357,67 +357,67 @@ static int fsck_obj_buffer(const unsigned char *sha1, enum object_type type,
  * This is the sorting chunk size: make it reasonably
  * big so that we can sort well..
  */
-#define MAX_SHA1_ENTRIES (1024)
+#define MAX_OID_ENTRIES (1024)
 
-struct sha1_entry {
+struct oid_entry {
 	unsigned long ino;
-	unsigned char sha1[20];
+	struct object_id oid;
 };
 
 static struct {
 	unsigned long nr;
-	struct sha1_entry *entry[MAX_SHA1_ENTRIES];
-} sha1_list;
+	struct oid_entry *entry[MAX_OID_ENTRIES];
+} oid_list;
 
 static int ino_compare(const void *_a, const void *_b)
 {
-	const struct sha1_entry *a = _a, *b = _b;
+	const struct oid_entry *a = _a, *b = _b;
 	unsigned long ino1 = a->ino, ino2 = b->ino;
 	return ino1 < ino2 ? -1 : ino1 > ino2 ? 1 : 0;
 }
 
-static void fsck_sha1_list(void)
+static void fsck_oid_list(void)
 {
-	int i, nr = sha1_list.nr;
+	int i, nr = oid_list.nr;
 
 	if (SORT_DIRENT)
-		qsort(sha1_list.entry, nr,
-		      sizeof(struct sha1_entry *), ino_compare);
+		qsort(oid_list.entry, nr,
+		      sizeof(struct oid_entry *), ino_compare);
 	for (i = 0; i < nr; i++) {
-		struct sha1_entry *entry = sha1_list.entry[i];
-		unsigned char *sha1 = entry->sha1;
+		struct oid_entry *entry = oid_list.entry[i];
+		struct object_id *oid = &entry->oid;
 
-		sha1_list.entry[i] = NULL;
-		if (fsck_sha1(sha1))
+		oid_list.entry[i] = NULL;
+		if (fsck_oid(oid))
 			errors_found |= ERROR_OBJECT;
 		free(entry);
 	}
-	sha1_list.nr = 0;
+	oid_list.nr = 0;
 }
 
-static void add_sha1_list(unsigned char *sha1, unsigned long ino)
+static void add_oid_list(struct object_id *oid, unsigned long ino)
 {
-	struct sha1_entry *entry = xmalloc(sizeof(*entry));
+	struct oid_entry *entry = xmalloc(sizeof(*entry));
 	int nr;
 
 	entry->ino = ino;
-	hashcpy(entry->sha1, sha1);
-	nr = sha1_list.nr;
-	if (nr == MAX_SHA1_ENTRIES) {
-		fsck_sha1_list();
+	oidcpy(&entry->oid, oid);
+	nr = oid_list.nr;
+	if (nr == MAX_OID_ENTRIES) {
+		fsck_oid_list();
 		nr = 0;
 	}
-	sha1_list.entry[nr] = entry;
-	sha1_list.nr = ++nr;
+	oid_list.entry[nr] = entry;
+	oid_list.nr = ++nr;
 }
 
 static inline int is_loose_object_file(struct dirent *de,
-				       char *name, unsigned char *sha1)
+				       char *name, struct object_id *oid)
 {
 	if (strlen(de->d_name) != 38)
 		return 0;
 	memcpy(name + 2, de->d_name, 39);
-	return !get_sha1_hex(name, sha1);
+	return !get_oid_hex(name, oid);
 }
 
 static void fsck_dir(int i, char *path)
@@ -434,12 +434,12 @@ static void fsck_dir(int i, char *path)
 
 	sprintf(name, "%02x", i);
 	while ((de = readdir(dir)) != NULL) {
-		unsigned char sha1[20];
+		struct object_id oid;
 
 		if (is_dot_or_dotdot(de->d_name))
 			continue;
-		if (is_loose_object_file(de, name, sha1)) {
-			add_sha1_list(sha1, DIRENT_SORT_HINT(de));
+		if (is_loose_object_file(de, name, &oid)) {
+			add_oid_list(&oid, DIRENT_SORT_HINT(de));
 			continue;
 		}
 		if (starts_with(de->d_name, "tmp_obj_"))
@@ -547,7 +547,7 @@ static void fsck_object_dir(const char *path)
 		display_progress(progress, i+1);
 	}
 	stop_progress(&progress);
-	fsck_sha1_list();
+	fsck_oid_list();
 }
 
 static int fsck_head_link(void)
@@ -683,9 +683,9 @@ int cmd_fsck(int argc, const char **argv, const char *prefix)
 	heads = 0;
 	for (i = 0; i < argc; i++) {
 		const char *arg = argv[i];
-		unsigned char sha1[20];
-		if (!get_sha1(arg, sha1)) {
-			struct object *obj = lookup_object(sha1);
+		struct object_id oid;
+		if (!get_sha1(arg, oid.hash)) {
+			struct object *obj = lookup_object(oid.hash);
 
 			/* Error is printed by lookup_object(). */
 			if (!obj)

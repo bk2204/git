@@ -250,7 +250,7 @@ static void start_fetch_loose(struct transfer_request *request)
 	struct active_request_slot *slot;
 	struct http_object_request *obj_req;
 
-	obj_req = new_http_object_request(repo->url, request->obj->sha1);
+	obj_req = new_http_object_request(repo->url, request->obj->oid.hash);
 	if (obj_req == NULL) {
 		request->state = ABORTED;
 		return;
@@ -274,7 +274,7 @@ static void start_fetch_loose(struct transfer_request *request)
 
 static void start_mkcol(struct transfer_request *request)
 {
-	char *hex = sha1_to_hex(request->obj->sha1);
+	char *hex = oid_to_hex(&request->obj->oid);
 	struct active_request_slot *slot;
 
 	request->url = get_remote_object_url(repo->url, hex, 1);
@@ -303,16 +303,16 @@ static void start_fetch_packed(struct transfer_request *request)
 	struct transfer_request *check_request = request_queue_head;
 	struct http_pack_request *preq;
 
-	target = find_sha1_pack(request->obj->sha1, repo->packs);
+	target = find_sha1_pack(request->obj->oid.hash, repo->packs);
 	if (!target) {
-		fprintf(stderr, "Unable to fetch %s, will not be able to update server info refs\n", sha1_to_hex(request->obj->sha1));
+		fprintf(stderr, "Unable to fetch %s, will not be able to update server info refs\n", oid_to_hex(&request->obj->oid));
 		repo->can_update_info_refs = 0;
 		release_request(request);
 		return;
 	}
 
 	fprintf(stderr,	"Fetching pack %s\n", sha1_to_hex(target->sha1));
-	fprintf(stderr, " which contains %s\n", sha1_to_hex(request->obj->sha1));
+	fprintf(stderr, " which contains %s\n", oid_to_hex(&request->obj->oid));
 
 	preq = new_http_pack_request(target, repo->url);
 	if (preq == NULL) {
@@ -349,7 +349,7 @@ static void start_fetch_packed(struct transfer_request *request)
 
 static void start_put(struct transfer_request *request)
 {
-	char *hex = sha1_to_hex(request->obj->sha1);
+	char *hex = oid_to_hex(&request->obj->oid);
 	struct active_request_slot *slot;
 	struct strbuf buf = STRBUF_INIT;
 	enum object_type type;
@@ -360,7 +360,7 @@ static void start_put(struct transfer_request *request)
 	ssize_t size;
 	git_zstream stream;
 
-	unpacked = read_sha1_file(request->obj->sha1, &type, &len);
+	unpacked = read_sha1_file(request->obj->oid.hash, &type, &len);
 	hdrlen = sprintf(hdr, "%s %lu", typename(type), len) + 1;
 
 	/* Set it up */
@@ -532,11 +532,11 @@ static void finish_request(struct transfer_request *request)
 	if (request->state == RUN_MKCOL) {
 		if (request->curl_result == CURLE_OK ||
 		    request->http_code == 405) {
-			remote_dir_exists[request->obj->sha1[0]] = 1;
+			remote_dir_exists[request->obj->oid.hash[0]] = 1;
 			start_put(request);
 		} else {
 			fprintf(stderr, "MKCOL %s failed, aborting (%d/%ld)\n",
-				sha1_to_hex(request->obj->sha1),
+				oid_to_hex(&request->obj->oid),
 				request->curl_result, request->http_code);
 			request->state = ABORTED;
 			aborted = 1;
@@ -546,7 +546,7 @@ static void finish_request(struct transfer_request *request)
 			start_move(request);
 		} else {
 			fprintf(stderr,	"PUT %s failed, aborting (%d/%ld)\n",
-				sha1_to_hex(request->obj->sha1),
+				oid_to_hex(&request->obj->oid),
 				request->curl_result, request->http_code);
 			request->state = ABORTED;
 			aborted = 1;
@@ -555,12 +555,12 @@ static void finish_request(struct transfer_request *request)
 		if (request->curl_result == CURLE_OK) {
 			if (push_verbosely)
 				fprintf(stderr, "    sent %s\n",
-					sha1_to_hex(request->obj->sha1));
+					oid_to_hex(&request->obj->oid));
 			request->obj->flags |= REMOTE;
 			release_request(request);
 		} else {
 			fprintf(stderr, "MOVE %s failed, aborting (%d/%ld)\n",
-				sha1_to_hex(request->obj->sha1),
+				oid_to_hex(&request->obj->oid),
 				request->curl_result, request->http_code);
 			request->state = ABORTED;
 			aborted = 1;
@@ -613,7 +613,7 @@ static int fill_active_slot(void *unused)
 			start_fetch_loose(request);
 			return 1;
 		} else if (pushing && request->state == NEED_PUSH) {
-			if (remote_dir_exists[request->obj->sha1[0]] == 1) {
+			if (remote_dir_exists[request->obj->oid.hash[0]] == 1) {
 				start_put(request);
 			} else {
 				start_mkcol(request);
@@ -637,8 +637,8 @@ static void add_fetch_request(struct object *obj)
 	 * Don't fetch the object if it's known to exist locally
 	 * or is already in the request queue
 	 */
-	if (remote_dir_exists[obj->sha1[0]] == -1)
-		get_remote_object_list(obj->sha1[0]);
+	if (remote_dir_exists[obj->oid.hash[0]] == -1)
+		get_remote_object_list(obj->oid.hash[0]);
 	if (obj->flags & (LOCAL | FETCHING))
 		return;
 
@@ -670,11 +670,11 @@ static int add_send_request(struct object *obj, struct remote_lock *lock)
 	 * Don't push the object if it's known to exist on the remote
 	 * or is already in the request queue
 	 */
-	if (remote_dir_exists[obj->sha1[0]] == -1)
-		get_remote_object_list(obj->sha1[0]);
+	if (remote_dir_exists[obj->oid.hash[0]] == -1)
+		get_remote_object_list(obj->oid.hash[0]);
 	if (obj->flags & (REMOTE | PUSHING))
 		return 0;
-	target = find_sha1_pack(obj->sha1, repo->packs);
+	target = find_sha1_pack(obj->oid.hash, repo->packs);
 	if (target) {
 		obj->flags |= REMOTE;
 		return 0;
@@ -1306,7 +1306,7 @@ static struct object_list **process_tree(struct tree *tree,
 	if (obj->flags & (UNINTERESTING | SEEN))
 		return p;
 	if (parse_tree(tree) < 0)
-		die("bad tree object %s", sha1_to_hex(obj->sha1));
+		die("bad tree object %s", oid_to_hex(&obj->oid));
 
 	obj->flags |= SEEN;
 	name = xstrdup(name);
@@ -1368,7 +1368,7 @@ static int get_delta(struct rev_info *revs, struct remote_lock *lock)
 			p = process_blob((struct blob *)obj, p, NULL, name);
 			continue;
 		}
-		die("unknown pending object %s (%s)", sha1_to_hex(obj->sha1), name);
+		die("unknown pending object %s (%s)", oid_to_hex(&obj->oid), name);
 	}
 
 	while (objects) {
@@ -1497,7 +1497,7 @@ static void add_remote_info_ref(struct remote_ls_ctx *ls)
 			len = strlen(ls->dentry_name) + 45;
 			ref_info = xcalloc(len + 1, 1);
 			sprintf(ref_info, "%s	%s^{}\n",
-				sha1_to_hex(o->sha1), ls->dentry_name);
+				oid_to_hex(&o->oid), ls->dentry_name);
 			fwrite_buffer(ref_info, 1, len, buf);
 			free(ref_info);
 		}

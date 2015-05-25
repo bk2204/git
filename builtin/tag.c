@@ -68,7 +68,7 @@ static const unsigned char *match_points_at(const char *refname,
 	if (!obj)
 		die(_("malformed object at '%s'"), refname);
 	if (obj->type == OBJ_TAG)
-		tagged_sha1 = ((struct tag *)obj)->tagged->sha1;
+		tagged_sha1 = ((struct tag *)obj)->tagged->oid.hash;
 	if (tagged_sha1 && sha1_array_lookup(&points_at, tagged_sha1) >= 0)
 		return tagged_sha1;
 	return NULL;
@@ -77,7 +77,7 @@ static const unsigned char *match_points_at(const char *refname,
 static int in_commit_list(const struct commit_list *want, struct commit *c)
 {
 	for (; want; want = want->next)
-		if (!hashcmp(want->item->object.sha1, c->object.sha1))
+		if (!oidcmp(&want->item->object.oid, &c->object.oid))
 			return 1;
 	return 0;
 }

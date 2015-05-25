@@ -60,8 +60,8 @@ static int post_checkout_hook(struct commit *old, struct commit *new,
 			      int changed)
 {
 	return run_hook_le(NULL, "post-checkout",
-			   sha1_to_hex(old ? old->object.sha1 : null_sha1),
-			   sha1_to_hex(new ? new->object.sha1 : null_sha1),
+			   sha1_to_hex(old ? old->object.oid.hash : null_sha1),
+			   sha1_to_hex(new ? new->object.oid.hash : null_sha1),
 			   changed ? "1" : "0", NULL);
 	/* "new" can be NULL when checking out from the index before
 	   a commit exists. */
@@ -408,7 +408,7 @@ static void describe_detached_head(const char *msg, struct commit *commit)
 	if (!parse_commit(commit))
 		pp_commit_easy(CMIT_FMT_ONELINE, commit, &sb);
 	fprintf(stderr, "%s %s... %s\n", msg,
-		find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV), sb.buf);
+		find_unique_abbrev(commit->object.oid.hash, DEFAULT_ABBREV), sb.buf);
 	strbuf_release(&sb);
 }
 
@@ -517,10 +517,10 @@ static int merge_working_tree(const struct checkout_opts *opts,
 			setup_standard_excludes(topts.dir);
 		}
 		tree = parse_tree_indirect(old->commit && !opts->new_worktree_mode ?
-					   old->commit->object.sha1 :
+					   old->commit->object.oid.hash :
 					   EMPTY_TREE_SHA1_BIN);
 		init_tree_desc(&trees[0], tree->buffer, tree->size);
-		tree = parse_tree_indirect(new->commit->object.sha1);
+		tree = parse_tree_indirect(new->commit->object.oid.hash);
 		init_tree_desc(&trees[1], tree->buffer, tree->size);
 
 		ret = unpack_trees(2, trees, &topts);
@@ -650,7 +650,7 @@ static void update_refs_for_switch(const struct checkout_opts *opts,
 
 	old_desc = old->name;
 	if (!old_desc && old->commit)
-		old_desc = sha1_to_hex(old->commit->object.sha1);
+		old_desc = oid_to_hex(&old->commit->object.oid);
 
 	reflog_msg = getenv("GIT_REFLOG_ACTION");
 	if (!reflog_msg)
@@ -662,7 +662,7 @@ static void update_refs_for_switch(const struct checkout_opts *opts,
 	if (!strcmp(new->name, "HEAD") && !new->path && !opts->force_detach) {
 		/* Nothing to do. */
 	} else if (opts->force_detach || !new->path) {	/* No longer on any branch. */
-		update_ref(msg.buf, "HEAD", new->commit->object.sha1, NULL,
+		update_ref(msg.buf, "HEAD", new->commit->object.oid.hash, NULL,
 			   REF_NODEREF, UPDATE_REFS_DIE_ON_ERR);
 		if (!opts->quiet) {
 			if (old->path && advice_detached_head)
@@ -713,7 +713,7 @@ static void describe_one_orphan(struct strbuf *sb, struct commit *commit)
 {
 	strbuf_addstr(sb, "  ");
 	strbuf_addstr(sb,
-		find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV));
+		find_unique_abbrev(commit->object.oid.hash, DEFAULT_ABBREV));
 	strbuf_addch(sb, ' ');
 	if (!parse_commit(commit))
 		pp_commit_easy(CMIT_FMT_ONELINE, commit, sb);
@@ -771,7 +771,7 @@ static void suggest_reattach(struct commit *commit, struct rev_info *revs)
 			" git branch <new-branch-name> %s\n\n",
 			/* Give ngettext() the count */
 			lost),
-			find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV));
+			find_unique_abbrev(commit->object.oid.hash, DEFAULT_ABBREV));
 }
 
 /*
@@ -789,10 +789,10 @@ static void orphaned_commit_warning(struct commit *old, struct commit *new)
 	setup_revisions(0, NULL, &revs, NULL);
 
 	object->flags &= ~UNINTERESTING;
-	add_pending_object(&revs, object, sha1_to_hex(object->sha1));
+	add_pending_object(&revs, object, oid_to_hex(&object->oid));
 
 	for_each_ref(add_pending_uninteresting_ref, &revs);
-	add_pending_sha1(&revs, "HEAD", new->object.sha1, UNINTERESTING);
+	add_pending_sha1(&revs, "HEAD", new->object.oid.hash, UNINTERESTING);
 
 	refs = revs.pending;
 	revs.leak_pending = 1;
@@ -951,7 +951,7 @@ static int prepare_linked_checkout(const struct checkout_opts *opts,
 	 */
 	strbuf_reset(&sb);
 	strbuf_addf(&sb, "%s/HEAD", sb_repo.buf);
-	write_file(sb.buf, 1, "%s\n", sha1_to_hex(new->commit->object.sha1));
+	write_file(sb.buf, 1, "%s\n", oid_to_hex(&new->commit->object.oid));
 	strbuf_reset(&sb);
 	strbuf_addf(&sb, "%s/commondir", sb_repo.buf);
 	write_file(sb.buf, 1, "../..\n");

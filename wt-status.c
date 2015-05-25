@@ -1227,7 +1227,7 @@ static void wt_status_get_detached_from(struct wt_status_state *state)
 	    (!hashcmp(cb.nsha1, sha1) ||
 	     /* perhaps sha1 is a tag, try to dereference to a commit */
 	     ((commit = lookup_commit_reference_gently(sha1, 1)) != NULL &&
-	      !hashcmp(cb.nsha1, commit->object.sha1)))) {
+	      !hashcmp(cb.nsha1, commit->object.oid.hash)))) {
 		int ofs;
 		if (starts_with(ref, "refs/tags/"))
 			ofs = strlen("refs/tags/");

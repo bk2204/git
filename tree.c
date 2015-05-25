@@ -102,7 +102,7 @@ static int read_tree_1(struct tree *tree, struct strbuf *base,
 				    sha1_to_hex(entry.sha1),
 				    base->buf, entry.path);
 
-			hashcpy(sha1, commit->tree->object.sha1);
+			hashcpy(sha1, commit->tree->object.oid.hash);
 		}
 		else
 			continue;
@@ -212,14 +212,14 @@ int parse_tree(struct tree *item)
 
 	if (item->object.parsed)
 		return 0;
-	buffer = read_sha1_file(item->object.sha1, &type, &size);
+	buffer = read_sha1_file(item->object.oid.hash, &type, &size);
 	if (!buffer)
 		return error("Could not read %s",
-			     sha1_to_hex(item->object.sha1));
+			     oid_to_hex(&item->object.oid));
 	if (type != OBJ_TREE) {
 		free(buffer);
 		return error("Object %s not a tree",
-			     sha1_to_hex(item->object.sha1));
+			     oid_to_hex(&item->object.oid));
 	}
 	return parse_tree_buffer(item, buffer, size);
 }
@@ -247,6 +247,6 @@ struct tree *parse_tree_indirect(const unsigned char *sha1)
 		else
 			return NULL;
 		if (!obj->parsed)
-			parse_object(obj->sha1);
+			parse_object(obj->oid.hash);
 	} while (1);
 }

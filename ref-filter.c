@@ -398,8 +398,8 @@ static void grab_tag_values(struct atom_value *val, int deref, struct object *ob
 		else if (!strcmp(name, "type") && tag->tagged)
 			v->s = typename(tag->tagged->type);
 		else if (!strcmp(name, "object") && tag->tagged) {
-			char *s = xmalloc(41);
-			strcpy(s, sha1_to_hex(tag->tagged->sha1));
+			char *s = xmalloc(GIT_SHA1_HEXSZ + 1);
+			strcpy(s, oid_to_hex(&tag->tagged->oid));
 			v->s = s;
 		}
 	}
@@ -419,8 +419,8 @@ static void grab_commit_values(struct atom_value *val, int deref, struct object 
 		if (deref)
 			name++;
 		if (!strcmp(name, "tree")) {
-			char *s = xmalloc(41);
-			strcpy(s, sha1_to_hex(commit->tree->object.sha1));
+			char *s = xmalloc(GIT_SHA1_HEXSZ + 1);
+			strcpy(s, oid_to_hex(&commit->tree->object.oid));
 			v->s = s;
 		}
 		if (!strcmp(name, "numparent")) {
@@ -439,7 +439,7 @@ static void grab_commit_values(struct atom_value *val, int deref, struct object 
 			     parents;
 			     parents = parents->next, i = i + 41) {
 				struct commit *parent = parents->item;
-				strcpy(s+i, sha1_to_hex(parent->object.sha1));
+				strcpy(s+i, oid_to_hex(&parent->object.oid));
 				if (parents->next)
 					s[i+40] = ' ';
 			}
@@ -1075,7 +1075,7 @@ struct contains_stack {
 static int in_commit_list(const struct commit_list *want, struct commit *c)
 {
 	for (; want; want = want->next)
-		if (!hashcmp(want->item->object.sha1, c->object.sha1))
+		if (!oidcmp(&want->item->object.oid, &c->object.oid))
 			return 1;
 	return 0;
 }

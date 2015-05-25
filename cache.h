@@ -1012,6 +1012,15 @@ extern int for_each_abbrev(const char *prefix, each_abbrev_fn, void *);
 extern int get_sha1_hex(const char *hex, unsigned char *sha1);
 extern int get_oid_hex(const char *hex, struct object_id *sha1);
 
+/*
+ * Like get_oid_hex, but accepts an optional length argument, which may be -1
+ * if the string is terminated by a non-hex character.  As with get_oid_hex,
+ * reading stops if a NUL is encountered.  Returns the number of characters
+ * read (40) on success and 0 on failure.  This is designed to be easier to
+ * use for parsing data than get_oid_hex.
+ */
+extern int parse_oid_hex(const char *hex, int len, struct object_id *oid);
+
 extern char *sha1_to_hex(const unsigned char *sha1);	/* static buffer result! */
 extern char *oid_to_hex(const struct object_id *oid);	/* same static buffer as sha1_to_hex */
 extern int read_ref_full(const char *refname, int resolve_flags,

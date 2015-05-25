@@ -248,8 +248,8 @@ struct command {
 	unsigned int skip_update:1,
 		     did_not_exist:1;
 	int index;
-	unsigned char old_sha1[20];
-	unsigned char new_sha1[20];
+	struct object_id old_oid;
+	struct object_id new_oid;
 	char ref_name[FLEX_ARRAY]; /* more */
 };
 
@@ -597,7 +597,7 @@ static int feed_receive_hook(void *state_, const char **bufp, size_t *sizep)
 		return -1; /* EOF */
 	strbuf_reset(&state->buf);
 	strbuf_addf(&state->buf, "%s %s %s\n",
-		    sha1_to_hex(cmd->old_sha1), sha1_to_hex(cmd->new_sha1),
+		    oid_to_hex(&cmd->old_oid), oid_to_hex(&cmd->new_oid),
 		    cmd->ref_name);
 	state->cmd = cmd->next;
 	if (bufp) {
@@ -635,8 +635,8 @@ static int run_update_hook(struct command *cmd)
 		return 0;
 
 	argv[1] = cmd->ref_name;
-	argv[2] = sha1_to_hex(cmd->old_sha1);
-	argv[3] = sha1_to_hex(cmd->new_sha1);
+	argv[2] = oid_to_hex(&cmd->old_oid);
+	argv[3] = oid_to_hex(&cmd->new_oid);
 	argv[4] = NULL;
 
 	proc.no_stdin = 1;
@@ -760,7 +760,7 @@ static int head_has_history(void)
 	return !get_sha1("HEAD", sha1);
 }
 
-static const char *push_to_deploy(unsigned char *sha1,
+static const char *push_to_deploy(struct object_id *oid,
 				  struct argv_array *env,
 				  const char *work_tree)
 {
@@ -812,7 +812,7 @@ static const char *push_to_deploy(unsigned char *sha1,
 	if (run_command(&child))
 		return "Working directory has staged changes";
 
-	read_tree[3] = sha1_to_hex(sha1);
+	read_tree[3] = oid_to_hex(oid);
 	child_process_init(&child);
 	child.argv = read_tree;
 	child.env = env->argv;
@@ -829,19 +829,19 @@ static const char *push_to_deploy(unsigned char *sha1,
 
 static const char *push_to_checkout_hook = "push-to-checkout";
 
-static const char *push_to_checkout(unsigned char *sha1,
+static const char *push_to_checkout(struct object_id *oid,
 				    struct argv_array *env,
 				    const char *work_tree)
 {
 	argv_array_pushf(env, "GIT_WORK_TREE=%s", absolute_path(work_tree));
 	if (run_hook_le(env->argv, push_to_checkout_hook,
-			sha1_to_hex(sha1), NULL))
+			oid_to_hex(oid), NULL))
 		return "push-to-checkout hook declined";
 	else
 		return NULL;
 }
 
-static const char *update_worktree(unsigned char *sha1)
+static const char *update_worktree(struct object_id *oid)
 {
 	const char *retval;
 	const char *work_tree = git_work_tree_cfg ? git_work_tree_cfg : "..";
@@ -853,9 +853,9 @@ static const char *update_worktree(unsigned char *sha1)
 	argv_array_pushf(&env, "GIT_DIR=%s", absolute_path(get_git_dir()));
 
 	if (!find_hook(push_to_checkout_hook))
-		retval = push_to_deploy(sha1, &env, work_tree);
+		retval = push_to_deploy(oid, &env, work_tree);
 	else
-		retval = push_to_checkout(sha1, &env, work_tree);
+		retval = push_to_checkout(oid, &env, work_tree);
 
 	argv_array_clear(&env);
 	return retval;
@@ -866,8 +866,8 @@ static const char *update(struct command *cmd, struct shallow_info *si)
 	const char *name = cmd->ref_name;
 	struct strbuf namespaced_name_buf = STRBUF_INIT;
 	const char *namespaced_name, *ret;
-	unsigned char *old_sha1 = cmd->old_sha1;
-	unsigned char *new_sha1 = cmd->new_sha1;
+	struct object_id *old_oid = &cmd->old_oid;
+	struct object_id *new_oid = &cmd->new_oid;
 
 	/* only refs/... are allowed */
 	if (!starts_with(name, "refs/") || check_refname_format(name + 5, 0)) {
@@ -892,20 +892,20 @@ static const char *update(struct command *cmd, struct shallow_info *si)
 				refuse_unconfigured_deny();
 			return "branch is currently checked out";
 		case DENY_UPDATE_INSTEAD:
-			ret = update_worktree(new_sha1);
+			ret = update_worktree(new_oid);
 			if (ret)
 				return ret;
 			break;
 		}
 	}
 
-	if (!is_null_sha1(new_sha1) && !has_sha1_file(new_sha1)) {
+	if (!is_null_oid(new_oid) && !has_object_file(new_oid)) {
 		error("unpack should have generated %s, "
-		      "but I can't find it!", sha1_to_hex(new_sha1));
+		      "but I can't find it!", oid_to_hex(new_oid));
 		return "bad pack";
 	}
 
-	if (!is_null_sha1(old_sha1) && is_null_sha1(new_sha1)) {
+	if (!is_null_oid(old_oid) && is_null_oid(new_oid)) {
 		if (deny_deletes && starts_with(name, "refs/heads/")) {
 			rp_error("denying ref deletion for %s", name);
 			return "deletion prohibited";
@@ -931,14 +931,14 @@ static const char *update(struct command *cmd, struct shallow_info *si)
 		}
 	}
 
-	if (deny_non_fast_forwards && !is_null_sha1(new_sha1) &&
-	    !is_null_sha1(old_sha1) &&
+	if (deny_non_fast_forwards && !is_null_oid(new_oid) &&
+	    !is_null_oid(old_oid) &&
 	    starts_with(name, "refs/heads/")) {
 		struct object *old_object, *new_object;
 		struct commit *old_commit, *new_commit;
 
-		old_object = parse_object(old_sha1);
-		new_object = parse_object(new_sha1);
+		old_object = parse_object(old_oid->hash);
+		new_object = parse_object(new_oid->hash);
 
 		if (!old_object || !new_object ||
 		    old_object->type != OBJ_COMMIT ||
@@ -959,10 +959,10 @@ static const char *update(struct command *cmd, struct shallow_info *si)
 		return "hook declined";
 	}
 
-	if (is_null_sha1(new_sha1)) {
+	if (is_null_oid(new_oid)) {
 		struct strbuf err = STRBUF_INIT;
-		if (!parse_object(old_sha1)) {
-			old_sha1 = NULL;
+		if (!parse_object(old_oid->hash)) {
+			old_oid = NULL;
 			if (ref_exists(name)) {
 				rp_warning("Allowing deletion of corrupt ref.");
 			} else {
@@ -972,7 +972,7 @@ static const char *update(struct command *cmd, struct shallow_info *si)
 		}
 		if (ref_transaction_delete(transaction,
 					   namespaced_name,
-					   old_sha1,
+					   old_oid->hash,
 					   0, "push", &err)) {
 			rp_error("%s", err.buf);
 			strbuf_release(&err);
@@ -989,7 +989,8 @@ static const char *update(struct command *cmd, struct shallow_info *si)
 
 		if (ref_transaction_update(transaction,
 					   namespaced_name,
-					   new_sha1, old_sha1,
+					   new_oid->hash,
+					   old_oid->hash,
 					   0, "push",
 					   &err)) {
 			rp_error("%s", err.buf);
@@ -1075,16 +1076,16 @@ static void check_aliased_update(struct command *cmd, struct string_list *list)
 
 	dst_cmd = (struct command *) item->util;
 
-	if (!hashcmp(cmd->old_sha1, dst_cmd->old_sha1) &&
-	    !hashcmp(cmd->new_sha1, dst_cmd->new_sha1))
+	if (!oidcmp(&cmd->old_oid, &dst_cmd->old_oid) &&
+	    !oidcmp(&cmd->new_oid, &dst_cmd->new_oid))
 		return;
 
 	dst_cmd->skip_update = 1;
 
-	strcpy(cmd_oldh, find_unique_abbrev(cmd->old_sha1, DEFAULT_ABBREV));
-	strcpy(cmd_newh, find_unique_abbrev(cmd->new_sha1, DEFAULT_ABBREV));
-	strcpy(dst_oldh, find_unique_abbrev(dst_cmd->old_sha1, DEFAULT_ABBREV));
-	strcpy(dst_newh, find_unique_abbrev(dst_cmd->new_sha1, DEFAULT_ABBREV));
+	strcpy(cmd_oldh, find_unique_abbrev(cmd->old_oid.hash, DEFAULT_ABBREV));
+	strcpy(cmd_newh, find_unique_abbrev(cmd->new_oid.hash, DEFAULT_ABBREV));
+	strcpy(dst_oldh, find_unique_abbrev(dst_cmd->old_oid.hash, DEFAULT_ABBREV));
+	strcpy(dst_newh, find_unique_abbrev(dst_cmd->new_oid.hash, DEFAULT_ABBREV));
 	rp_error("refusing inconsistent update between symref '%s' (%s..%s) and"
 		 " its target '%s' (%s..%s)",
 		 cmd->ref_name, cmd_oldh, cmd_newh,
@@ -1119,10 +1120,10 @@ static int command_singleton_iterator(void *cb_data, unsigned char sha1[20])
 	struct command **cmd_list = cb_data;
 	struct command *cmd = *cmd_list;
 
-	if (!cmd || is_null_sha1(cmd->new_sha1))
+	if (!cmd || is_null_oid(&cmd->new_oid))
 		return -1; /* end of list */
 	*cmd_list = NULL; /* this returns only one */
-	hashcpy(sha1, cmd->new_sha1);
+	hashcpy(sha1, cmd->new_oid.hash);
 	return 0;
 }
 
@@ -1158,8 +1159,8 @@ static int iterate_receive_command_list(void *cb_data, unsigned char sha1[20])
 		if (shallow_update && data->si->shallow_ref[cmd->index])
 			/* to be checked in update_shallow_ref() */
 			continue;
-		if (!is_null_sha1(cmd->new_sha1) && !cmd->skip_update) {
-			hashcpy(sha1, cmd->new_sha1);
+		if (!is_null_oid(&cmd->new_oid) && !cmd->skip_update) {
+			hashcpy(sha1, cmd->new_oid.hash);
 			*cmd_list = cmd->next;
 			return 0;
 		}
@@ -1175,7 +1176,7 @@ static void reject_updates_to_hidden(struct command *commands)
 	for (cmd = commands; cmd; cmd = cmd->next) {
 		if (cmd->error_string || !ref_is_hidden(cmd->ref_name))
 			continue;
-		if (is_null_sha1(cmd->new_sha1))
+		if (is_null_oid(&cmd->new_oid))
 			cmd->error_string = "deny deleting a hidden ref";
 		else
 			cmd->error_string = "deny updating a hidden ref";
@@ -1324,23 +1325,23 @@ static struct command **queue_command(struct command **tail,
 				      const char *line,
 				      int linelen)
 {
-	unsigned char old_sha1[20], new_sha1[20];
+	struct object_id old_oid, new_oid;
 	struct command *cmd;
 	const char *refname;
 	int reflen;
 
-	if (linelen < 83 ||
-	    line[40] != ' ' ||
-	    line[81] != ' ' ||
-	    get_sha1_hex(line, old_sha1) ||
-	    get_sha1_hex(line + 41, new_sha1))
+	if (linelen < (GIT_SHA1_HEXSZ * 2) + 3 ||
+	    line[GIT_SHA1_HEXSZ] != ' ' ||
+	    line[(GIT_SHA1_HEXSZ * 2) + 1] != ' ' ||
+	    get_oid_hex(line, &old_oid) ||
+	    get_oid_hex(line + GIT_SHA1_HEXSZ + 1, &new_oid))
 		die("protocol error: expected old/new/ref, got '%s'", line);
 
-	refname = line + 82;
-	reflen = linelen - 82;
+	refname = line + (GIT_SHA1_HEXSZ * 2) + 2;
+	reflen = linelen - (GIT_SHA1_HEXSZ * 2) + 2;
 	cmd = xcalloc(1, sizeof(struct command) + reflen + 1);
-	hashcpy(cmd->old_sha1, old_sha1);
-	hashcpy(cmd->new_sha1, new_sha1);
+	oidcpy(&cmd->old_oid, &old_oid);
+	oidcpy(&cmd->new_oid, &new_oid);
 	memcpy(cmd->ref_name, refname, reflen);
 	cmd->ref_name[reflen] = '\0';
 	*tail = cmd;
@@ -1607,9 +1608,9 @@ static void update_shallow_info(struct command *commands,
 	}
 
 	for (cmd = commands; cmd; cmd = cmd->next) {
-		if (is_null_sha1(cmd->new_sha1))
+		if (is_null_oid(&cmd->new_oid))
 			continue;
-		sha1_array_append(ref, cmd->new_sha1);
+		sha1_array_append(ref, cmd->new_oid.hash);
 		cmd->index = ref->nr - 1;
 	}
 	si->ref = ref;
@@ -1622,7 +1623,7 @@ static void update_shallow_info(struct command *commands,
 	ref_status = xmalloc(sizeof(*ref_status) * ref->nr);
 	assign_shallow_commits_to_refs(si, NULL, ref_status);
 	for (cmd = commands; cmd; cmd = cmd->next) {
-		if (is_null_sha1(cmd->new_sha1))
+		if (is_null_oid(&cmd->new_oid))
 			continue;
 		if (ref_status[cmd->index]) {
 			cmd->error_string = "shallow update not allowed";
@@ -1660,7 +1661,7 @@ static int delete_only(struct command *commands)
 {
 	struct command *cmd;
 	for (cmd = commands; cmd; cmd = cmd->next) {
-		if (!is_null_sha1(cmd->new_sha1))
+		if (!is_null_oid(&cmd->new_oid))
 			return 0;
 	}
 	return 1;

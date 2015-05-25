@@ -18,7 +18,7 @@ void walker_say(struct walker *walker, const char *fmt, const char *hex)
 static void report_missing(const struct object *obj)
 {
 	char missing_hex[41];
-	strcpy(missing_hex, sha1_to_hex(obj->sha1));
+	strcpy(missing_hex, oid_to_hex(&obj->oid));
 	fprintf(stderr, "Cannot obtain needed %s %s\n",
 		obj->type ? typename(obj->type): "object", missing_hex);
 	if (!is_null_sha1(current_commit_sha1))
@@ -79,9 +79,9 @@ static int process_commit(struct walker *walker, struct commit *commit)
 	if (commit->object.flags & COMPLETE)
 		return 0;
 
-	hashcpy(current_commit_sha1, commit->object.sha1);
+	hashcpy(current_commit_sha1, commit->object.oid.hash);
 
-	walker_say(walker, "walk %s\n", sha1_to_hex(commit->object.sha1));
+	walker_say(walker, "walk %s\n", oid_to_hex(&commit->object.oid));
 
 	if (walker->get_tree) {
 		if (process(walker, &commit->tree->object))
@@ -131,7 +131,7 @@ static int process_object(struct walker *walker, struct object *obj)
 	}
 	return error("Unable to determine requirements "
 		     "of type %s for %s",
-		     typename(obj->type), sha1_to_hex(obj->sha1));
+		     typename(obj->type), oid_to_hex(&obj->oid));
 }
 
 static int process(struct walker *walker, struct object *obj)
@@ -140,14 +140,14 @@ static int process(struct walker *walker, struct object *obj)
 		return 0;
 	obj->flags |= SEEN;
 
-	if (has_sha1_file(obj->sha1)) {
+	if (has_object_file(&obj->oid)) {
 		/* We already have it, so we should scan it now. */
 		obj->flags |= TO_SCAN;
 	}
 	else {
 		if (obj->flags & COMPLETE)
 			return 0;
-		walker->prefetch(walker, obj->sha1);
+		walker->prefetch(walker, obj->oid.hash);
 	}
 
 	object_list_insert(obj, process_queue_end);
@@ -171,13 +171,13 @@ static int loop(struct walker *walker)
 		 * the queue because we needed to fetch it first.
 		 */
 		if (! (obj->flags & TO_SCAN)) {
-			if (walker->fetch(walker, obj->sha1)) {
+			if (walker->fetch(walker, obj->oid.hash)) {
 				report_missing(obj);
 				return -1;
 			}
 		}
 		if (!obj->type)
-			parse_object(obj->sha1);
+			parse_object(obj->oid.hash);
 		if (process_object(walker, obj))
 			return -1;
 	}

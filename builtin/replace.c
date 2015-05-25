@@ -361,7 +361,7 @@ static void check_one_mergetag(struct commit *commit,
 		unsigned char sha1[20];
 		if (get_sha1(mergetag_data->argv[i], sha1) < 0)
 			die(_("Not a valid object name: '%s'"), mergetag_data->argv[i]);
-		if (!hashcmp(tag->tagged->sha1, sha1))
+		if (!hashcmp(tag->tagged->oid.hash, sha1))
 			return; /* found */
 	}
 

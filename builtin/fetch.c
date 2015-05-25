@@ -529,7 +529,7 @@ static int update_local_ref(struct ref *ref,
 	if (in_merge_bases(current, updated)) {
 		char quickref[83];
 		int r;
-		strcpy(quickref, find_unique_abbrev(current->object.sha1, DEFAULT_ABBREV));
+		strcpy(quickref, find_unique_abbrev(current->object.oid.hash, DEFAULT_ABBREV));
 		strcat(quickref, "..");
 		strcat(quickref, find_unique_abbrev(ref->new_oid.hash, DEFAULT_ABBREV));
 		if ((recurse_submodules != RECURSE_SUBMODULES_OFF) &&
@@ -545,7 +545,7 @@ static int update_local_ref(struct ref *ref,
 	} else if (force || ref->force) {
 		char quickref[84];
 		int r;
-		strcpy(quickref, find_unique_abbrev(current->object.sha1, DEFAULT_ABBREV));
+		strcpy(quickref, find_unique_abbrev(current->object.oid.hash, DEFAULT_ABBREV));
 		strcat(quickref, "...");
 		strcat(quickref, find_unique_abbrev(ref->new_oid.hash, DEFAULT_ABBREV));
 		if ((recurse_submodules != RECURSE_SUBMODULES_OFF) &&

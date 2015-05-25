@@ -96,7 +96,7 @@ static void print_new_head_line(struct commit *commit)
 	const char *hex, *body;
 	const char *msg;
 
-	hex = find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV);
+	hex = find_unique_abbrev(commit->object.oid.hash, DEFAULT_ABBREV);
 	printf(_("HEAD is now at %s"), hex);
 	msg = logmsg_reencode(commit, NULL, get_log_output_encoding());
 	body = strstr(msg, "\n\n");
@@ -306,7 +306,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		commit = lookup_commit_reference(sha1);
 		if (!commit)
 			die(_("Could not parse object '%s'."), rev);
-		hashcpy(sha1, commit->object.sha1);
+		hashcpy(sha1, commit->object.oid.hash);
 	} else {
 		struct tree *tree;
 		if (get_sha1_treeish(rev, sha1))
@@ -314,7 +314,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		tree = parse_tree_indirect(sha1);
 		if (!tree)
 			die(_("Could not parse object '%s'."), rev);
-		hashcpy(sha1, tree->object.sha1);
+		hashcpy(sha1, tree->object.oid.hash);
 	}
 
 	if (patch_mode) {

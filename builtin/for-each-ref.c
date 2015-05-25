@@ -252,7 +252,7 @@ static void grab_common_values(struct atom_value *val, int deref, struct object 
 			v->s = s;
 		}
 		else if (deref)
-			grab_objectname(name, obj->sha1, v);
+			grab_objectname(name, obj->oid.hash, v);
 	}
 }
 
@@ -274,8 +274,8 @@ static void grab_tag_values(struct atom_value *val, int deref, struct object *ob
 		else if (!strcmp(name, "type") && tag->tagged)
 			v->s = typename(tag->tagged->type);
 		else if (!strcmp(name, "object") && tag->tagged) {
-			char *s = xmalloc(41);
-			strcpy(s, sha1_to_hex(tag->tagged->sha1));
+			char *s = xmalloc(GIT_SHA1_HEXSZ + 1);
+			strcpy(s, oid_to_hex(&tag->tagged->oid));
 			v->s = s;
 		}
 	}
@@ -296,7 +296,7 @@ static void grab_commit_values(struct atom_value *val, int deref, struct object 
 			name++;
 		if (!strcmp(name, "tree")) {
 			char *s = xmalloc(41);
-			strcpy(s, sha1_to_hex(commit->tree->object.sha1));
+			strcpy(s, oid_to_hex(&commit->tree->object.oid));
 			v->s = s;
 		}
 		if (!strcmp(name, "numparent")) {
@@ -315,7 +315,7 @@ static void grab_commit_values(struct atom_value *val, int deref, struct object 
 			     parents;
 			     parents = parents->next, i = i + 41) {
 				struct commit *parent = parents->item;
-				strcpy(s+i, sha1_to_hex(parent->object.sha1));
+				strcpy(s+i, oid_to_hex(&parent->object.oid));
 				if (parents->next)
 					s[i+40] = ' ';
 			}
@@ -811,7 +811,7 @@ static void populate_value(struct refinfo *ref)
 	 * If it is a tag object, see if we use a value that derefs
 	 * the object, and if we do grab the object it refers to.
 	 */
-	tagged = ((struct tag *)obj)->tagged->sha1;
+	tagged = ((struct tag *)obj)->tagged->oid.hash;
 
 	/*
 	 * NEEDSWORK: This derefs tag only once, which

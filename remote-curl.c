@@ -802,19 +802,20 @@ static void parse_fetch(struct strbuf *buf)
 		if (skip_prefix(buf->buf, "fetch ", &p)) {
 			const char *name;
 			struct ref *ref;
-			unsigned char old_sha1[20];
+			struct object_id old_oid;
+			int hexlen;
 
-			if (strlen(p) < 40 || get_sha1_hex(p, old_sha1))
+			if (!(hexlen = parse_oid_hex(p, -1, &old_oid)))
 				die("protocol error: expected sha/ref, got %s'", p);
-			if (p[40] == ' ')
-				name = p + 41;
-			else if (!p[40])
+			if (p[hexlen] == ' ')
+				name = p + hexlen + 1;
+			else if (!p[hexlen])
 				name = "";
 			else
 				die("protocol error: expected sha/ref, got %s'", p);
 
 			ref = alloc_ref(name);
-			hashcpy(ref->old_oid.hash, old_sha1);
+			oidcpy(&ref->old_oid, &old_oid);
 
 			*list = ref;
 			list = &ref->next;

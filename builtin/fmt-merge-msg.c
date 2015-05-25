@@ -40,7 +40,7 @@ struct src_data {
 };
 
 struct origin_data {
-	unsigned char sha1[20];
+	struct object_id oid;
 	unsigned is_local_branch:1;
 };
 
@@ -124,7 +124,7 @@ static int handle_line(char *line, struct merge_parents *merge_parents)
 		return 0; /* subsumed by other parents */
 
 	origin_data = xcalloc(1, sizeof(struct origin_data));
-	hashcpy(origin_data->sha1, sha1);
+	hashcpy(origin_data->oid.hash, sha1);
 
 	if (line[len - 1] == '\n')
 		line[len - 1] = 0;
@@ -341,10 +341,10 @@ static void shortlog(const char *name,
 	struct string_list committers = STRING_LIST_INIT_DUP;
 	int flags = UNINTERESTING | TREESAME | SEEN | SHOWN | ADDED;
 	struct strbuf sb = STRBUF_INIT;
-	const unsigned char *sha1 = origin_data->sha1;
+	struct object_id *oid = &origin_data->oid;
 	int limit = opts->shortlog_len;
 
-	branch = deref_tag(parse_object(sha1), sha1_to_hex(sha1), 40);
+	branch = deref_tag(parse_object(oid->hash), oid_to_hex(oid), 40);
 	if (!branch || branch->type != OBJ_COMMIT)
 		return;
 
@@ -545,24 +545,24 @@ static void find_merge_parents(struct merge_parents *result,
 		int len;
 		char *p = in->buf + pos;
 		char *newline = strchr(p, '\n');
-		unsigned char sha1[20];
+		struct object_id oid;
 		struct commit *parent;
 		struct object *obj;
 
 		len = newline ? newline - p : strlen(p);
 		pos += len + !!newline;
 
-		if (len < 43 ||
-		    get_sha1_hex(p, sha1) ||
-		    p[40] != '\t' ||
-		    p[41] != '\t')
+		if (len < GIT_SHA1_HEXSZ + 3 ||
+		    get_oid_hex(p, &oid) ||
+		    p[GIT_SHA1_HEXSZ] != '\t' ||
+		    p[GIT_SHA1_HEXSZ + 1] != '\t')
 			continue; /* skip not-for-merge */
 		/*
 		 * Do not use get_merge_parent() here; we do not have
 		 * "name" here and we do not want to contaminate its
 		 * util field yet.
 		 */
-		obj = parse_object(sha1);
+		obj = parse_object(oid.hash);
 		parent = (struct commit *)peel_to_type(NULL, 0, obj, OBJ_COMMIT);
 		if (!parent)
 			continue;

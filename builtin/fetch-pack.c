@@ -14,12 +14,14 @@ static void add_sought_entry_mem(struct ref ***sought, int *nr, int *alloc,
 				 const char *name, int namelen)
 {
 	struct ref *ref = xcalloc(1, sizeof(*ref) + namelen + 1);
-	unsigned char sha1[20];
+	struct object_id oid;
+	int hexlen;
 
-	if (namelen > 41 && name[40] == ' ' && !get_sha1_hex(name, sha1)) {
-		hashcpy(ref->old_oid.hash, sha1);
-		name += 41;
-		namelen -= 41;
+	if ((hexlen = parse_oid_hex(name, namelen, &oid)) && namelen > hexlen + 1 &&
+		name[hexlen] == ' ') {
+		oidcpy(&ref->old_oid, &oid);
+		name += hexlen + 1;
+		namelen -= hexlen + 1;
 	}
 
 	memcpy(ref->name, name, namelen);

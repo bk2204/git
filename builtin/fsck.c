@@ -684,7 +684,7 @@ int cmd_fsck(int argc, const char **argv, const char *prefix)
 	for (i = 0; i < argc; i++) {
 		const char *arg = argv[i];
 		struct object_id oid;
-		if (!get_sha1(arg, oid.hash)) {
+		if (!get_oid(arg, &oid)) {
 			struct object *obj = lookup_object(oid.hash);
 
 			/* Error is printed by lookup_object(). */

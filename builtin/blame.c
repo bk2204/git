@@ -504,7 +504,7 @@ static int fill_blob_sha1_and_mode(struct origin *origin)
 {
 	if (!is_null_sha1(origin->blob_sha1))
 		return 0;
-	if (get_tree_entry(origin->commit->object.sha1,
+	if (get_tree_entry(origin->commit->object.oid.hash,
 			   origin->path,
 			   origin->blob_sha1, &origin->mode))
 		goto error_out;
@@ -555,11 +555,11 @@ static struct origin *find_origin(struct scoreboard *sb,
 		       PATHSPEC_LITERAL_PATH, "", paths);
 	diff_setup_done(&diff_opts);
 
-	if (is_null_sha1(origin->commit->object.sha1))
-		do_diff_cache(parent->tree->object.sha1, &diff_opts);
+	if (is_null_oid(&origin->commit->object.oid))
+		do_diff_cache(parent->tree->object.oid.hash, &diff_opts);
 	else
-		diff_tree_sha1(parent->tree->object.sha1,
-			       origin->commit->tree->object.sha1,
+		diff_tree_sha1(parent->tree->object.oid.hash,
+			       origin->commit->tree->object.oid.hash,
 			       "", &diff_opts);
 	diffcore_std(&diff_opts);
 
@@ -625,11 +625,11 @@ static struct origin *find_rename(struct scoreboard *sb,
 	diff_opts.single_follow = origin->path;
 	diff_setup_done(&diff_opts);
 
-	if (is_null_sha1(origin->commit->object.sha1))
-		do_diff_cache(parent->tree->object.sha1, &diff_opts);
+	if (is_null_oid(&origin->commit->object.oid))
+		do_diff_cache(parent->tree->object.oid.hash, &diff_opts);
 	else
-		diff_tree_sha1(parent->tree->object.sha1,
-			       origin->commit->tree->object.sha1,
+		diff_tree_sha1(parent->tree->object.oid.hash,
+			       origin->commit->tree->object.oid.hash,
 			       "", &diff_opts);
 	diffcore_std(&diff_opts);
 
@@ -1268,11 +1268,11 @@ static void find_copy_in_parent(struct scoreboard *sb,
 		&& (!porigin || strcmp(target->path, porigin->path))))
 		DIFF_OPT_SET(&diff_opts, FIND_COPIES_HARDER);
 
-	if (is_null_sha1(target->commit->object.sha1))
-		do_diff_cache(parent->tree->object.sha1, &diff_opts);
+	if (is_null_oid(&target->commit->object.oid))
+		do_diff_cache(parent->tree->object.oid.hash, &diff_opts);
 	else
-		diff_tree_sha1(parent->tree->object.sha1,
-			       target->commit->tree->object.sha1,
+		diff_tree_sha1(parent->tree->object.oid.hash,
+			       target->commit->tree->object.oid.hash,
 			       "", &diff_opts);
 
 	if (!DIFF_OPT_TST(&diff_opts, FIND_COPIES_HARDER))
@@ -1676,7 +1676,7 @@ static void get_commit_info(struct commit *commit,
 	if (len)
 		strbuf_add(&ret->summary, subject, len);
 	else
-		strbuf_addf(&ret->summary, "(%s)", sha1_to_hex(commit->object.sha1));
+		strbuf_addf(&ret->summary, "(%s)", oid_to_hex(&commit->object.oid));
 
 	unuse_commit_buffer(commit, message);
 }
@@ -1719,7 +1719,7 @@ static int emit_one_suspect_detail(struct origin *suspect, int repeat)
 		printf("boundary\n");
 	if (suspect->previous) {
 		struct origin *prev = suspect->previous;
-		printf("previous %s ", sha1_to_hex(prev->commit->object.sha1));
+		printf("previous %s ", oid_to_hex(&prev->commit->object.oid));
 		write_name_quoted(prev->path, stdout, '\n');
 	}
 
@@ -1738,7 +1738,7 @@ static void found_guilty_entry(struct blame_entry *ent)
 		struct origin *suspect = ent->suspect;
 
 		printf("%s %d %d %d\n",
-		       sha1_to_hex(suspect->commit->object.sha1),
+		       oid_to_hex(&suspect->commit->object.oid),
 		       ent->s_lno + 1, ent->lno + 1, ent->num_lines);
 		emit_one_suspect_detail(suspect, 0);
 		write_filename_info(suspect->path);
@@ -1868,7 +1868,7 @@ static void emit_porcelain(struct scoreboard *sb, struct blame_entry *ent,
 	struct origin *suspect = ent->suspect;
 	char hex[41];
 
-	strcpy(hex, sha1_to_hex(suspect->commit->object.sha1));
+	strcpy(hex, oid_to_hex(&suspect->commit->object.oid));
 	printf("%s %d %d %d\n",
 	       hex,
 	       ent->s_lno + 1,
@@ -1908,7 +1908,7 @@ static void emit_other(struct scoreboard *sb, struct blame_entry *ent, int opt)
 	int show_raw_time = !!(opt & OUTPUT_RAW_TIMESTAMP);
 
 	get_commit_info(suspect->commit, &ci, 1);
-	strcpy(hex, sha1_to_hex(suspect->commit->object.sha1));
+	strcpy(hex, oid_to_hex(&suspect->commit->object.oid));
 
 	cp = nth_line(sb, ent->lno);
 	for (cnt = 0; cnt < ent->num_lines; cnt++) {
@@ -2063,7 +2063,7 @@ static int read_ancestry(const char *graft_file)
 
 static int update_auto_abbrev(int auto_abbrev, struct origin *suspect)
 {
-	const char *uniq = find_unique_abbrev(suspect->commit->object.sha1,
+	const char *uniq = find_unique_abbrev(suspect->commit->object.oid.hash,
 					      auto_abbrev);
 	int len = strlen(uniq);
 	if (auto_abbrev < len)
@@ -2139,7 +2139,7 @@ static void sanity_check_refcnt(struct scoreboard *sb)
 		if (ent->suspect->refcnt <= 0) {
 			fprintf(stderr, "%s in %s has negative refcnt %d\n",
 				ent->suspect->path,
-				sha1_to_hex(ent->suspect->commit->object.sha1),
+				oid_to_hex(&ent->suspect->commit->object.oid),
 				ent->suspect->refcnt);
 			baa = 1;
 		}
@@ -2194,7 +2194,7 @@ static void verify_working_tree_path(struct commit *work_tree, const char *path)
 	struct commit_list *parents;
 
 	for (parents = work_tree->parents; parents; parents = parents->next) {
-		const unsigned char *commit_sha1 = parents->item->object.sha1;
+		const unsigned char *commit_sha1 = parents->item->object.oid.hash;
 		unsigned char blob_sha1[20];
 		unsigned mode;
 
@@ -2289,7 +2289,7 @@ static struct commit *fake_working_tree_commit(struct diff_options *opt,
 	strbuf_addstr(&msg, "tree 0000000000000000000000000000000000000000\n");
 	for (parent = commit->parents; parent; parent = parent->next)
 		strbuf_addf(&msg, "parent %s\n",
-			    sha1_to_hex(parent->item->object.sha1));
+			    oid_to_hex(&parent->item->object.oid));
 	strbuf_addf(&msg,
 		    "author %s\n"
 		    "committer %s\n\n"
@@ -2696,7 +2696,7 @@ parse_done:
 	if (prepare_revision_walk(&revs))
 		die(_("revision walk setup failed"));
 
-	if (is_null_sha1(sb.final->object.sha1)) {
+	if (is_null_oid(&sb.final->object.oid)) {
 		o = sb.final->util;
 		sb.final_buf = xmemdupz(o->file.ptr, o->file.size);
 		sb.final_buf_size = o->file.size;

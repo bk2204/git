@@ -30,7 +30,7 @@ static int fsck_walk_tree(struct tree *tree, fsck_walk_func walk, void *data)
 			result = walk(&lookup_blob(entry.sha1)->object, OBJ_BLOB, data);
 		else {
 			result = error("in tree %s: entry %s has bad mode %.6o",
-					sha1_to_hex(tree->object.sha1), entry.path, entry.mode);
+					oid_to_hex(&tree->object.oid), entry.path, entry.mode);
 		}
 		if (result < 0)
 			return result;
@@ -87,7 +87,7 @@ int fsck_walk(struct object *obj, fsck_walk_func walk, void *data)
 	case OBJ_TAG:
 		return fsck_walk_tag((struct tag *)obj, walk, data);
 	default:
-		error("Unknown object type for %s", sha1_to_hex(obj->sha1));
+		error("Unknown object type for %s", oid_to_hex(&obj->oid));
 		return -1;
 	}
 }
@@ -322,7 +322,7 @@ static int fsck_commit_buffer(struct commit *commit, const char *buffer,
 		buffer += 41;
 		parent_line_count++;
 	}
-	graft = lookup_commit_graft(commit->object.sha1);
+	graft = lookup_commit_graft(commit->object.oid.hash);
 	parent_count = commit_list_count(commit->parents);
 	if (graft) {
 		if (graft->nr_parent == -1 && !parent_count)
@@ -374,7 +374,7 @@ static int fsck_tag_buffer(struct tag *tag, const char *data,
 		enum object_type type;
 
 		buffer = to_free =
-			read_sha1_file(tag->object.sha1, &type, &size);
+			read_sha1_file(tag->object.oid.hash, &type, &size);
 		if (!buffer)
 			return error_func(&tag->object, FSCK_ERROR,
 				"cannot read tag object");
@@ -479,7 +479,7 @@ int fsck_error_function(struct object *obj, int type, const char *fmt, ...)
 	va_list ap;
 	struct strbuf sb = STRBUF_INIT;
 
-	strbuf_addf(&sb, "object %s:", sha1_to_hex(obj->sha1));
+	strbuf_addf(&sb, "object %s:", oid_to_hex(&obj->oid));
 
 	va_start(ap, fmt);
 	strbuf_vaddf(&sb, fmt, ap);

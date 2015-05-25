@@ -171,7 +171,7 @@ int verify_bundle(struct bundle_header *header, int verbose)
 		if (!(refs.objects[i].item->flags & SHOWN)) {
 			if (++ret == 1)
 				error("%s", message);
-			error("%s %s", sha1_to_hex(refs.objects[i].item->sha1),
+			error("%s %s", oid_to_hex(&refs.objects[i].item->oid),
 				refs.objects[i].name);
 		}
 
@@ -217,7 +217,7 @@ static int is_tag_in_date_range(struct object *tag, struct rev_info *revs)
 	if (revs->max_age == -1 && revs->min_age == -1)
 		goto out;
 
-	buf = read_sha1_file(tag->sha1, &type, &size);
+	buf = read_sha1_file(tag->oid.hash, &type, &size);
 	if (!buf)
 		goto out;
 	line = memmem(buf, size, "\ntagger ", 8);
@@ -261,7 +261,7 @@ static int write_pack_data(int bundle_fd, struct lock_file *lock, struct rev_inf
 		struct object *object = revs->pending.objects[i].item;
 		if (object->flags & UNINTERESTING)
 			write_or_die(pack_objects.in, "^", 1);
-		write_or_die(pack_objects.in, sha1_to_hex(object->sha1), 40);
+		write_or_die(pack_objects.in, oid_to_hex(&object->oid), GIT_SHA1_HEXSZ);
 		write_or_die(pack_objects.in, "\n", 1);
 	}
 	close(pack_objects.in);
@@ -365,7 +365,7 @@ static int write_bundle_refs(int bundle_fd, struct rev_info *revs)
 		 * commit that is referenced by the tag, and not the tag
 		 * itself.
 		 */
-		if (hashcmp(sha1, e->item->sha1)) {
+		if (hashcmp(sha1, e->item->oid.hash)) {
 			/*
 			 * Is this the positive end of a range expressed
 			 * in terms of a tag (e.g. v2.0 from the range
@@ -391,7 +391,7 @@ static int write_bundle_refs(int bundle_fd, struct rev_info *revs)
 		}
 
 		ref_count++;
-		write_or_die(bundle_fd, sha1_to_hex(e->item->sha1), 40);
+		write_or_die(bundle_fd, oid_to_hex(&e->item->oid), 40);
 		write_or_die(bundle_fd, " ", 1);
 		write_or_die(bundle_fd, display_ref, strlen(display_ref));
 		write_or_die(bundle_fd, "\n", 1);

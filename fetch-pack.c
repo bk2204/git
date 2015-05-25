@@ -169,7 +169,7 @@ static const unsigned char *get_rev(void)
 		}
 	}
 
-	return commit->object.sha1;
+	return commit->object.oid.hash;
 }
 
 enum ack_type {
@@ -487,7 +487,7 @@ static int mark_complete(const unsigned char *sha1)
 		if (!t->tagged)
 			break; /* broken repository */
 		o->flags |= COMPLETE;
-		o = parse_object(t->tagged->sha1);
+		o = parse_object(t->tagged->oid.hash);
 	}
 	if (o && o->type == OBJ_COMMIT) {
 		struct commit *commit = (struct commit *)o;
@@ -511,7 +511,7 @@ static void mark_recent_complete_commits(struct fetch_pack_args *args,
 	while (complete && cutoff <= complete->item->date) {
 		if (args->verbose)
 			fprintf(stderr, "Marking %s as complete\n",
-				sha1_to_hex(complete->item->object.sha1));
+				oid_to_hex(&complete->item->object.oid));
 		pop_most_recent_commit(&complete, COMPLETE);
 	}
 }

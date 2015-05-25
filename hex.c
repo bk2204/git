@@ -61,6 +61,13 @@ int get_oid_hex(const char *hex, struct object_id *oid)
 	return get_sha1_hex(hex, oid->hash);
 }
 
+int parse_oid_hex(const char *hex, int len, struct object_id *oid)
+{
+	if (len != -1 && len < GIT_SHA1_HEXSZ)
+		return 0;
+	return get_sha1_hex(hex, oid->hash) ? GIT_SHA1_HEXSZ : 0;
+}
+
 char *sha1_to_hex(const unsigned char *sha1)
 {
 	static int bufno;

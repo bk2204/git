@@ -56,21 +56,21 @@ static int match_pattern(const char **patterns, const char *ref)
 	return 0;
 }
 
-static const unsigned char *match_points_at(const char *refname,
-					    const unsigned char *sha1)
+static const struct object_id *match_points_at(const char *refname,
+					    const struct object_id *oid)
 {
-	const unsigned char *tagged_sha1 = NULL;
+	const struct object_id *tagged_oid = NULL;
 	struct object *obj;
 
-	if (sha1_array_lookup(&points_at, sha1) >= 0)
-		return sha1;
-	obj = parse_object(sha1);
+	if (sha1_array_lookup(&points_at, oid->hash) >= 0)
+		return oid;
+	obj = parse_object(oid->hash);
 	if (!obj)
 		die(_("malformed object at '%s'"), refname);
 	if (obj->type == OBJ_TAG)
-		tagged_sha1 = ((struct tag *)obj)->tagged->oid.hash;
-	if (tagged_sha1 && sha1_array_lookup(&points_at, tagged_sha1) >= 0)
-		return tagged_sha1;
+		tagged_oid = &((struct tag *)obj)->tagged->oid;
+	if (tagged_oid && sha1_array_lookup(&points_at, tagged_oid->hash) >= 0)
+		return tagged_oid;
 	return NULL;
 }
 
@@ -231,7 +231,7 @@ static int show_reference(const char *refname, const struct object_id *oid,
 				return 0;
 		}
 
-		if (points_at.nr && !match_points_at(refname, oid->hash))
+		if (points_at.nr && !match_points_at(refname, oid))
 			return 0;
 
 		if (!filter->lines) {

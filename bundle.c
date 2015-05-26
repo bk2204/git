@@ -12,11 +12,11 @@
 
 static const char bundle_signature[] = "# v2 git bundle\n";
 
-static void add_to_ref_list(const unsigned char *sha1, const char *name,
+static void add_to_ref_list(const struct object_id *oid, const char *name,
 		struct ref_list *list)
 {
 	ALLOC_GROW(list->list, list->nr + 1, list->alloc);
-	hashcpy(list->list[list->nr].oid.hash, sha1);
+	oidcpy(&list->list[list->nr].oid, oid);
 	list->list[list->nr].name = xstrdup(name);
 	list->nr++;
 }
@@ -40,8 +40,9 @@ static int parse_bundle_header(int fd, struct bundle_header *header,
 	/* The bundle header ends with an empty line */
 	while (!strbuf_getwholeline_fd(&buf, fd, '\n') &&
 	       buf.len && buf.buf[0] != '\n') {
-		unsigned char sha1[20];
+		struct object_id oid;
 		int is_prereq = 0;
+		int hexlen;
 
 		if (*buf.buf == '-') {
 			is_prereq = 1;
@@ -54,9 +55,9 @@ static int parse_bundle_header(int fd, struct bundle_header *header,
 		 * Prerequisites have object name that is optionally
 		 * followed by SP and subject line.
 		 */
-		if (get_sha1_hex(buf.buf, sha1) ||
-		    (buf.len > 40 && !isspace(buf.buf[40])) ||
-		    (!is_prereq && buf.len <= 40)) {
+		if (!(hexlen = parse_oid_hex(buf.buf, -1, &oid)) ||
+		    (buf.len > hexlen && !isspace(buf.buf[hexlen])) ||
+		    (!is_prereq && buf.len <= hexlen)) {
 			if (report_path)
 				error(_("unrecognized header: %s%s (%d)"),
 				      (is_prereq ? "-" : ""), buf.buf, (int)buf.len);
@@ -64,9 +65,9 @@ static int parse_bundle_header(int fd, struct bundle_header *header,
 			break;
 		} else {
 			if (is_prereq)
-				add_to_ref_list(sha1, "", &header->prerequisites);
+				add_to_ref_list(&oid, "", &header->prerequisites);
 			else
-				add_to_ref_list(sha1, buf.buf + 41, &header->references);
+				add_to_ref_list(&oid, buf.buf + 41, &header->references);
 		}
 	}
 
@@ -290,16 +291,16 @@ static int compute_and_write_prerequisites(int bundle_fd,
 		return -1;
 	rls_fout = xfdopen(rls.out, "r");
 	while (strbuf_getwholeline(&buf, rls_fout, '\n') != EOF) {
-		unsigned char sha1[20];
+		struct object_id oid;
 		if (buf.len > 0 && buf.buf[0] == '-') {
 			write_or_die(bundle_fd, buf.buf, buf.len);
-			if (!get_sha1_hex(buf.buf + 1, sha1)) {
-				struct object *object = parse_object_or_die(sha1, buf.buf);
+			if (!get_oid_hex(buf.buf + 1, &oid)) {
+				struct object *object = parse_object_or_die(oid.hash, buf.buf);
 				object->flags |= UNINTERESTING;
 				add_pending_object(revs, object, buf.buf);
 			}
-		} else if (!get_sha1_hex(buf.buf, sha1)) {
-			struct object *object = parse_object_or_die(sha1, buf.buf);
+		} else if (!get_oid_hex(buf.buf, &oid)) {
+			struct object *object = parse_object_or_die(oid.hash, buf.buf);
 			object->flags |= SHOWN;
 		}
 	}
@@ -326,16 +327,16 @@ static int write_bundle_refs(int bundle_fd, struct rev_info *revs)
 
 	for (i = 0; i < revs->pending.nr; i++) {
 		struct object_array_entry *e = revs->pending.objects + i;
-		unsigned char sha1[20];
+		struct object_id oid;
 		char *ref;
 		const char *display_ref;
 		int flag;
 
 		if (e->item->flags & UNINTERESTING)
 			continue;
-		if (dwim_ref(e->name, strlen(e->name), sha1, &ref) != 1)
+		if (dwim_ref(e->name, strlen(e->name), oid.hash, &ref) != 1)
 			goto skip_write_ref;
-		if (read_ref_full(e->name, RESOLVE_REF_READING, sha1, &flag))
+		if (read_ref_full(e->name, RESOLVE_REF_READING, oid.hash, &flag))
 			flag = 0;
 		display_ref = (flag & REF_ISSYMREF) ? e->name : ref;
 
@@ -365,13 +366,13 @@ static int write_bundle_refs(int bundle_fd, struct rev_info *revs)
 		 * commit that is referenced by the tag, and not the tag
 		 * itself.
 		 */
-		if (hashcmp(sha1, e->item->oid.hash)) {
+		if (oidcmp(&oid, &e->item->oid)) {
 			/*
 			 * Is this the positive end of a range expressed
 			 * in terms of a tag (e.g. v2.0 from the range
 			 * "v1.0..v2.0")?
 			 */
-			struct commit *one = lookup_commit_reference(sha1);
+			struct commit *one = lookup_commit_reference(oid.hash);
 			struct object *obj;
 
 			if (e->item == &(one->object)) {
@@ -383,7 +384,7 @@ static int write_bundle_refs(int bundle_fd, struct rev_info *revs)
 				 * end up triggering "empty bundle"
 				 * error.
 				 */
-				obj = parse_object_or_die(sha1, e->name);
+				obj = parse_object_or_die(oid.hash, e->name);
 				obj->flags |= SHOWN;
 				add_pending_object(revs, obj, e->name);
 			}

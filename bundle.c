@@ -16,7 +16,7 @@ static void add_to_ref_list(const unsigned char *sha1, const char *name,
 		struct ref_list *list)
 {
 	ALLOC_GROW(list->list, list->nr + 1, list->alloc);
-	hashcpy(list->list[list->nr].sha1, sha1);
+	hashcpy(list->list[list->nr].oid.hash, sha1);
 	list->list[list->nr].name = xstrdup(name);
 	list->nr++;
 }
@@ -115,7 +115,7 @@ static int list_refs(struct ref_list *r, int argc, const char **argv)
 			if (j == argc)
 				continue;
 		}
-		printf("%s %s\n", sha1_to_hex(r->list[i].sha1),
+		printf("%s %s\n", oid_to_hex(&r->list[i].oid),
 				r->list[i].name);
 	}
 	return 0;
@@ -141,7 +141,7 @@ int verify_bundle(struct bundle_header *header, int verbose)
 	init_revisions(&revs, NULL);
 	for (i = 0; i < p->nr; i++) {
 		struct ref_list_entry *e = p->list + i;
-		struct object *o = parse_object(e->sha1);
+		struct object *o = parse_object(e->oid.hash);
 		if (o) {
 			o->flags |= PREREQ_MARK;
 			add_pending_object(&revs, o, e->name);
@@ -149,7 +149,7 @@ int verify_bundle(struct bundle_header *header, int verbose)
 		}
 		if (++ret == 1)
 			error("%s", message);
-		error("%s %s", sha1_to_hex(e->sha1), e->name);
+		error("%s %s", oid_to_hex(&e->oid), e->name);
 	}
 	if (revs.pending.nr != p->nr)
 		return ret;

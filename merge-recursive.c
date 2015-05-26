@@ -90,7 +90,7 @@ struct rename_conflict_info {
 struct stage_data {
 	struct {
 		unsigned mode;
-		unsigned char sha[20];
+		struct object_id oid;
 	} stages[4];
 	struct rename_conflict_info *rename_conflict_info;
 	unsigned processed:1;
@@ -134,11 +134,11 @@ static inline void setup_rename_conflict_info(enum rename_type rename_type,
 		int ostage2 = ostage1 ^ 1;
 
 		ci->ren1_other.path = pair1->one->path;
-		hashcpy(ci->ren1_other.sha1, src_entry1->stages[ostage1].sha);
+		hashcpy(ci->ren1_other.sha1, src_entry1->stages[ostage1].oid.hash);
 		ci->ren1_other.mode = src_entry1->stages[ostage1].mode;
 
 		ci->ren2_other.path = pair2->one->path;
-		hashcpy(ci->ren2_other.sha1, src_entry2->stages[ostage2].sha);
+		hashcpy(ci->ren2_other.sha1, src_entry2->stages[ostage2].oid.hash);
 		ci->ren2_other.mode = src_entry2->stages[ostage2].mode;
 	}
 }
@@ -314,11 +314,11 @@ static struct stage_data *insert_stage_data(const char *path,
 	struct string_list_item *item;
 	struct stage_data *e = xcalloc(1, sizeof(struct stage_data));
 	get_tree_entry(o->object.oid.hash, path,
-			e->stages[1].sha, &e->stages[1].mode);
+			e->stages[1].oid.hash, &e->stages[1].mode);
 	get_tree_entry(a->object.oid.hash, path,
-			e->stages[2].sha, &e->stages[2].mode);
+			e->stages[2].oid.hash, &e->stages[2].mode);
 	get_tree_entry(b->object.oid.hash, path,
-			e->stages[3].sha, &e->stages[3].mode);
+			e->stages[3].oid.hash, &e->stages[3].mode);
 	item = string_list_insert(entries, path);
 	item->util = e;
 	return e;
@@ -349,7 +349,7 @@ static struct string_list *get_unmerged(void)
 		}
 		e = item->util;
 		e->stages[ce_stage(ce)].mode = ce->ce_mode;
-		hashcpy(e->stages[ce_stage(ce)].sha, ce->sha1);
+		hashcpy(e->stages[ce_stage(ce)].oid.hash, ce->sha1);
 	}
 
 	return unmerged;
@@ -569,9 +569,9 @@ static void update_entry(struct stage_data *entry,
 	entry->stages[1].mode = o->mode;
 	entry->stages[2].mode = a->mode;
 	entry->stages[3].mode = b->mode;
-	hashcpy(entry->stages[1].sha, o->sha1);
-	hashcpy(entry->stages[2].sha, a->sha1);
-	hashcpy(entry->stages[3].sha, b->sha1);
+	hashcpy(entry->stages[1].oid.hash, o->sha1);
+	hashcpy(entry->stages[2].oid.hash, a->sha1);
+	hashcpy(entry->stages[3].oid.hash, b->sha1);
 }
 
 static int remove_file(struct merge_options *o, int clean,
@@ -1105,11 +1105,11 @@ static struct diff_filespec *filespec_from_entry(struct diff_filespec *target,
 						 struct stage_data *entry,
 						 int stage)
 {
-	unsigned char *sha = entry->stages[stage].sha;
+	struct object_id *oid = &entry->stages[stage].oid;
 	unsigned mode = entry->stages[stage].mode;
-	if (mode == 0 || is_null_sha1(sha))
+	if (mode == 0 || is_null_oid(oid))
 		return NULL;
-	hashcpy(target->sha1, sha);
+	hashcpy(target->sha1, oid->hash);
 	target->mode = mode;
 	return target;
 }
@@ -1419,9 +1419,9 @@ static int process_renames(struct merge_options *o,
 			remove_file(o, 1, ren1_src,
 				    renamed_stage == 2 || !was_tracked(ren1_src));
 
-			hashcpy(src_other.sha1, ren1->src_entry->stages[other_stage].sha);
+			hashcpy(src_other.sha1, ren1->src_entry->stages[other_stage].oid.hash);
 			src_other.mode = ren1->src_entry->stages[other_stage].mode;
-			hashcpy(dst_other.sha1, ren1->dst_entry->stages[other_stage].sha);
+			hashcpy(dst_other.sha1, ren1->dst_entry->stages[other_stage].oid.hash);
 			dst_other.mode = ren1->dst_entry->stages[other_stage].mode;
 			try_merge = 0;
 
@@ -1509,9 +1509,9 @@ static int process_renames(struct merge_options *o,
 	return clean_merge;
 }
 
-static unsigned char *stage_sha(const unsigned char *sha, unsigned mode)
+static struct object_id *stage_sha(struct object_id *oid, unsigned mode)
 {
-	return (is_null_sha1(sha) || mode == 0) ? NULL: (unsigned char *)sha;
+	return (is_null_oid(oid) || mode == 0) ? NULL : oid;
 }
 
 static int read_sha1_strbuf(const unsigned char *sha1, struct strbuf *dst)
@@ -1530,21 +1530,21 @@ static int read_sha1_strbuf(const unsigned char *sha1, struct strbuf *dst)
 	return 0;
 }
 
-static int blob_unchanged(const unsigned char *o_sha,
-			  const unsigned char *a_sha,
+static int blob_unchanged(const struct object_id *o_oid,
+			  const struct object_id *a_oid,
 			  int renormalize, const char *path)
 {
 	struct strbuf o = STRBUF_INIT;
 	struct strbuf a = STRBUF_INIT;
 	int ret = 0; /* assume changed for safety */
 
-	if (sha_eq(o_sha, a_sha))
+	if (sha_eq(o_oid->hash, a_oid->hash))
 		return 1;
 	if (!renormalize)
 		return 0;
 
-	assert(o_sha && a_sha);
-	if (read_sha1_strbuf(o_sha, &o) || read_sha1_strbuf(a_sha, &a))
+	assert(o_oid && a_oid);
+	if (read_sha1_strbuf(o_oid->hash, &o) || read_sha1_strbuf(a_oid->hash, &a))
 		goto error_return;
 	/*
 	 * Note: binary | is used so that both renormalizations are
@@ -1563,23 +1563,23 @@ error_return:
 
 static void handle_modify_delete(struct merge_options *o,
 				 const char *path,
-				 unsigned char *o_sha, int o_mode,
-				 unsigned char *a_sha, int a_mode,
-				 unsigned char *b_sha, int b_mode)
+				 struct object_id *o_oid, int o_mode,
+				 struct object_id *a_oid, int a_mode,
+				 struct object_id *b_oid, int b_mode)
 {
 	handle_change_delete(o,
 			     path,
-			     o_sha, o_mode,
-			     a_sha, a_mode,
-			     b_sha, b_mode,
+			     o_oid->hash, o_mode,
+			     a_oid->hash, a_mode,
+			     b_oid->hash, b_mode,
 			     _("modify"), _("modified"));
 }
 
 static int merge_content(struct merge_options *o,
 			 const char *path,
-			 unsigned char *o_sha, int o_mode,
-			 unsigned char *a_sha, int a_mode,
-			 unsigned char *b_sha, int b_mode,
+			 struct object_id *o_oid, int o_mode,
+			 struct object_id *a_oid, int a_mode,
+			 struct object_id *b_oid, int b_mode,
 			 struct rename_conflict_info *rename_conflict_info)
 {
 	const char *reason = _("content");
@@ -1588,16 +1588,16 @@ static int merge_content(struct merge_options *o,
 	struct diff_filespec one, a, b;
 	unsigned df_conflict_remains = 0;
 
-	if (!o_sha) {
+	if (!o_oid) {
 		reason = _("add/add");
-		o_sha = (unsigned char *)null_sha1;
+		o_oid = (struct object_id *)&null_oid;
 	}
 	one.path = a.path = b.path = (char *)path;
-	hashcpy(one.sha1, o_sha);
+	hashcpy(one.sha1, o_oid->hash);
 	one.mode = o_mode;
-	hashcpy(a.sha1, a_sha);
+	hashcpy(a.sha1, a_oid->hash);
 	a.mode = a_mode;
-	hashcpy(b.sha1, b_sha);
+	hashcpy(b.sha1, b_oid->hash);
 	b.mode = b_mode;
 
 	if (rename_conflict_info) {
@@ -1621,7 +1621,7 @@ static int merge_content(struct merge_options *o,
 					 o->branch2, path2);
 
 	if (mfi.clean && !df_conflict_remains &&
-	    sha_eq(mfi.sha, a_sha) && mfi.mode == a_mode) {
+	    sha_eq(mfi.sha, a_oid->hash) && mfi.mode == a_mode) {
 		int path_renamed_outside_HEAD;
 		output(o, 3, _("Skipped %s (merged same as existing)"), path);
 		/*
@@ -1688,9 +1688,9 @@ static int process_entry(struct merge_options *o,
 	unsigned o_mode = entry->stages[1].mode;
 	unsigned a_mode = entry->stages[2].mode;
 	unsigned b_mode = entry->stages[3].mode;
-	unsigned char *o_sha = stage_sha(entry->stages[1].sha, o_mode);
-	unsigned char *a_sha = stage_sha(entry->stages[2].sha, a_mode);
-	unsigned char *b_sha = stage_sha(entry->stages[3].sha, b_mode);
+	struct object_id *o_oid = stage_sha(&entry->stages[1].oid, o_mode);
+	struct object_id *a_oid = stage_sha(&entry->stages[2].oid, a_mode);
+	struct object_id *b_oid = stage_sha(&entry->stages[3].oid, b_mode);
 
 	entry->processed = 1;
 	if (entry->rename_conflict_info) {
@@ -1699,7 +1699,7 @@ static int process_entry(struct merge_options *o,
 		case RENAME_NORMAL:
 		case RENAME_ONE_FILE_TO_ONE:
 			clean_merge = merge_content(o, path,
-						    o_sha, o_mode, a_sha, a_mode, b_sha, b_mode,
+						    o_oid, o_mode, a_oid, a_mode, b_oid, b_mode,
 						    conflict_info);
 			break;
 		case RENAME_DELETE:
@@ -1720,45 +1720,45 @@ static int process_entry(struct merge_options *o,
 			entry->processed = 0;
 			break;
 		}
-	} else if (o_sha && (!a_sha || !b_sha)) {
+	} else if (o_oid && (!a_oid || !b_oid)) {
 		/* Case A: Deleted in one */
-		if ((!a_sha && !b_sha) ||
-		    (!b_sha && blob_unchanged(o_sha, a_sha, normalize, path)) ||
-		    (!a_sha && blob_unchanged(o_sha, b_sha, normalize, path))) {
+		if ((!a_oid && !b_oid) ||
+		    (!b_oid && blob_unchanged(o_oid, a_oid, normalize, path)) ||
+		    (!a_oid && blob_unchanged(o_oid, b_oid, normalize, path))) {
 			/* Deleted in both or deleted in one and
 			 * unchanged in the other */
-			if (a_sha)
+			if (a_oid)
 				output(o, 2, _("Removing %s"), path);
 			/* do not touch working file if it did not exist */
-			remove_file(o, 1, path, !a_sha);
+			remove_file(o, 1, path, !a_oid);
 		} else {
 			/* Modify/delete; deleted side may have put a directory in the way */
 			clean_merge = 0;
-			handle_modify_delete(o, path, o_sha, o_mode,
-					     a_sha, a_mode, b_sha, b_mode);
+			handle_modify_delete(o, path, o_oid, o_mode,
+					     a_oid, a_mode, b_oid, b_mode);
 		}
-	} else if ((!o_sha && a_sha && !b_sha) ||
-		   (!o_sha && !a_sha && b_sha)) {
+	} else if ((!o_oid && a_oid && !b_oid) ||
+		   (!o_oid && !a_oid && b_oid)) {
 		/* Case B: Added in one. */
 		/* [nothing|directory] -> ([nothing|directory], file) */
 
 		const char *add_branch;
 		const char *other_branch;
 		unsigned mode;
-		const unsigned char *sha;
+		const struct object_id *oid;
 		const char *conf;
 
-		if (a_sha) {
+		if (a_oid) {
 			add_branch = o->branch1;
 			other_branch = o->branch2;
 			mode = a_mode;
-			sha = a_sha;
+			oid = a_oid;
 			conf = _("file/directory");
 		} else {
 			add_branch = o->branch2;
 			other_branch = o->branch1;
 			mode = b_mode;
-			sha = b_sha;
+			oid = b_oid;
 			conf = _("directory/file");
 		}
 		if (dir_in_way(path, !o->call_depth)) {
@@ -1769,22 +1769,22 @@ static int process_entry(struct merge_options *o,
 			       conf, path, other_branch, path, new_path);
 			if (o->call_depth)
 				remove_file_from_cache(path);
-			update_file(o, 0, sha, mode, new_path);
+			update_file(o, 0, oid->hash, mode, new_path);
 			if (o->call_depth)
 				remove_file_from_cache(path);
 			free(new_path);
 		} else {
 			output(o, 2, _("Adding %s"), path);
 			/* do not overwrite file if already present */
-			update_file_flags(o, sha, mode, path, 1, !a_sha);
+			update_file_flags(o, oid->hash, mode, path, 1, !a_oid);
 		}
-	} else if (a_sha && b_sha) {
+	} else if (a_oid && b_oid) {
 		/* Case C: Added in both (check for same permissions) and */
 		/* case D: Modified in both, but differently. */
 		clean_merge = merge_content(o, path,
-					    o_sha, o_mode, a_sha, a_mode, b_sha, b_mode,
+					    o_oid, o_mode, a_oid, a_mode, b_oid, b_mode,
 					    NULL);
-	} else if (!o_sha && !a_sha && !b_sha) {
+	} else if (!o_oid && !a_oid && !b_oid) {
 		/*
 		 * this entry was deleted altogether. a_mode == 0 means
 		 * we had that path and want to actively remove it.

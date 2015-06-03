@@ -1187,7 +1187,7 @@ struct grab_1st_switch_cbdata {
 	unsigned char nsha1[20];
 };
 
-static int grab_1st_switch(unsigned char *osha1, unsigned char *nsha1,
+static int grab_1st_switch(struct object_id *ooid, struct object_id *noid,
 			   const char *email, unsigned long timestamp, int tz,
 			   const char *message, void *cb_data)
 {
@@ -1202,7 +1202,7 @@ static int grab_1st_switch(unsigned char *osha1, unsigned char *nsha1,
 		return 0;
 	target += strlen(" to ");
 	strbuf_reset(&cb->buf);
-	hashcpy(cb->nsha1, nsha1);
+	hashcpy(cb->nsha1, noid->hash);
 	for (end = target; *end && *end != '\n'; end++)
 		;
 	strbuf_add(&cb->buf, target, end - target);

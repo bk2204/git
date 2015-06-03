@@ -451,7 +451,7 @@ static void fsck_dir(int i, char *path)
 
 static int default_refs;
 
-static int fsck_handle_reflog_ent(unsigned char *osha1, unsigned char *nsha1,
+static int fsck_handle_reflog_ent(struct object_id *ooid, struct object_id *noid,
 		const char *email, unsigned long timestamp, int tz,
 		const char *message, void *cb_data)
 {
@@ -459,16 +459,16 @@ static int fsck_handle_reflog_ent(unsigned char *osha1, unsigned char *nsha1,
 
 	if (verbose)
 		fprintf(stderr, "Checking reflog %s->%s\n",
-			sha1_to_hex(osha1), sha1_to_hex(nsha1));
+			oid_to_hex(ooid), oid_to_hex(noid));
 
-	if (!is_null_sha1(osha1)) {
-		obj = lookup_object(osha1);
+	if (!is_null_oid(ooid)) {
+		obj = lookup_object(ooid->hash);
 		if (obj) {
 			obj->used = 1;
 			mark_object_reachable(obj);
 		}
 	}
-	obj = lookup_object(nsha1);
+	obj = lookup_object(noid->hash);
 	if (obj) {
 		obj->used = 1;
 		mark_object_reachable(obj);

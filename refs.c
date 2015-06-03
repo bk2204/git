@@ -2883,9 +2883,9 @@ static int rename_ref_available(const char *oldname, const char *newname)
 	return ret;
 }
 
-static int write_ref_to_lockfile(struct ref_lock *lock, const unsigned char *sha1);
+static int write_ref_to_lockfile(struct ref_lock *lock, const struct object_id *oid);
 static int commit_ref_update(struct ref_lock *lock,
-			     const unsigned char *sha1, const char *logmsg);
+			     const struct object_id *oid, const char *logmsg);
 
 int rename_ref(const char *oldrefname, const char *newrefname, const char *logmsg)
 {
@@ -2946,8 +2946,8 @@ int rename_ref(const char *oldrefname, const char *newrefname, const char *logms
 	}
 	oidcpy(&lock->old_oid, &orig_oid);
 
-	if (write_ref_to_lockfile(lock, orig_oid.hash) ||
-	    commit_ref_update(lock, orig_oid.hash, logmsg)) {
+	if (write_ref_to_lockfile(lock, &orig_oid) ||
+	    commit_ref_update(lock, &orig_oid, logmsg)) {
 		error("unable to write current sha1 into %s", newrefname);
 		goto rollback;
 	}
@@ -2964,8 +2964,8 @@ int rename_ref(const char *oldrefname, const char *newrefname, const char *logms
 
 	flag = log_all_ref_updates;
 	log_all_ref_updates = 0;
-	if (write_ref_to_lockfile(lock, orig_oid.hash) ||
-	    commit_ref_update(lock, orig_oid.hash, NULL))
+	if (write_ref_to_lockfile(lock, &orig_oid) ||
+	    commit_ref_update(lock, &orig_oid, NULL))
 		error("unable to write current sha1 into %s", oldrefname);
 	log_all_ref_updates = flag;
 
@@ -3075,8 +3075,8 @@ int log_ref_setup(const char *refname, struct strbuf *sb_logfile)
 	return 0;
 }
 
-static int log_ref_write_fd(int fd, const unsigned char *old_sha1,
-			    const unsigned char *new_sha1,
+static int log_ref_write_fd(int fd, const struct object_id *old_oid,
+			    const struct object_id *new_oid,
 			    const char *committer, const char *msg)
 {
 	int msglen, written;
@@ -3084,11 +3084,11 @@ static int log_ref_write_fd(int fd, const unsigned char *old_sha1,
 	char *logrec;
 
 	msglen = msg ? strlen(msg) : 0;
-	maxlen = strlen(committer) + msglen + 100;
+	maxlen = strlen(committer) + msglen + GIT_SHA1_HEXSZ * 2 + 25;
 	logrec = xmalloc(maxlen);
 	len = sprintf(logrec, "%s %s %s\n",
-		      sha1_to_hex(old_sha1),
-		      sha1_to_hex(new_sha1),
+		      oid_to_hex(old_oid),
+		      oid_to_hex(new_oid),
 		      committer);
 	if (msglen)
 		len += copy_msg(logrec + len - 1, msg) - 1;
@@ -3101,8 +3101,8 @@ static int log_ref_write_fd(int fd, const unsigned char *old_sha1,
 	return 0;
 }
 
-static int log_ref_write_1(const char *refname, const unsigned char *old_sha1,
-			   const unsigned char *new_sha1, const char *msg,
+static int log_ref_write_1(const char *refname, const struct object_id *old_oid,
+			   const struct object_id *new_oid, const char *msg,
 			   struct strbuf *sb_log_file)
 {
 	int logfd, result, oflags = O_APPEND | O_WRONLY;
@@ -3121,7 +3121,7 @@ static int log_ref_write_1(const char *refname, const unsigned char *old_sha1,
 	logfd = open(log_file, oflags);
 	if (logfd < 0)
 		return 0;
-	result = log_ref_write_fd(logfd, old_sha1, new_sha1,
+	result = log_ref_write_fd(logfd, old_oid, new_oid,
 				  git_committer_info(0), msg);
 	if (result) {
 		int save_errno = errno;
@@ -3139,11 +3139,11 @@ static int log_ref_write_1(const char *refname, const unsigned char *old_sha1,
 	return 0;
 }
 
-static int log_ref_write(const char *refname, const unsigned char *old_sha1,
-			 const unsigned char *new_sha1, const char *msg)
+static int log_ref_write(const char *refname, const struct object_id *old_oid,
+			 const struct object_id *new_oid, const char *msg)
 {
 	struct strbuf sb = STRBUF_INIT;
-	int ret = log_ref_write_1(refname, old_sha1, new_sha1, msg, &sb);
+	int ret = log_ref_write_1(refname, old_oid, new_oid, msg, &sb);
 	strbuf_release(&sb);
 	return ret;
 }
@@ -3158,27 +3158,27 @@ int is_branch(const char *refname)
  * errors, rollback the lockfile and set errno to reflect the problem.
  */
 static int write_ref_to_lockfile(struct ref_lock *lock,
-				 const unsigned char *sha1)
+				 const struct object_id *oid)
 {
 	static char term = '\n';
 	struct object *o;
 
-	o = parse_object(sha1);
+	o = parse_object(oid->hash);
 	if (!o) {
 		error("Trying to write ref %s with nonexistent object %s",
-			lock->ref_name, sha1_to_hex(sha1));
+			lock->ref_name, oid_to_hex(oid));
 		unlock_ref(lock);
 		errno = EINVAL;
 		return -1;
 	}
 	if (o->type != OBJ_COMMIT && is_branch(lock->ref_name)) {
 		error("Trying to write non-commit object %s to branch %s",
-			sha1_to_hex(sha1), lock->ref_name);
+			oid_to_hex(oid), lock->ref_name);
 		unlock_ref(lock);
 		errno = EINVAL;
 		return -1;
 	}
-	if (write_in_full(lock->lk->fd, sha1_to_hex(sha1), 40) != 40 ||
+	if (write_in_full(lock->lk->fd, oid_to_hex(oid), GIT_SHA1_HEXSZ) != GIT_SHA1_HEXSZ ||
 	    write_in_full(lock->lk->fd, &term, 1) != 1 ||
 	    close_ref(lock) < 0) {
 		int save_errno = errno;
@@ -3196,12 +3196,12 @@ static int write_ref_to_lockfile(struct ref_lock *lock,
  * necessary, using the specified lockmsg (which can be NULL).
  */
 static int commit_ref_update(struct ref_lock *lock,
-			     const unsigned char *sha1, const char *logmsg)
+			     const struct object_id *oid, const char *logmsg)
 {
 	clear_loose_ref_cache(&ref_cache);
-	if (log_ref_write(lock->ref_name, lock->old_oid.hash, sha1, logmsg) < 0 ||
+	if (log_ref_write(lock->ref_name, &lock->old_oid, oid, logmsg) < 0 ||
 	    (strcmp(lock->ref_name, lock->orig_ref_name) &&
-	     log_ref_write(lock->orig_ref_name, lock->old_oid.hash, sha1, logmsg) < 0)) {
+	     log_ref_write(lock->orig_ref_name, &lock->old_oid, oid, logmsg) < 0)) {
 		unlock_ref(lock);
 		return -1;
 	}
@@ -3225,7 +3225,7 @@ static int commit_ref_update(struct ref_lock *lock,
 					      head_oid.hash, &head_flag);
 		if (head_ref && (head_flag & REF_ISSYMREF) &&
 		    !strcmp(head_ref, lock->ref_name))
-			log_ref_write("HEAD", lock->old_oid.hash, sha1, logmsg);
+			log_ref_write("HEAD", &lock->old_oid, oid, logmsg);
 	}
 	if (commit_ref(lock)) {
 		error("Couldn't set %s", lock->ref_name);
@@ -3293,7 +3293,7 @@ int create_symref(const char *ref_target, const char *refs_heads_master,
 	done:
 #endif
 	if (logmsg && !read_ref(refs_heads_master, new_oid.hash))
-		log_ref_write(ref_target, old_oid.hash, new_oid.hash, logmsg);
+		log_ref_write(ref_target, &old_oid, &new_oid, logmsg);
 
 	free(git_HEAD);
 	return 0;
@@ -3654,12 +3654,12 @@ struct ref_update {
 	/*
 	 * If (flags & REF_HAVE_NEW), set the reference to this value:
 	 */
-	unsigned char new_sha1[20];
+	struct object_id new_oid;
 	/*
 	 * If (flags & REF_HAVE_OLD), check that the reference
 	 * previously had this value:
 	 */
-	unsigned char old_sha1[20];
+	struct object_id old_oid;
 	/*
 	 * One or more of REF_HAVE_NEW, REF_HAVE_OLD, REF_NODEREF,
 	 * REF_DELETING, and REF_ISPRUNING:
@@ -3755,11 +3755,11 @@ int ref_transaction_update(struct ref_transaction *transaction,
 
 	update = add_update(transaction, refname);
 	if (new_sha1) {
-		hashcpy(update->new_sha1, new_sha1);
+		hashcpy(update->new_oid.hash, new_sha1);
 		flags |= REF_HAVE_NEW;
 	}
 	if (old_sha1) {
-		hashcpy(update->old_sha1, old_sha1);
+		hashcpy(update->old_oid.hash, old_sha1);
 		flags |= REF_HAVE_OLD;
 	}
 	update->flags = flags;
@@ -3895,12 +3895,12 @@ int ref_transaction_commit(struct ref_transaction *transaction,
 		struct ref_update *update = updates[i];
 
 		if ((update->flags & REF_HAVE_NEW) &&
-		    is_null_sha1(update->new_sha1))
+		    is_null_oid(&update->new_oid))
 			update->flags |= REF_DELETING;
 		update->lock = lock_ref_sha1_basic(
 				update->refname,
 				((update->flags & REF_HAVE_OLD) ?
-				 update->old_sha1 : NULL),
+				 update->old_oid.hash : NULL),
 				&affected_refnames, NULL,
 				update->flags,
 				&update->type,
@@ -3923,13 +3923,13 @@ int ref_transaction_commit(struct ref_transaction *transaction,
 						  (update->flags & REF_NODEREF));
 
 			if (!overwriting_symref &&
-			    !hashcmp(update->lock->old_oid.hash, update->new_sha1)) {
+			    !oidcmp(&update->lock->old_oid, &update->new_oid)) {
 				/*
 				 * The reference already has the desired
 				 * value, so we don't need to write it.
 				 */
 			} else if (write_ref_to_lockfile(update->lock,
-							 update->new_sha1)) {
+							 &update->new_oid)) {
 				/*
 				 * The lock was freed upon failure of
 				 * write_ref_to_lockfile():
@@ -3962,7 +3962,7 @@ int ref_transaction_commit(struct ref_transaction *transaction,
 
 		if (update->flags & REF_NEEDS_COMMIT) {
 			if (commit_ref_update(update->lock,
-					      update->new_sha1, update->msg)) {
+					      &update->new_oid, update->msg)) {
 				/* freed by commit_ref_update(): */
 				update->lock = NULL;
 				strbuf_addf(err, "Cannot update the ref '%s'.",

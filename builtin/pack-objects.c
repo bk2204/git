@@ -1394,7 +1394,7 @@ static void check_object(struct object_entry *entry)
 				revidx = find_pack_revindex(p, ofs);
 				if (!revidx)
 					goto give_up;
-				base_ref = nth_packed_object_sha1(p, revidx->nr);
+				base_ref = nth_packed_object_oid(p, revidx->nr)->hash;
 			}
 			entry->in_pack_header_size = used + used_0;
 			break;
@@ -2350,7 +2350,7 @@ static void add_objects_in_unpacked_packs(struct rev_info *revs)
 	memset(&in_pack, 0, sizeof(in_pack));
 
 	for (p = packed_git; p; p = p->next) {
-		const unsigned char *sha1;
+		const struct object_id *oid;
 		struct object *o;
 
 		if (!p->pack_local || p->pack_keep)
@@ -2363,8 +2363,8 @@ static void add_objects_in_unpacked_packs(struct rev_info *revs)
 			   in_pack.alloc);
 
 		for (i = 0; i < p->num_objects; i++) {
-			sha1 = nth_packed_object_sha1(p, i);
-			o = lookup_unknown_object(sha1);
+			oid = nth_packed_object_oid(p, i);
+			o = lookup_unknown_object(oid->hash);
 			if (!(o->flags & OBJECT_ADDED))
 				mark_in_pack_object(o, p, &in_pack);
 			o->flags |= OBJECT_ADDED;
@@ -2382,7 +2382,7 @@ static void add_objects_in_unpacked_packs(struct rev_info *revs)
 	free(in_pack.array);
 }
 
-static int has_sha1_pack_kept_or_nonlocal(const unsigned char *sha1)
+static int has_sha1_pack_kept_or_nonlocal(const struct object_id *oid)
 {
 	static struct packed_git *last_found = (void *)1;
 	struct packed_git *p;
@@ -2391,7 +2391,7 @@ static int has_sha1_pack_kept_or_nonlocal(const unsigned char *sha1)
 
 	while (p) {
 		if ((!p->pack_local || p->pack_keep) &&
-			find_pack_entry_one(sha1, p)) {
+			find_pack_entry_one(oid->hash, p)) {
 			last_found = p;
 			return 1;
 		}
@@ -2414,14 +2414,14 @@ static int has_sha1_pack_kept_or_nonlocal(const unsigned char *sha1)
  */
 static struct sha1_array recent_objects;
 
-static int loosened_object_can_be_discarded(const unsigned char *sha1,
+static int loosened_object_can_be_discarded(const struct object_id *oid,
 					    unsigned long mtime)
 {
 	if (!unpack_unreachable_expiration)
 		return 0;
 	if (mtime > unpack_unreachable_expiration)
 		return 0;
-	if (sha1_array_lookup(&recent_objects, sha1) >= 0)
+	if (sha1_array_lookup(&recent_objects, oid->hash) >= 0)
 		return 0;
 	return 1;
 }
@@ -2430,7 +2430,7 @@ static void loosen_unused_packed_objects(struct rev_info *revs)
 {
 	struct packed_git *p;
 	uint32_t i;
-	const unsigned char *sha1;
+	const struct object_id *oid;
 
 	for (p = packed_git; p; p = p->next) {
 		if (!p->pack_local || p->pack_keep)
@@ -2440,11 +2440,11 @@ static void loosen_unused_packed_objects(struct rev_info *revs)
 			die("cannot open pack index");
 
 		for (i = 0; i < p->num_objects; i++) {
-			sha1 = nth_packed_object_sha1(p, i);
-			if (!packlist_find(&to_pack, sha1, NULL) &&
-			    !has_sha1_pack_kept_or_nonlocal(sha1) &&
-			    !loosened_object_can_be_discarded(sha1, p->mtime))
-				if (force_object_loose(sha1, p->mtime))
+			oid = nth_packed_object_oid(p, i);
+			if (!packlist_find(&to_pack, oid->hash, NULL) &&
+			    !has_sha1_pack_kept_or_nonlocal(oid) &&
+			    !loosened_object_can_be_discarded(oid, p->mtime))
+				if (force_object_loose(oid->hash, p->mtime))
 					die("unable to force loose object");
 		}
 	}

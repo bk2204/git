@@ -46,6 +46,7 @@ unsigned long git_deflate_bound(git_zstream *, unsigned long);
 /* The length in bytes and in hex digits of an object name (SHA-1 value). */
 #define GIT_SHA1_RAWSZ 20
 #define GIT_SHA1_HEXSZ (2 * GIT_SHA1_RAWSZ)
+#define GIT_HASH_TO_OBJECT(x) ((struct object_id *)(x))
 
 struct object_id {
 	unsigned char hash[GIT_SHA1_RAWSZ];
@@ -1293,12 +1294,12 @@ extern void clear_delta_base_cache(void);
 extern struct packed_git *add_packed_git(const char *, int, int);
 
 /*
- * Return the SHA-1 of the nth object within the specified packfile.
+ * Return the object ID of the nth object within the specified packfile.
  * Open the index if it is not already open.  The return value points
- * at the SHA-1 within the mmapped index.  Return NULL if there is an
+ * at the hash within the mmapped index.  Return NULL if there is an
  * error.
  */
-extern const unsigned char *nth_packed_object_sha1(struct packed_git *, uint32_t n);
+extern const struct object_id *nth_packed_object_oid(struct packed_git *, uint32_t n);
 
 /*
  * Return the offset of the nth object within the specified packfile.

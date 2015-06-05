@@ -141,18 +141,18 @@ static void unique_in_pack(int len,
 			   struct disambiguate_state *ds)
 {
 	uint32_t num, last, i, first = 0;
-	const unsigned char *current = NULL;
+	const struct object_id *current = NULL;
 
 	open_pack_index(p);
 	num = p->num_objects;
 	last = num;
 	while (first < last) {
 		uint32_t mid = (first + last) / 2;
-		const unsigned char *current;
+		const struct object_id *current;
 		int cmp;
 
-		current = nth_packed_object_sha1(p, mid);
-		cmp = hashcmp(bin_pfx, current);
+		current = nth_packed_object_oid(p, mid);
+		cmp = hashcmp(bin_pfx, current->hash);
 		if (!cmp) {
 			first = mid;
 			break;
@@ -170,10 +170,10 @@ static void unique_in_pack(int len,
 	 * 0, 1 or more objects that actually match(es).
 	 */
 	for (i = first; i < num && !ds->ambiguous; i++) {
-		current = nth_packed_object_sha1(p, i);
-		if (!match_sha(len, bin_pfx, current))
+		current = nth_packed_object_oid(p, i);
+		if (!match_sha(len, bin_pfx, current->hash))
 			break;
-		update_candidates(ds, current);
+		update_candidates(ds, current->hash);
 	}
 }
 

@@ -221,13 +221,13 @@ static int load_bitmap_entries_v1(struct bitmap_index *index)
 		struct ewah_bitmap *bitmap = NULL;
 		struct stored_bitmap *xor_bitmap = NULL;
 		uint32_t commit_idx_pos;
-		const unsigned char *sha1;
+		const struct object_id *oid;
 
 		commit_idx_pos = read_be32(index->map, &index->map_pos);
 		xor_offset = read_u8(index->map, &index->map_pos);
 		flags = read_u8(index->map, &index->map_pos);
 
-		sha1 = nth_packed_object_sha1(index->pack, commit_idx_pos);
+		oid = nth_packed_object_oid(index->pack, commit_idx_pos);
 
 		bitmap = read_bitmap_1(index);
 		if (!bitmap)
@@ -244,7 +244,7 @@ static int load_bitmap_entries_v1(struct bitmap_index *index)
 		}
 
 		recent_bitmaps[i % MAX_XOR_OFFSET] = store_bitmap(
-			index, bitmap, sha1, xor_bitmap, flags);
+			index, bitmap, oid->hash, xor_bitmap, flags);
 	}
 
 	return 0;
@@ -623,7 +623,7 @@ static void show_objects_for_type(
 		eword_t word = objects->words[i] & filter;
 
 		for (offset = 0; offset < BITS_IN_WORD; ++offset) {
-			const unsigned char *sha1;
+			const struct object_id *oid;
 			struct revindex_entry *entry;
 			uint32_t hash = 0;
 
@@ -636,12 +636,12 @@ static void show_objects_for_type(
 				continue;
 
 			entry = &bitmap_git.reverse_index->revindex[pos + offset];
-			sha1 = nth_packed_object_sha1(bitmap_git.pack, entry->nr);
+			oid = nth_packed_object_oid(bitmap_git.pack, entry->nr);
 
 			if (bitmap_git.hashes)
 				hash = ntohl(bitmap_git.hashes[entry->nr]);
 
-			show_reach(sha1, object_type, 0, hash, bitmap_git.pack, entry->offset);
+			show_reach(oid->hash, object_type, 0, hash, bitmap_git.pack, entry->offset);
 		}
 
 		pos += BITS_IN_WORD;
@@ -781,15 +781,15 @@ int reuse_partial_packfile_from_bitmap(struct packed_git **packfile,
 
 #ifdef GIT_BITMAP_DEBUG
 	{
-		const unsigned char *sha1;
+		const struct object_id *oid;
 		struct revindex_entry *entry;
 
 		entry = &bitmap_git.reverse_index->revindex[reuse_objects];
-		sha1 = nth_packed_object_sha1(bitmap_git.pack, entry->nr);
+		oid = nth_packed_object_oid(bitmap_git.pack, entry->nr);
 
 		fprintf(stderr, "Failed to reuse at %d (%016llx)\n",
 			reuse_objects, result->words[i]);
-		fprintf(stderr, " %s\n", sha1_to_hex(sha1));
+		fprintf(stderr, " %s\n", oid_to_hex(oid));
 	}
 #endif
 
@@ -1039,13 +1039,13 @@ int rebuild_existing_bitmaps(struct packing_data *mapping,
 	reposition = xcalloc(num_objects, sizeof(uint32_t));
 
 	for (i = 0; i < num_objects; ++i) {
-		const unsigned char *sha1;
+		const struct object_id *oid;
 		struct revindex_entry *entry;
 		struct object_entry *oe;
 
 		entry = &bitmap_git.reverse_index->revindex[i];
-		sha1 = nth_packed_object_sha1(bitmap_git.pack, entry->nr);
-		oe = packlist_find(mapping, sha1, NULL);
+		oid = nth_packed_object_oid(bitmap_git.pack, entry->nr);
+		oe = packlist_find(mapping, oid->hash, NULL);
 
 		if (oe)
 			reposition[i] = oe->in_pack_pos + 1;

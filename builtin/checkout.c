@@ -179,9 +179,9 @@ static int checkout_merged(int pos, struct checkout *state)
 	const char *path = ce->name;
 	mmfile_t ancestor, ours, theirs;
 	int status;
-	unsigned char sha1[20];
+	struct object_id oid;
 	mmbuffer_t result_buf;
-	unsigned char threeway[3][20];
+	struct object_id threeway[3];
 	unsigned mode = 0;
 
 	memset(threeway, 0, sizeof(threeway));
@@ -190,18 +190,18 @@ static int checkout_merged(int pos, struct checkout *state)
 		stage = ce_stage(ce);
 		if (!stage || strcmp(path, ce->name))
 			break;
-		hashcpy(threeway[stage - 1], ce->sha1);
+		hashcpy(threeway[stage - 1].hash, ce->sha1);
 		if (stage == 2)
 			mode = create_ce_mode(ce->ce_mode);
 		pos++;
 		ce = active_cache[pos];
 	}
-	if (is_null_sha1(threeway[1]) || is_null_sha1(threeway[2]))
+	if (is_null_oid(&threeway[1]) || is_null_oid(&threeway[2]))
 		return error(_("path '%s' does not have necessary versions"), path);
 
-	read_mmblob(&ancestor, threeway[0]);
-	read_mmblob(&ours, threeway[1]);
-	read_mmblob(&theirs, threeway[2]);
+	read_mmblob(&ancestor, threeway[0].hash);
+	read_mmblob(&ours, threeway[1].hash);
+	read_mmblob(&theirs, threeway[2].hash);
 
 	/*
 	 * NEEDSWORK: re-create conflicts from merges with
@@ -230,9 +230,9 @@ static int checkout_merged(int pos, struct checkout *state)
 	 * object database even when it may contain conflicts).
 	 */
 	if (write_sha1_file(result_buf.ptr, result_buf.size,
-			    blob_type, sha1))
+			    blob_type, oid.hash))
 		die(_("Unable to add merge result for '%s'"), path);
-	ce = make_cache_entry(mode, sha1, path, 2, 0);
+	ce = make_cache_entry(mode, oid.hash, path, 2, 0);
 	if (!ce)
 		die(_("make_cache_entry failed for path '%s'"), path);
 	status = checkout_entry(ce, state, NULL);
@@ -245,7 +245,7 @@ static int checkout_paths(const struct checkout_opts *opts,
 	int pos;
 	struct checkout state;
 	static char *ps_matched;
-	unsigned char rev[20];
+	struct object_id rev;
 	int flag;
 	struct commit *head;
 	int errs = 0;
@@ -382,8 +382,8 @@ static int checkout_paths(const struct checkout_opts *opts,
 	if (write_locked_index(&the_index, lock_file, COMMIT_LOCK))
 		die(_("unable to write new index file"));
 
-	read_ref_full("HEAD", 0, rev, &flag);
-	head = lookup_commit_reference_gently(rev, 1);
+	read_ref_full("HEAD", 0, rev.hash, &flag);
+	head = lookup_commit_reference_gently(rev.hash, 1);
 
 	errs |= post_checkout_hook(head, head, 0);
 	return errs;
@@ -814,11 +814,11 @@ static int switch_branches(const struct checkout_opts *opts,
 	int ret = 0;
 	struct branch_info old;
 	void *path_to_free;
-	unsigned char rev[20];
+	struct object_id rev;
 	int flag, writeout_error = 0;
 	memset(&old, 0, sizeof(old));
-	old.path = path_to_free = resolve_refdup("HEAD", 0, rev, &flag);
-	old.commit = lookup_commit_reference_gently(rev, 1);
+	old.path = path_to_free = resolve_refdup("HEAD", 0, rev.hash, &flag);
+	old.commit = lookup_commit_reference_gently(rev.hash, 1);
 	if (!(flag & REF_ISSYMREF))
 		old.path = NULL;
 
@@ -999,7 +999,7 @@ static int git_checkout_config(const char *var, const char *value, void *cb)
 struct tracking_name_data {
 	/* const */ char *src_ref;
 	char *dst_ref;
-	unsigned char *dst_sha1;
+	struct object_id *dst_oid;
 	int unique;
 };
 
@@ -1010,7 +1010,7 @@ static int check_tracking_name(struct remote *remote, void *cb_data)
 	memset(&query, 0, sizeof(struct refspec));
 	query.src = cb->src_ref;
 	if (remote_find_tracking(remote, &query) ||
-	    get_sha1(query.dst, cb->dst_sha1)) {
+	    get_oid(query.dst, cb->dst_oid)) {
 		free(query.dst);
 		return 0;
 	}
@@ -1023,13 +1023,13 @@ static int check_tracking_name(struct remote *remote, void *cb_data)
 	return 0;
 }
 
-static const char *unique_tracking_name(const char *name, unsigned char *sha1)
+static const char *unique_tracking_name(const char *name, struct object_id *oid)
 {
 	struct tracking_name_data cb_data = { NULL, NULL, NULL, 1 };
 	char src_ref[PATH_MAX];
 	snprintf(src_ref, PATH_MAX, "refs/heads/%s", name);
 	cb_data.src_ref = src_ref;
-	cb_data.dst_sha1 = sha1;
+	cb_data.dst_oid = oid;
 	for_each_remote(check_tracking_name, &cb_data);
 	if (cb_data.unique)
 		return cb_data.dst_ref;
@@ -1111,7 +1111,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 	const char **new_branch = &opts->new_branch;
 	int force_detach = opts->force_detach;
 	int argcount = 0;
-	unsigned char rev[20], branch_rev[20];
+	struct object_id rev, branch_rev;
 	const char *arg;
 	int dash_dash_pos;
 	int has_dash_dash = 0;
@@ -1177,7 +1177,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 	if (!strcmp(arg, "-"))
 		arg = "@{-1}";
 
-	if (get_sha1_mb(arg, rev)) {
+	if (get_oid_mb(arg, &rev)) {
 		/*
 		 * Either case (3) or (4), with <something> not being
 		 * a commit, or an attempt to use case (1) with an
@@ -1199,7 +1199,7 @@ static int parse_branchname_arg(int argc, const char **argv,
 			recover_with_dwim = 0;
 
 		if (recover_with_dwim) {
-			const char *remote = unique_tracking_name(arg, rev);
+			const char *remote = unique_tracking_name(arg, &rev);
 			if (remote) {
 				*new_branch = arg;
 				arg = remote;
@@ -1225,15 +1225,15 @@ static int parse_branchname_arg(int argc, const char **argv,
 	setup_branch_path(new);
 
 	if (!check_refname_format(new->path, 0) &&
-	    !read_ref(new->path, branch_rev))
-		hashcpy(rev, branch_rev);
+	    !read_ref(new->path, branch_rev.hash))
+		oidcpy(&rev, &branch_rev);
 	else
 		new->path = NULL; /* not an existing branch */
 
 	if (new->path && !force_detach && !*new_branch) {
-		unsigned char sha1[20];
+		struct object_id oid;
 		int flag;
-		char *head_ref = resolve_refdup("HEAD", 0, sha1, &flag);
+		char *head_ref = resolve_refdup("HEAD", 0, oid.hash, &flag);
 		if (head_ref &&
 		    (!(flag & REF_ISSYMREF) || strcmp(head_ref, new->path)) &&
 		    !opts->ignore_other_worktrees)
@@ -1241,10 +1241,10 @@ static int parse_branchname_arg(int argc, const char **argv,
 		free(head_ref);
 	}
 
-	new->commit = lookup_commit_reference_gently(rev, 1);
+	new->commit = lookup_commit_reference_gently(rev.hash, 1);
 	if (!new->commit) {
 		/* not a commit */
-		*source_tree = parse_tree_indirect(rev);
+		*source_tree = parse_tree_indirect(rev.hash);
 	} else {
 		parse_commit_or_die(new->commit);
 		*source_tree = new->commit->tree;
@@ -1324,11 +1324,11 @@ static int checkout_branch(struct checkout_opts *opts,
 		return prepare_linked_checkout(opts, new);
 
 	if (!new->commit && opts->new_branch) {
-		unsigned char rev[20];
+		struct object_id rev;
 		int flag;
 
-		if (!read_ref_full("HEAD", 0, rev, &flag) &&
-		    (flag & REF_ISSYMREF) && is_null_sha1(rev))
+		if (!read_ref_full("HEAD", 0, rev.hash, &flag) &&
+		    (flag & REF_ISSYMREF) && is_null_oid(&rev))
 			return switch_unborn_to_new_branch(opts);
 	}
 	return switch_branches(opts, new);

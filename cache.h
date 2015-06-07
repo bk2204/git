@@ -788,7 +788,7 @@ static inline void oidclr(struct object_id *oid)
 	hashclr(oid->hash);
 }
 
-
+extern const struct object_id empty_tree_sha1_oid;
 #define EMPTY_TREE_SHA1_HEX \
 	"4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 #define EMPTY_TREE_SHA1_BIN_LITERAL \
@@ -797,6 +797,7 @@ static inline void oidclr(struct object_id *oid)
 #define EMPTY_TREE_SHA1_BIN \
 	 ((const unsigned char *) EMPTY_TREE_SHA1_BIN_LITERAL)
 
+extern const struct object_id empty_blob_sha1_oid;
 #define EMPTY_BLOB_SHA1_HEX \
 	"e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
 #define EMPTY_BLOB_SHA1_BIN_LITERAL \

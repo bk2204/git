@@ -5,6 +5,12 @@
 #include "commit.h"
 #include "tag.h"
 
+const struct object_id empty_tree_sha1_oid = {
+	EMPTY_TREE_SHA1_BIN_LITERAL
+};
+const struct object_id empty_blob_sha1_oid = {
+	EMPTY_BLOB_SHA1_BIN_LITERAL
+};
 static struct object **obj_hash;
 static int nr_objs, obj_hash_size;
 

@@ -897,13 +897,12 @@ static const char *unique_tracking_name(const char *name, unsigned char *sha1)
 static int parse_branchname_arg(int argc, const char **argv,
 				int dwim_new_local_branch_ok,
 				struct branch_info *new,
-				struct checkout_opts *opts,
-				unsigned char rev[20])
+				struct checkout_opts *opts)
 {
 	struct tree **source_tree = &opts->source_tree;
 	const char **new_branch = &opts->new_branch;
 	int argcount = 0;
-	unsigned char branch_rev[20];
+	unsigned char rev[20], branch_rev[20];
 	const char *arg;
 	int dash_dash_pos;
 	int has_dash_dash = 0;
@@ -1218,14 +1217,13 @@ int cmd_checkout(int argc, const char **argv, const char *prefix)
 	 * remote branches, erroring out for invalid or ambiguous cases.
 	 */
 	if (argc) {
-		unsigned char rev[20];
 		int dwim_ok =
 			!opts.patch_mode &&
 			dwim_new_local_branch &&
 			opts.track == BRANCH_TRACK_UNSPECIFIED &&
 			!opts.new_branch;
 		int n = parse_branchname_arg(argc, argv, dwim_ok,
-					     &new, &opts, rev);
+					     &new, &opts);
 		argv += n;
 		argc -= n;
 	}

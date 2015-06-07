@@ -235,7 +235,8 @@ static int error_dirty_index(struct replay_opts *opts)
 	return -1;
 }
 
-static int fast_forward_to(const unsigned char *to, const unsigned char *from,
+static int fast_forward_to(const struct object_id *to,
+			const struct object_id *from,
 			int unborn, struct replay_opts *opts)
 {
 	struct ref_transaction *transaction;
@@ -251,7 +252,7 @@ static int fast_forward_to(const unsigned char *to, const unsigned char *from,
 	transaction = ref_transaction_begin(&err);
 	if (!transaction ||
 	    ref_transaction_update(transaction, "HEAD",
-				   to, unborn ? null_sha1 : from,
+				   to->hash, unborn ? null_sha1 : from->hash,
 				   0, sb.buf, &err) ||
 	    ref_transaction_commit(transaction, &err)) {
 		ref_transaction_free(transaction);
@@ -286,7 +287,7 @@ void append_conflicts_hint(struct strbuf *msgbuf)
 
 static int do_recursive_merge(struct commit *base, struct commit *next,
 			      const char *base_label, const char *next_label,
-			      unsigned char *head, struct strbuf *msgbuf,
+			      struct object_id *head, struct strbuf *msgbuf,
 			      struct replay_opts *opts)
 {
 	struct merge_options o;
@@ -304,7 +305,7 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 	o.branch1 = "HEAD";
 	o.branch2 = next ? next_label : "(empty tree)";
 
-	head_tree = parse_tree_indirect(head);
+	head_tree = parse_tree_indirect(head->hash);
 	next_tree = next ? next->tree : empty_tree();
 	base_tree = base ? base->tree : empty_tree();
 
@@ -463,7 +464,7 @@ static int allow_empty(struct replay_opts *opts, struct commit *commit)
 
 static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 {
-	unsigned char head[20];
+	struct object_id head;
 	struct commit *base, *next, *parent;
 	const char *base_label, *next_label;
 	struct commit_message msg = { NULL, NULL, NULL, NULL };
@@ -478,12 +479,12 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 		 * that represents the "current" state for merge-recursive
 		 * to work on.
 		 */
-		if (write_cache_as_tree(head, 0, NULL))
+		if (write_cache_as_tree(head.hash, 0, NULL))
 			die (_("Your index file is unmerged."));
 	} else {
-		unborn = get_sha1("HEAD", head);
+		unborn = get_oid("HEAD", &head);
 		if (unborn)
-			hashcpy(head, EMPTY_TREE_SHA1_BIN);
+			oidcpy(&head, &empty_tree_sha1_oid);
 		if (index_differs_from(unborn ? EMPTY_TREE_SHA1_HEX : "HEAD", 0))
 			return error_dirty_index(opts);
 	}
@@ -516,9 +517,9 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 		parent = commit->parents->item;
 
 	if (opts->allow_ff &&
-	    ((parent && !hashcmp(parent->object.oid.hash, head)) ||
+	    ((parent && !oidcmp(&parent->object.oid, &head)) ||
 	     (!parent && unborn)))
-		return fast_forward_to(commit->object.oid.hash, head, unborn, opts);
+		return fast_forward_to(&commit->object.oid, &head, unborn, opts);
 
 	if (parent && parse_commit(parent) < 0)
 		/* TRANSLATORS: The first %s will be "revert" or
@@ -584,7 +585,7 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 
 	if (!opts->strategy || !strcmp(opts->strategy, "recursive") || opts->action == REPLAY_REVERT) {
 		res = do_recursive_merge(base, next, base_label, next_label,
-					 head, &msgbuf, opts);
+					 &head, &msgbuf, opts);
 		write_message(&msgbuf, defmsg);
 	} else {
 		struct commit_list *common = NULL;
@@ -595,7 +596,7 @@ static int do_pick_commit(struct commit *commit, struct replay_opts *opts)
 		commit_list_insert(base, &common);
 		commit_list_insert(next, &remotes);
 		res = try_merge_command(opts->strategy, opts->xopts_nr, opts->xopts,
-					common, sha1_to_hex(head), remotes);
+					common, oid_to_hex(&head), remotes);
 		free_commit_list(common);
 		free_commit_list(remotes);
 	}

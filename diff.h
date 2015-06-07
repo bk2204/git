@@ -334,7 +334,7 @@ extern const char *diff_unique_abbrev(const unsigned char *, int);
 extern int run_diff_files(struct rev_info *revs, unsigned int option);
 extern int run_diff_index(struct rev_info *revs, int cached);
 
-extern int do_diff_cache(const unsigned char *, struct diff_options *);
+extern int do_diff_cache(const struct object_id *, struct diff_options *);
 extern int diff_flush_patch_id(struct diff_options *, unsigned char *);
 
 extern int diff_result_code(struct diff_options *, int);

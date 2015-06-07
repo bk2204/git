@@ -305,7 +305,7 @@ static int do_recursive_merge(struct commit *base, struct commit *next,
 	o.branch1 = "HEAD";
 	o.branch2 = next ? next_label : "(empty tree)";
 
-	head_tree = parse_tree_indirect(head->hash);
+	head_tree = parse_tree_indirect(head);
 	next_tree = next ? next->tree : empty_tree();
 	base_tree = base ? base->tree : empty_tree();
 

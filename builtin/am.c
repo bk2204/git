@@ -1159,17 +1159,17 @@ static void refresh_and_write_cache(void)
  */
 static int index_has_changes(struct strbuf *sb)
 {
-	unsigned char head[GIT_SHA1_RAWSZ];
+	struct object_id head;
 	int i;
 
-	if (!get_sha1_tree("HEAD", head)) {
+	if (!get_sha1_tree("HEAD", head.hash)) {
 		struct diff_options opt;
 
 		diff_setup(&opt);
 		DIFF_OPT_SET(&opt, EXIT_WITH_STATUS);
 		if (!sb)
 			DIFF_OPT_SET(&opt, QUICK);
-		do_diff_cache(head, &opt);
+		do_diff_cache(&head, &opt);
 		diffcore_std(&opt);
 		for (i = 0; sb && i < diff_queued_diff.nr; i++) {
 			if (i)
@@ -2041,30 +2041,30 @@ static int merge_tree(struct tree *tree)
  * Clean the index without touching entries that are not modified between
  * `head` and `remote`.
  */
-static int clean_index(const unsigned char *head, const unsigned char *remote)
+static int clean_index(const struct object_id *head, const struct object_id *remote)
 {
 	struct tree *head_tree, *remote_tree, *index_tree;
-	unsigned char index[GIT_SHA1_RAWSZ];
+	struct object_id index;
 
 	head_tree = parse_tree_indirect(head);
 	if (!head_tree)
-		return error(_("Could not parse object '%s'."), sha1_to_hex(head));
+		return error(_("Could not parse object '%s'."), oid_to_hex(head));
 
 	remote_tree = parse_tree_indirect(remote);
 	if (!remote_tree)
-		return error(_("Could not parse object '%s'."), sha1_to_hex(remote));
+		return error(_("Could not parse object '%s'."), oid_to_hex(remote));
 
 	read_cache_unmerged();
 
 	if (fast_forward_to(head_tree, head_tree, 1))
 		return -1;
 
-	if (write_cache_as_tree(index, 0, NULL))
+	if (write_cache_as_tree(index.hash, 0, NULL))
 		return -1;
 
-	index_tree = parse_tree_indirect(index);
+	index_tree = parse_tree_indirect(&index);
 	if (!index_tree)
-		return error(_("Could not parse object '%s'."), sha1_to_hex(index));
+		return error(_("Could not parse object '%s'."), oid_to_hex(&index));
 
 	if (fast_forward_to(index_tree, remote_tree, 0))
 		return -1;
@@ -2092,14 +2092,14 @@ static void am_rerere_clear(void)
  */
 static void am_skip(struct am_state *state)
 {
-	unsigned char head[GIT_SHA1_RAWSZ];
+	struct object_id head;
 
 	am_rerere_clear();
 
-	if (get_sha1("HEAD", head))
-		hashcpy(head, EMPTY_TREE_SHA1_BIN);
+	if (get_oid("HEAD", &head))
+		oidcpy(&head, &empty_tree_sha1_oid);
 
-	if (clean_index(head, head))
+	if (clean_index(&head, &head))
 		die(_("failed to clean index"));
 
 	am_next(state);
@@ -2145,7 +2145,7 @@ static int safe_to_abort(const struct am_state *state)
  */
 static void am_abort(struct am_state *state)
 {
-	unsigned char curr_head[GIT_SHA1_RAWSZ], orig_head[GIT_SHA1_RAWSZ];
+	struct object_id curr_head, orig_head;
 	int has_curr_head, has_orig_head;
 	char *curr_branch;
 
@@ -2156,20 +2156,20 @@ static void am_abort(struct am_state *state)
 
 	am_rerere_clear();
 
-	curr_branch = resolve_refdup("HEAD", 0, curr_head, NULL);
-	has_curr_head = !is_null_sha1(curr_head);
+	curr_branch = resolve_refdup("HEAD", 0, curr_head.hash, NULL);
+	has_curr_head = !is_null_oid(&curr_head);
 	if (!has_curr_head)
-		hashcpy(curr_head, EMPTY_TREE_SHA1_BIN);
+		oidcpy(&curr_head, &empty_tree_sha1_oid);
 
-	has_orig_head = !get_sha1("ORIG_HEAD", orig_head);
+	has_orig_head = !get_oid("ORIG_HEAD", &orig_head);
 	if (!has_orig_head)
-		hashcpy(orig_head, EMPTY_TREE_SHA1_BIN);
+		oidcpy(&orig_head, &empty_tree_sha1_oid);
 
-	clean_index(curr_head, orig_head);
+	clean_index(&curr_head, &orig_head);
 
 	if (has_orig_head)
-		update_ref("am --abort", "HEAD", orig_head,
-				has_curr_head ? curr_head : NULL, 0,
+		update_ref("am --abort", "HEAD", orig_head.hash,
+				has_curr_head ? curr_head.hash : NULL, 0,
 				UPDATE_REFS_DIE_ON_ERR);
 	else if (curr_branch)
 		delete_ref(curr_branch, NULL, REF_NODEREF);

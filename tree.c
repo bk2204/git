@@ -8,7 +8,7 @@
 
 const char *tree_type = "tree";
 
-static int read_one_entry_opt(const unsigned char *sha1, const char *base, int baselen, const char *pathname, unsigned mode, int stage, int opt)
+static int read_one_entry_opt(const struct object_id *oid, const char *base, int baselen, const char *pathname, unsigned mode, int stage, int opt)
 {
 	int len;
 	unsigned int size;
@@ -26,15 +26,15 @@ static int read_one_entry_opt(const unsigned char *sha1, const char *base, int b
 	ce->ce_namelen = baselen + len;
 	memcpy(ce->name, base, baselen);
 	memcpy(ce->name + baselen, pathname, len+1);
-	hashcpy(ce->sha1, sha1);
+	hashcpy(ce->sha1, oid->hash);
 	return add_cache_entry(ce, opt);
 }
 
-static int read_one_entry(const unsigned char *sha1, struct strbuf *base,
+static int read_one_entry(const struct object_id *oid, struct strbuf *base,
 			  const char *pathname, unsigned mode, int stage,
 			  void *context)
 {
-	return read_one_entry_opt(sha1, base->buf, base->len, pathname,
+	return read_one_entry_opt(oid, base->buf, base->len, pathname,
 				  mode, stage,
 				  ADD_CACHE_OK_TO_ADD|ADD_CACHE_SKIP_DFCHECK);
 }
@@ -43,11 +43,11 @@ static int read_one_entry(const unsigned char *sha1, struct strbuf *base,
  * This is used when the caller knows there is no existing entries at
  * the stage that will conflict with the entry being added.
  */
-static int read_one_entry_quick(const unsigned char *sha1, struct strbuf *base,
+static int read_one_entry_quick(const struct object_id *oid, struct strbuf *base,
 				const char *pathname, unsigned mode, int stage,
 				void *context)
 {
-	return read_one_entry_opt(sha1, base->buf, base->len, pathname,
+	return read_one_entry_opt(oid, base->buf, base->len, pathname,
 				  mode, stage,
 				  ADD_CACHE_JUST_APPEND);
 }
@@ -76,7 +76,7 @@ static int read_tree_1(struct tree *tree, struct strbuf *base,
 				continue;
 		}
 
-		switch (fn(entry.oid->hash, base,
+		switch (fn(entry.oid, base,
 			   entry.path, entry.mode, stage, context)) {
 		case 0:
 			continue;

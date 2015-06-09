@@ -1,6 +1,8 @@
 #ifndef CONNECTED_H
 #define CONNECTED_H
 
+#include "cache.h"
+
 struct transport;
 
 /*
@@ -8,7 +10,7 @@ struct transport;
  * When called after returning the name for the last object, return -1
  * to signal EOF, otherwise return 0.
  */
-typedef int (*sha1_iterate_fn)(void *, unsigned char [20]);
+typedef int (*oid_iterate_fn)(void *, struct object_id *);
 
 /*
  * Make sure that our object store has all the commits necessary to
@@ -17,10 +19,10 @@ typedef int (*sha1_iterate_fn)(void *, unsigned char [20]);
  *
  * Return 0 if Ok, non zero otherwise (i.e. some missing objects)
  */
-extern int check_everything_connected(sha1_iterate_fn, int quiet, void *cb_data);
-extern int check_shallow_connected(sha1_iterate_fn, int quiet, void *cb_data,
+extern int check_everything_connected(oid_iterate_fn, int quiet, void *cb_data);
+extern int check_shallow_connected(oid_iterate_fn, int quiet, void *cb_data,
 				   const char *shallow_file);
-extern int check_everything_connected_with_transport(sha1_iterate_fn, int quiet,
+extern int check_everything_connected_with_transport(oid_iterate_fn, int quiet,
 						     void *cb_data,
 						     struct transport *transport);
 

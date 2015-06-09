@@ -4,7 +4,7 @@
 #include "connected.h"
 #include "transport.h"
 
-int check_everything_connected(sha1_iterate_fn fn, int quiet, void *cb_data)
+int check_everything_connected(oid_iterate_fn fn, int quiet, void *cb_data)
 {
 	return check_everything_connected_with_transport(fn, quiet, cb_data, NULL);
 }
@@ -19,7 +19,7 @@ int check_everything_connected(sha1_iterate_fn fn, int quiet, void *cb_data)
  *
  * Returns 0 if everything is connected, non-zero otherwise.
  */
-static int check_everything_connected_real(sha1_iterate_fn fn,
+static int check_everything_connected_real(oid_iterate_fn fn,
 					   int quiet,
 					   void *cb_data,
 					   struct transport *transport,
@@ -27,13 +27,13 @@ static int check_everything_connected_real(sha1_iterate_fn fn,
 {
 	struct child_process rev_list = CHILD_PROCESS_INIT;
 	const char *argv[9];
-	char commit[41];
-	unsigned char sha1[20];
+	char commit[GIT_SHA1_HEXSZ + 1];
+	struct object_id oid;
 	int err = 0, ac = 0;
 	struct packed_git *new_pack = NULL;
 	size_t base_len;
 
-	if (fn(cb_data, sha1))
+	if (fn(cb_data, &oid))
 		return err;
 
 	if (transport && transport->smart_options &&
@@ -70,7 +70,7 @@ static int check_everything_connected_real(sha1_iterate_fn fn,
 
 	sigchain_push(SIGPIPE, SIG_IGN);
 
-	commit[40] = '\n';
+	commit[GIT_SHA1_HEXSZ] = '\n';
 	do {
 		/*
 		 * If index-pack already checked that:
@@ -80,18 +80,18 @@ static int check_everything_connected_real(sha1_iterate_fn fn,
 		 * are sure the ref is good and not sending it to
 		 * rev-list for verification.
 		 */
-		if (new_pack && find_pack_entry_one(sha1, new_pack))
+		if (new_pack && find_pack_entry_one(oid.hash, new_pack))
 			continue;
 
-		memcpy(commit, sha1_to_hex(sha1), 40);
-		if (write_in_full(rev_list.in, commit, 41) < 0) {
+		memcpy(commit, oid_to_hex(&oid), GIT_SHA1_HEXSZ);
+		if (write_in_full(rev_list.in, commit, GIT_SHA1_HEXSZ + 1) < 0) {
 			if (errno != EPIPE && errno != EINVAL)
 				error(_("failed write to rev-list: %s"),
 				      strerror(errno));
 			err = -1;
 			break;
 		}
-	} while (!fn(cb_data, sha1));
+	} while (!fn(cb_data, &oid));
 
 	if (close(rev_list.in)) {
 		error(_("failed to close rev-list's stdin: %s"), strerror(errno));
@@ -102,7 +102,7 @@ static int check_everything_connected_real(sha1_iterate_fn fn,
 	return finish_command(&rev_list) || err;
 }
 
-int check_everything_connected_with_transport(sha1_iterate_fn fn,
+int check_everything_connected_with_transport(oid_iterate_fn fn,
 					      int quiet,
 					      void *cb_data,
 					      struct transport *transport)
@@ -111,7 +111,7 @@ int check_everything_connected_with_transport(sha1_iterate_fn fn,
 					       transport, NULL);
 }
 
-int check_shallow_connected(sha1_iterate_fn fn, int quiet, void *cb_data,
+int check_shallow_connected(oid_iterate_fn fn, int quiet, void *cb_data,
 			    const char *shallow_file)
 {
 	return check_everything_connected_real(fn, quiet, cb_data,

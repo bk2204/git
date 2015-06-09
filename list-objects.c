@@ -50,7 +50,7 @@ static void process_blob(struct rev_info *revs,
  * any sense what-so-ever to ever do that is another issue.
  */
 static void process_gitlink(struct rev_info *revs,
-			    const unsigned char *sha1,
+			    const struct object_id *oid,
 			    show_object_fn show,
 			    struct name_path *path,
 			    const char *name,
@@ -112,16 +112,16 @@ static void process_tree(struct rev_info *revs,
 
 		if (S_ISDIR(entry.mode))
 			process_tree(revs,
-				     lookup_tree(entry.sha1),
+				     lookup_tree(entry.oid->hash),
 				     show, &me, base, entry.path,
 				     cb_data);
 		else if (S_ISGITLINK(entry.mode))
-			process_gitlink(revs, entry.sha1,
+			process_gitlink(revs, entry.oid,
 					show, &me, entry.path,
 					cb_data);
 		else
 			process_blob(revs,
-				     lookup_blob(entry.sha1),
+				     lookup_blob(entry.oid->hash),
 				     show, &me, entry.path,
 				     cb_data);
 	}

@@ -25,9 +25,9 @@ static int fsck_walk_tree(struct tree *tree, fsck_walk_func walk, void *data)
 		if (S_ISGITLINK(entry.mode))
 			continue;
 		if (S_ISDIR(entry.mode))
-			result = walk(&lookup_tree(entry.sha1)->object, OBJ_TREE, data);
+			result = walk(&lookup_tree(entry.oid->hash)->object, OBJ_TREE, data);
 		else if (S_ISREG(entry.mode) || S_ISLNK(entry.mode))
-			result = walk(&lookup_blob(entry.sha1)->object, OBJ_BLOB, data);
+			result = walk(&lookup_blob(entry.oid->hash)->object, OBJ_BLOB, data);
 		else {
 			result = error("in tree %s: entry %s has bad mode %.6o",
 					oid_to_hex(&tree->object.oid), entry.path, entry.mode);
@@ -163,11 +163,11 @@ static int fsck_tree(struct tree *item, int strict, fsck_error error_func)
 	while (desc.size) {
 		unsigned mode;
 		const char *name;
-		const unsigned char *sha1;
+		const struct object_id *oid;
 
-		sha1 = tree_entry_extract(&desc, &name, &mode);
+		oid = tree_entry_extract(&desc, &name, &mode);
 
-		has_null_sha1 |= is_null_sha1(sha1);
+		has_null_sha1 |= is_null_sha1(oid->hash);
 		has_full_path |= !!strchr(name, '/');
 		has_empty_name |= !*name;
 		has_dot |= !strcmp(name, ".");

@@ -445,7 +445,7 @@ static void load_subtree(struct notes_tree *t, struct leaf_node *subtree,
 			l = (struct leaf_node *)
 				xcalloc(1, sizeof(struct leaf_node));
 			hashcpy(l->key_sha1, object_sha1);
-			hashcpy(l->val_sha1, entry.sha1);
+			hashcpy(l->val_sha1, entry.oid->hash);
 			if (len < 20) {
 				if (!S_ISDIR(entry.mode) || path_len != 2)
 					goto handle_non_note; /* not subtree */
@@ -492,7 +492,7 @@ handle_non_note:
 				*p++ = '/';
 			}
 			strcpy(p, entry.path);
-			add_non_note(t, non_note_path, entry.mode, entry.sha1);
+			add_non_note(t, non_note_path, entry.mode, entry.oid->hash);
 		}
 	}
 	free(buf);

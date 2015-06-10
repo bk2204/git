@@ -276,19 +276,19 @@ static void create_pack_file(void)
 	die("git upload-pack: %s", abort_msg);
 }
 
-static int got_sha1(char *hex, unsigned char *sha1)
+static int got_oid(char *hex, struct object_id *oid)
 {
 	struct object *o;
 	int we_knew_they_have = 0;
 
-	if (get_sha1_hex(hex, sha1))
+	if (get_oid_hex(hex, oid))
 		die("git upload-pack: expected SHA1 object, got '%s'", hex);
-	if (!has_sha1_file(sha1))
+	if (!has_object_file(oid))
 		return -1;
 
-	o = parse_object(sha1);
+	o = parse_object(oid->hash);
 	if (!o)
-		die("oops (%s)", sha1_to_hex(sha1));
+		die("oops (%s)", oid_to_hex(oid));
 	if (o->type == OBJ_COMMIT) {
 		struct commit_list *parents;
 		struct commit *commit = (struct commit *)o;
@@ -374,8 +374,8 @@ static int ok_to_give_up(void)
 
 static int get_common_commits(void)
 {
-	unsigned char sha1[20];
-	char last_hex[41];
+	struct object_id oid;
+	char last_hex[GIT_SHA1_HEXSZ + 1];
 	int got_common = 0;
 	int got_other = 0;
 	int sent_ready = 0;
@@ -406,11 +406,11 @@ static int get_common_commits(void)
 			continue;
 		}
 		if (starts_with(line, "have ")) {
-			switch (got_sha1(line+5, sha1)) {
+			switch (got_oid(line+5, &oid)) {
 			case -1: /* they have what we do not */
 				got_other = 1;
 				if (multi_ack && ok_to_give_up()) {
-					const char *hex = sha1_to_hex(sha1);
+					const char *hex = oid_to_hex(&oid);
 					if (multi_ack == 2) {
 						sent_ready = 1;
 						packet_write(1, "ACK %s ready\n", hex);
@@ -420,7 +420,7 @@ static int get_common_commits(void)
 				break;
 			default:
 				got_common = 1;
-				memcpy(last_hex, sha1_to_hex(sha1), 41);
+				memcpy(last_hex, oid_to_hex(&oid), GIT_SHA1_HEXSZ + 1);
 				if (multi_ack == 2)
 					packet_write(1, "ACK %s common\n", last_hex);
 				else if (multi_ack)
@@ -550,22 +550,22 @@ static void receive_needs(void)
 	for (;;) {
 		struct object *o;
 		const char *features;
-		unsigned char sha1_buf[20];
+		struct object_id oid_buf;
 		char *line = packet_read_line(0, NULL);
 		reset_timeout();
 		if (!line)
 			break;
 
 		if (starts_with(line, "shallow ")) {
-			unsigned char sha1[20];
+			struct object_id oid;
 			struct object *object;
-			if (get_sha1_hex(line + 8, sha1))
+			if (get_oid_hex(line + 8, &oid))
 				die("invalid shallow line: %s", line);
-			object = parse_object(sha1);
+			object = parse_object(oid.hash);
 			if (!object)
 				continue;
 			if (object->type != OBJ_COMMIT)
-				die("invalid shallow object %s", sha1_to_hex(sha1));
+				die("invalid shallow object %s", oid_to_hex(&oid));
 			if (!(object->flags & CLIENT_SHALLOW)) {
 				object->flags |= CLIENT_SHALLOW;
 				add_object_array(object, NULL, &shallows);
@@ -580,7 +580,7 @@ static void receive_needs(void)
 			continue;
 		}
 		if (!starts_with(line, "want ") ||
-		    get_sha1_hex(line+5, sha1_buf))
+		    get_oid_hex(line+5, &oid_buf))
 			die("git upload-pack: protocol error, "
 			    "expected to get sha, not '%s'", line);
 
@@ -605,10 +605,10 @@ static void receive_needs(void)
 		if (parse_feature_request(features, "include-tag"))
 			use_include_tag = 1;
 
-		o = parse_object(sha1_buf);
+		o = parse_object(oid_buf.hash);
 		if (!o)
 			die("git upload-pack: not our ref %s",
-			    sha1_to_hex(sha1_buf));
+			    oid_to_hex(&oid_buf));
 		if (!(o->flags & WANTED)) {
 			o->flags |= WANTED;
 			if (!is_our_ref(o))

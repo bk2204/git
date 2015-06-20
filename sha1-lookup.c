@@ -1,6 +1,14 @@
 #include "cache.h"
 #include "sha1-lookup.h"
 
+struct oid_sha1_fn_adapter {
+	sha1_access_fn *fn_sha1;
+	oid_access_fn *fn_oid;
+};
+
+static int sha1_pos_1(const unsigned char *sha1, void *table, size_t nr,
+	     struct oid_sha1_fn_adapter *adapter);
+
 static uint32_t take2(const unsigned char *sha1)
 {
 	return ((sha1[0] << 8) | sha1[1]);
@@ -53,6 +61,34 @@ static uint32_t take2(const unsigned char *sha1)
 int sha1_pos(const unsigned char *sha1, void *table, size_t nr,
 	     sha1_access_fn fn)
 {
+	struct oid_sha1_fn_adapter adapter;
+	adapter.fn_oid = NULL;
+	adapter.fn_sha1 = fn;
+
+	return sha1_pos_1(sha1, table, nr, &adapter);
+}
+
+int oid_pos(const struct object_id *oid, void *table, size_t nr,
+	     oid_access_fn fn)
+{
+	struct oid_sha1_fn_adapter adapter;
+	adapter.fn_oid = fn;
+	adapter.fn_sha1 = NULL;
+
+	return sha1_pos_1(oid->hash, table, nr, &adapter);
+}
+
+static const unsigned char *bridge(struct oid_sha1_fn_adapter *adapt,
+		size_t index, void *table)
+{
+	if (adapt->fn_oid)
+		return adapt->fn_oid(index, table)->hash;
+	return adapt->fn_sha1(index, table);
+}
+
+static int sha1_pos_1(const unsigned char *sha1, void *table, size_t nr,
+	     struct oid_sha1_fn_adapter *adapter)
+{
 	size_t hi = nr;
 	size_t lo = 0;
 	size_t mi = 0;
@@ -63,9 +99,9 @@ int sha1_pos(const unsigned char *sha1, void *table, size_t nr,
 	if (nr != 1) {
 		size_t lov, hiv, miv, ofs;
 
-		for (ofs = 0; ofs < 18; ofs += 2) {
-			lov = take2(fn(0, table) + ofs);
-			hiv = take2(fn(nr - 1, table) + ofs);
+		for (ofs = 0; ofs < GIT_SHA1_RAWSZ - 2; ofs += 2) {
+			lov = take2(bridge(adapter, 0, table) + ofs);
+			hiv = take2(bridge(adapter, nr - 1, table) + ofs);
 			miv = take2(sha1 + ofs);
 			if (miv < lov)
 				return -1;
@@ -88,7 +124,7 @@ int sha1_pos(const unsigned char *sha1, void *table, size_t nr,
 
 	do {
 		int cmp;
-		cmp = hashcmp(fn(mi, table), sha1);
+		cmp = hashcmp(bridge(adapter, mi, table), sha1);
 		if (!cmp)
 			return mi;
 		if (cmp > 0)

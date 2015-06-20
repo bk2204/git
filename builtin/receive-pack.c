@@ -58,7 +58,7 @@ static int sent_capabilities;
 static int shallow_update;
 static const char *alt_shallow_file;
 static struct strbuf push_cert = STRBUF_INIT;
-static unsigned char push_cert_sha1[20];
+static struct object_id push_cert_oid;
 static struct signature_check sigcheck;
 static const char *push_cert_nonce;
 static const char *cert_nonce_seed;
@@ -368,7 +368,7 @@ static void hmac_sha1(unsigned char *out,
 static char *prepare_push_cert_nonce(const char *path, unsigned long stamp)
 {
 	struct strbuf buf = STRBUF_INIT;
-	unsigned char sha1[20];
+	unsigned char sha1[GIT_SHA1_RAWSZ];
 
 	strbuf_addf(&buf, "%s:%lu", path, stamp);
 	hmac_sha1(sha1, buf.buf, buf.len, cert_nonce_seed, strlen(cert_nonce_seed));;
@@ -499,8 +499,8 @@ static void prepare_push_cert_sha1(struct child_process *proc)
 		int bogs /* beginning_of_gpg_sig */;
 
 		already_done = 1;
-		if (write_sha1_file(push_cert.buf, push_cert.len, "blob", push_cert_sha1))
-			hashclr(push_cert_sha1);
+		if (write_sha1_file(push_cert.buf, push_cert.len, "blob", push_cert_oid.hash))
+			oidclr(&push_cert_oid);
 
 		memset(&sigcheck, '\0', sizeof(sigcheck));
 		sigcheck.result = 'N';
@@ -521,9 +521,9 @@ static void prepare_push_cert_sha1(struct child_process *proc)
 		strbuf_release(&gpg_status);
 		nonce_status = check_nonce(push_cert.buf, bogs);
 	}
-	if (!is_null_sha1(push_cert_sha1)) {
+	if (!is_null_oid(&push_cert_oid)) {
 		argv_array_pushf(&proc->env_array, "GIT_PUSH_CERT=%s",
-				 sha1_to_hex(push_cert_sha1));
+				 oid_to_hex(&push_cert_oid));
 		argv_array_pushf(&proc->env_array, "GIT_PUSH_CERT_SIGNER=%s",
 				 sigcheck.signer ? sigcheck.signer : "");
 		argv_array_pushf(&proc->env_array, "GIT_PUSH_CERT_KEY=%s",
@@ -777,9 +777,9 @@ static int update_shallow_ref(struct command *cmd, struct shallow_info *si)
  */
 static int head_has_history(void)
 {
-	unsigned char sha1[20];
+	struct object_id oid;
 
-	return !get_sha1("HEAD", sha1);
+	return !get_oid("HEAD", &oid);
 }
 
 static const char *push_to_deploy(struct object_id *oid,
@@ -1072,12 +1072,13 @@ static void check_aliased_update(struct command *cmd, struct string_list *list)
 	const char *dst_name;
 	struct string_list_item *item;
 	struct command *dst_cmd;
-	unsigned char sha1[20];
-	char cmd_oldh[41], cmd_newh[41], dst_oldh[41], dst_newh[41];
+	struct object_id oid;
+	char cmd_oldh[GIT_SHA1_HEXSZ + 1], cmd_newh[GIT_SHA1_HEXSZ + 1];
+	char dst_oldh[GIT_SHA1_HEXSZ + 1], dst_newh[GIT_SHA1_HEXSZ + 1];
 	int flag;
 
 	strbuf_addf(&buf, "%s%s", get_git_namespace(), cmd->ref_name);
-	dst_name = resolve_ref_unsafe(buf.buf, 0, sha1, &flag);
+	dst_name = resolve_ref_unsafe(buf.buf, 0, oid.hash, &flag);
 	strbuf_release(&buf);
 
 	if (!(flag & REF_ISSYMREF))
@@ -1305,7 +1306,7 @@ static void execute_commands(struct command *commands,
 			     struct shallow_info *si)
 {
 	struct command *cmd;
-	unsigned char sha1[20];
+	struct object_id oid;
 	struct iterate_data data;
 
 	if (unpacker_error) {
@@ -1332,7 +1333,7 @@ static void execute_commands(struct command *commands,
 	check_aliased_updates(commands);
 
 	free(head_name_to_free);
-	head_name = head_name_to_free = resolve_refdup("HEAD", 0, sha1, NULL);
+	head_name = head_name_to_free = resolve_refdup("HEAD", 0, oid.hash, NULL);
 
 	if (use_atomic)
 		execute_commands_atomic(commands, si);
@@ -1399,17 +1400,18 @@ static struct command *read_head_info(struct sha1_array *shallow)
 	for (;;) {
 		char *line;
 		int len, linelen;
+		const int prefix_len = strlen("shallow ");
 
 		line = packet_read_line(0, &len);
 		if (!line)
 			break;
 
-		if (len == 48 && starts_with(line, "shallow ")) {
-			unsigned char sha1[20];
-			if (get_sha1_hex(line + 8, sha1))
+		if (len == GIT_SHA1_HEXSZ + prefix_len && starts_with(line, "shallow ")) {
+			struct object_id oid;
+			if (get_oid_hex(line + 8, &oid))
 				die("protocol error: expected shallow sha, got '%s'",
 				    line + 8);
-			sha1_array_append(shallow, sha1);
+			sha1_array_append(shallow, oid.hash);
 			continue;
 		}
 

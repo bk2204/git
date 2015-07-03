@@ -976,7 +976,7 @@ static void update_shallow(struct fetch_pack_args *args,
 						&extra);
 			commit_lock_file(&shallow_lock);
 		}
-		sha1_array_clear(&extra);
+		oid_array_clear(&extra);
 		return;
 	}
 
@@ -1001,7 +1001,7 @@ static void update_shallow(struct fetch_pack_args *args,
 		struct object_id *oid = si->shallow->oid;
 		assign_shallow_commits_to_refs(si, NULL, NULL);
 		if (!si->nr_ours && !si->nr_theirs) {
-			sha1_array_clear(&ref);
+			oid_array_clear(&ref);
 			return;
 		}
 		for (i = 0; i < si->nr_ours; i++)
@@ -1012,8 +1012,8 @@ static void update_shallow(struct fetch_pack_args *args,
 					&alternate_shallow_file,
 					&extra);
 		commit_lock_file(&shallow_lock);
-		sha1_array_clear(&extra);
-		sha1_array_clear(&ref);
+		oid_array_clear(&extra);
+		oid_array_clear(&ref);
 		return;
 	}
 
@@ -1029,7 +1029,7 @@ static void update_shallow(struct fetch_pack_args *args,
 				sought[i]->status = REF_STATUS_REJECT_SHALLOW;
 	}
 	free(status);
-	sha1_array_clear(&ref);
+	oid_array_clear(&ref);
 }
 
 struct ref *fetch_pack(struct fetch_pack_args *args,

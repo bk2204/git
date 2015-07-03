@@ -33,7 +33,7 @@ int oid_array_lookup(struct sha1_array *array, const struct object_id *oid)
 	return oid_pos(oid, array->oid, array->nr, oid_access);
 }
 
-void sha1_array_clear(struct sha1_array *array)
+void oid_array_clear(struct sha1_array *array)
 {
 	free(array->oid);
 	array->oid = NULL;

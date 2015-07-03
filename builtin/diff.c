@@ -199,7 +199,7 @@ static int builtin_diff_combined(struct rev_info *revs,
 		oid_array_append(&parents, &ent[i].item->oid);
 	diff_tree_combined(&ent[0].item->oid, &parents,
 			   revs->dense_combined_merges, revs);
-	sha1_array_clear(&parents);
+	oid_array_clear(&parents);
 	return 0;
 }
 

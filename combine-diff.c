@@ -1544,5 +1544,5 @@ void diff_tree_combined_merge(const struct commit *commit, int dense,
 		parent = parent->next;
 	}
 	diff_tree_combined(&commit->object.oid, &parents, dense, rev);
-	sha1_array_clear(&parents);
+	oid_array_clear(&parents);
 }

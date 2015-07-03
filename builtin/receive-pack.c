@@ -253,7 +253,7 @@ static void write_head_info(void)
 
 	for_each_alternate_ref(collect_one_alternate_ref, &sa);
 	sha1_array_for_each_unique(&sa, show_one_alternate_sha1, NULL);
-	sha1_array_clear(&sa);
+	oid_array_clear(&sa);
 	for_each_ref(show_ref_cb, NULL);
 	if (!sent_capabilities)
 		show_ref("capabilities^{}", null_sha1);
@@ -748,7 +748,7 @@ static int update_shallow_ref(struct command *cmd, struct shallow_info *si)
 	if (check_shallow_connected(command_singleton_iterator,
 				    0, cmd, alt_file)) {
 		rollback_lock_file(&shallow_lock);
-		sha1_array_clear(&extra);
+		oid_array_clear(&extra);
 		return -1;
 	}
 
@@ -762,7 +762,7 @@ static int update_shallow_ref(struct command *cmd, struct shallow_info *si)
 		register_shallow(extra.oid[i].hash);
 
 	si->shallow_ref[cmd->index] = 0;
-	sha1_array_clear(&extra);
+	oid_array_clear(&extra);
 	return 0;
 }
 
@@ -1786,8 +1786,8 @@ int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 	}
 	if (use_sideband)
 		packet_flush(1);
-	sha1_array_clear(&shallow);
-	sha1_array_clear(&ref);
+	oid_array_clear(&shallow);
+	oid_array_clear(&ref);
 	free((void *)push_cert_nonce);
 	return 0;
 }

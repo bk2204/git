@@ -12,7 +12,7 @@ struct sha1_array {
 
 void oid_array_append(struct sha1_array *array, const struct object_id *oid);
 int oid_array_lookup(struct sha1_array *array, const struct object_id *oid);
-void sha1_array_clear(struct sha1_array *array);
+void oid_array_clear(struct sha1_array *array);
 
 typedef void (*for_each_sha1_fn)(const unsigned char sha1[20],
 				 void *data);

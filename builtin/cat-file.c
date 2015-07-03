@@ -387,7 +387,7 @@ static int batch_objects(struct batch_options *opt)
 		cb.expand = &data;
 		sha1_array_for_each_unique(&sa, batch_object_cb, &cb);
 
-		sha1_array_clear(&sa);
+		oid_array_clear(&sa);
 		return 0;
 	}
 

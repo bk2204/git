@@ -610,8 +610,8 @@ static void calculate_changed_submodule_paths(void)
 	}
 
 	argv_array_clear(&argv);
-	sha1_array_clear(&ref_tips_before_fetch);
-	sha1_array_clear(&ref_tips_after_fetch);
+	oid_array_clear(&ref_tips_before_fetch);
+	oid_array_clear(&ref_tips_after_fetch);
 	initialized_fetch_ref_tips = 0;
 }
 

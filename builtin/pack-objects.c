@@ -2555,7 +2555,7 @@ static void get_object_list(int ac, const char **av)
 	if (unpack_unreachable)
 		loosen_unused_packed_objects(&revs);
 
-	sha1_array_clear(&recent_objects);
+	oid_array_clear(&recent_objects);
 }
 
 static int option_parse_index_version(const struct option *opt,

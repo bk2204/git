@@ -499,8 +499,8 @@ struct commit_list *filter_skipped(struct commit_list *list,
 	while (list) {
 		struct commit_list *next = list->next;
 		list->next = NULL;
-		if (0 <= sha1_array_lookup(&skipped_revs,
-					   list->item->object.oid.hash)) {
+		if (0 <= oid_array_lookup(&skipped_revs,
+					   &list->item->object.oid)) {
 			if (skipped_first && !*skipped_first)
 				*skipped_first = 1;
 			/* Move current to tried list */
@@ -784,16 +784,16 @@ static void check_merge_bases(int no_checkout)
 	result = get_merge_bases_many(rev[0], rev_nr - 1, rev + 1);
 
 	for (; result; result = result->next) {
-		const unsigned char *mb = result->item->object.oid.hash;
-		if (!hashcmp(mb, current_bad_oid->hash)) {
+		const struct object_id *mb = &result->item->object.oid;
+		if (!oidcmp(mb, current_bad_oid)) {
 			handle_bad_merge_base();
-		} else if (0 <= sha1_array_lookup(&good_revs, mb)) {
+		} else if (0 <= oid_array_lookup(&good_revs, mb)) {
 			continue;
-		} else if (0 <= sha1_array_lookup(&skipped_revs, mb)) {
-			handle_skipped_merge_base(mb);
+		} else if (0 <= oid_array_lookup(&skipped_revs, mb)) {
+			handle_skipped_merge_base(mb->hash);
 		} else {
 			printf("Bisecting: a merge base must be tested\n");
-			exit(bisect_checkout(mb, no_checkout));
+			exit(bisect_checkout(mb->hash, no_checkout));
 		}
 	}
 

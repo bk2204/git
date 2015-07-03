@@ -26,13 +26,11 @@ static const struct object_id *oid_access(size_t index, void *table)
 	return array + index;
 }
 
-int sha1_array_lookup(struct sha1_array *array, const unsigned char *sha1)
+int oid_array_lookup(struct sha1_array *array, const struct object_id *oid)
 {
-	struct object_id temp;
 	if (!array->sorted)
 		sha1_array_sort(array);
-	hashcpy(temp.hash, sha1);
-	return oid_pos(&temp, array->oid, array->nr, oid_access);
+	return oid_pos(oid, array->oid, array->nr, oid_access);
 }
 
 void sha1_array_clear(struct sha1_array *array)

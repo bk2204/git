@@ -549,7 +549,7 @@ static void submodule_collect_changed_cb(struct diff_queue_struct *q,
 static int add_sha1_to_array(const char *ref, const struct object_id *oid,
 			     int flags, void *data)
 {
-	sha1_array_append(data, oid->hash);
+	oid_array_append(data, oid);
 	return 0;
 }
 
@@ -560,7 +560,7 @@ void check_for_new_submodule_commits(struct object_id *new_oid)
 		initialized_fetch_ref_tips = 1;
 	}
 
-	sha1_array_append(&ref_tips_after_fetch, new_oid->hash);
+	oid_array_append(&ref_tips_after_fetch, new_oid);
 }
 
 static void add_sha1_to_argv(const unsigned char sha1[20], void *data)

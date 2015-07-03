@@ -332,20 +332,20 @@ static void batch_object_cb(const unsigned char sha1[20], void *vdata)
 	batch_object_write(NULL, data->opt, data->expand);
 }
 
-static int batch_loose_object(const unsigned char *sha1,
+static int batch_loose_object(const struct object_id *oid,
 			      const char *path,
 			      void *data)
 {
-	sha1_array_append(data, sha1);
+	oid_array_append(data, oid);
 	return 0;
 }
 
-static int batch_packed_object(const unsigned char *sha1,
+static int batch_packed_object(const struct object_id *oid,
 			       struct packed_git *pack,
 			       uint32_t pos,
 			       void *data)
 {
-	sha1_array_append(data, sha1);
+	oid_array_append(data, oid);
 	return 0;
 }
 

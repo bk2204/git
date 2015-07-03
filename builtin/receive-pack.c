@@ -193,13 +193,13 @@ static int receive_pack_config(const char *var, const char *value, void *cb)
 	return git_default_config(var, value, cb);
 }
 
-static void show_ref(const char *path, const unsigned char *sha1)
+static void show_ref(const char *path, const struct object_id *oid)
 {
 	if (ref_is_hidden(path))
 		return;
 
 	if (sent_capabilities) {
-		packet_write(1, "%s %s\n", sha1_to_hex(sha1), path);
+		packet_write(1, "%s %s\n", oid_to_hex(oid), path);
 	} else {
 		struct strbuf cap = STRBUF_INIT;
 
@@ -213,7 +213,7 @@ static void show_ref(const char *path, const unsigned char *sha1)
 			strbuf_addf(&cap, " push-cert=%s", push_cert_nonce);
 		strbuf_addf(&cap, " agent=%s", git_user_agent_sanitized());
 		packet_write(1, "%s %s%c%s\n",
-			     sha1_to_hex(sha1), path, 0, cap.buf);
+			     oid_to_hex(oid), path, 0, cap.buf);
 		strbuf_release(&cap);
 		sent_capabilities = 1;
 	}
@@ -232,13 +232,13 @@ static int show_ref_cb(const char *path, const struct object_id *oid, int flag, 
 	 */
 	if (!path)
 		path = ".have";
-	show_ref(path, oid->hash);
+	show_ref(path, oid);
 	return 0;
 }
 
-static void show_one_alternate_sha1(const unsigned char sha1[20], void *unused)
+static void show_one_alternate_oid(const struct object_id *oid, void *unused)
 {
-	show_ref(".have", sha1);
+	show_ref(".have", oid);
 }
 
 static void collect_one_alternate_ref(const struct ref *ref, void *data)
@@ -252,11 +252,11 @@ static void write_head_info(void)
 	struct sha1_array sa = SHA1_ARRAY_INIT;
 
 	for_each_alternate_ref(collect_one_alternate_ref, &sa);
-	sha1_array_for_each_unique(&sa, show_one_alternate_sha1, NULL);
+	oid_array_for_each_unique(&sa, show_one_alternate_oid, NULL);
 	oid_array_clear(&sa);
 	for_each_ref(show_ref_cb, NULL);
 	if (!sent_capabilities)
-		show_ref("capabilities^{}", null_sha1);
+		show_ref("capabilities^{}", &null_oid);
 
 	advertise_shallow_grafts(1);
 

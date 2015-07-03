@@ -1,9 +1,9 @@
 #include "cache.h"
 #include "sha1-array.h"
 
-static void print_sha1(const unsigned char sha1[20], void *data)
+static void print_oid(const struct object_id *oid, void *data)
 {
-	puts(sha1_to_hex(sha1));
+	puts(oid_to_hex(oid));
 }
 
 int main(int argc, char **argv)
@@ -26,7 +26,7 @@ int main(int argc, char **argv)
 		} else if (!strcmp(line.buf, "clear"))
 			oid_array_clear(&array);
 		else if (!strcmp(line.buf, "for_each_unique"))
-			sha1_array_for_each_unique(&array, print_sha1, NULL);
+			oid_array_for_each_unique(&array, print_oid, NULL);
 		else
 			die("unknown command: %s", line.buf);
 	}

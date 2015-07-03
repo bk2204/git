@@ -325,10 +325,10 @@ struct object_cb_data {
 	struct expand_data *expand;
 };
 
-static void batch_object_cb(const unsigned char sha1[20], void *vdata)
+static void batch_object_cb(const struct object_id *oid, void *vdata)
 {
 	struct object_cb_data *data = vdata;
-	hashcpy(data->expand->sha1, sha1);
+	hashcpy(data->expand->sha1, oid->hash);
 	batch_object_write(NULL, data->opt, data->expand);
 }
 
@@ -385,7 +385,7 @@ static int batch_objects(struct batch_options *opt)
 
 		cb.opt = opt;
 		cb.expand = &data;
-		sha1_array_for_each_unique(&sa, batch_object_cb, &cb);
+		oid_array_for_each_unique(&sa, batch_object_cb, &cb);
 
 		oid_array_clear(&sa);
 		return 0;

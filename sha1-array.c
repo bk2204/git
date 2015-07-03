@@ -42,8 +42,8 @@ void oid_array_clear(struct sha1_array *array)
 	array->sorted = 0;
 }
 
-void sha1_array_for_each_unique(struct sha1_array *array,
-				for_each_sha1_fn fn,
+void oid_array_for_each_unique(struct sha1_array *array,
+				for_each_oid_fn fn,
 				void *data)
 {
 	int i;
@@ -54,6 +54,6 @@ void sha1_array_for_each_unique(struct sha1_array *array,
 	for (i = 0; i < array->nr; i++) {
 		if (i > 0 && !oidcmp(&array->oid[i], &array->oid[i-1]))
 			continue;
-		fn(array->oid[i].hash, data);
+		fn(array->oid + i, data);
 	}
 }

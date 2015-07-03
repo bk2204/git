@@ -563,9 +563,9 @@ void check_for_new_submodule_commits(struct object_id *new_oid)
 	oid_array_append(&ref_tips_after_fetch, new_oid);
 }
 
-static void add_sha1_to_argv(const unsigned char sha1[20], void *data)
+static void add_oid_to_argv(const struct object_id *oid, void *data)
 {
-	argv_array_push(data, sha1_to_hex(sha1));
+	argv_array_push(data, oid_to_hex(oid));
 }
 
 static void calculate_changed_submodule_paths(void)
@@ -580,11 +580,11 @@ static void calculate_changed_submodule_paths(void)
 
 	init_revisions(&rev, NULL);
 	argv_array_push(&argv, "--"); /* argv[0] program name */
-	sha1_array_for_each_unique(&ref_tips_after_fetch,
-				   add_sha1_to_argv, &argv);
+	oid_array_for_each_unique(&ref_tips_after_fetch,
+				   add_oid_to_argv, &argv);
 	argv_array_push(&argv, "--not");
-	sha1_array_for_each_unique(&ref_tips_before_fetch,
-				   add_sha1_to_argv, &argv);
+	oid_array_for_each_unique(&ref_tips_before_fetch,
+				   add_oid_to_argv, &argv);
 	setup_revisions(argv.argc, argv.argv, &rev, NULL);
 	if (prepare_revision_walk(&rev))
 		die("revision walk setup failed");

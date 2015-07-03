@@ -2412,7 +2412,7 @@ static int has_sha1_pack_kept_or_nonlocal(const struct object_id *oid)
  *
  * This is filled by get_object_list.
  */
-static struct sha1_array recent_objects;
+static struct oid_array recent_objects;
 
 static int loosened_object_can_be_discarded(const struct object_id *oid,
 					    unsigned long mtime)

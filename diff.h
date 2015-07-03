@@ -14,7 +14,7 @@ struct diff_queue_struct;
 struct strbuf;
 struct diff_filespec;
 struct userdiff_driver;
-struct sha1_array;
+struct oid_array;
 struct commit;
 struct combine_diff_path;
 
@@ -228,7 +228,7 @@ struct combine_diff_path {
 extern void show_combined_diff(struct combine_diff_path *elem, int num_parent,
 			      int dense, struct rev_info *);
 
-extern void diff_tree_combined(const struct object_id *oid, const struct sha1_array *parents, int dense, struct rev_info *rev);
+extern void diff_tree_combined(const struct object_id *oid, const struct oid_array *parents, int dense, struct rev_info *rev);
 
 extern void diff_tree_combined_merge(const struct commit *commit, int dense, struct rev_info *rev);
 

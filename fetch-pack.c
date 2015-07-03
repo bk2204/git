@@ -942,7 +942,7 @@ static void update_shallow(struct fetch_pack_args *args,
 			   struct ref **sought, int nr_sought,
 			   struct shallow_info *si)
 {
-	struct sha1_array ref = SHA1_ARRAY_INIT;
+	struct oid_array ref = SHA1_ARRAY_INIT;
 	int *status;
 	int i;
 
@@ -965,7 +965,7 @@ static void update_shallow(struct fetch_pack_args *args,
 		 * shallow points that exist in the pack (iow in repo
 		 * after get_pack() and reprepare_packed_git())
 		 */
-		struct sha1_array extra = SHA1_ARRAY_INIT;
+		struct oid_array extra = SHA1_ARRAY_INIT;
 		struct object_id *oid = si->shallow->oid;
 		for (i = 0; i < si->shallow->nr; i++)
 			if (has_object_file(&oid[i]))
@@ -997,7 +997,7 @@ static void update_shallow(struct fetch_pack_args *args,
 		 * shallow roots that are actually reachable from new
 		 * refs.
 		 */
-		struct sha1_array extra = SHA1_ARRAY_INIT;
+		struct oid_array extra = SHA1_ARRAY_INIT;
 		struct object_id *oid = si->shallow->oid;
 		assign_shallow_commits_to_refs(si, NULL, NULL);
 		if (!si->nr_ours && !si->nr_theirs) {
@@ -1037,7 +1037,7 @@ struct ref *fetch_pack(struct fetch_pack_args *args,
 		       const struct ref *ref,
 		       const char *dest,
 		       struct ref **sought, int nr_sought,
-		       struct sha1_array *shallow,
+		       struct oid_array *shallow,
 		       char **pack_lockfile)
 {
 	struct ref *ref_cpy;

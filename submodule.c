@@ -16,8 +16,8 @@
 static int config_fetch_recurse_submodules = RECURSE_SUBMODULES_ON_DEMAND;
 static struct string_list changed_submodule_paths;
 static int initialized_fetch_ref_tips;
-static struct sha1_array ref_tips_before_fetch;
-static struct sha1_array ref_tips_after_fetch;
+static struct oid_array ref_tips_before_fetch;
+static struct oid_array ref_tips_after_fetch;
 
 /*
  * The following flag is set if the .gitmodules file is unmerged. We then

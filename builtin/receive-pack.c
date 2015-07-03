@@ -243,13 +243,13 @@ static void show_one_alternate_oid(const struct object_id *oid, void *unused)
 
 static void collect_one_alternate_ref(const struct ref *ref, void *data)
 {
-	struct sha1_array *sa = data;
+	struct oid_array *sa = data;
 	oid_array_append(sa, &ref->old_oid);
 }
 
 static void write_head_info(void)
 {
-	struct sha1_array sa = SHA1_ARRAY_INIT;
+	struct oid_array sa = SHA1_ARRAY_INIT;
 
 	for_each_alternate_ref(collect_one_alternate_ref, &sa);
 	oid_array_for_each_unique(&sa, show_one_alternate_oid, NULL);
@@ -731,7 +731,7 @@ static int command_singleton_iterator(void *cb_data, struct object_id *oid);
 static int update_shallow_ref(struct command *cmd, struct shallow_info *si)
 {
 	static struct lock_file shallow_lock;
-	struct sha1_array extra = SHA1_ARRAY_INIT;
+	struct oid_array extra = SHA1_ARRAY_INIT;
 	const char *alt_file;
 	uint32_t mask = 1 << (cmd->index % 32);
 	int i;
@@ -1393,7 +1393,7 @@ static void queue_commands_from_cert(struct command **tail,
 	}
 }
 
-static struct command *read_head_info(struct sha1_array *shallow)
+static struct command *read_head_info(struct oid_array *shallow)
 {
 	struct command *commands = NULL;
 	struct command **p = &commands;
@@ -1623,7 +1623,7 @@ static void prepare_shallow_update(struct command *commands,
 
 static void update_shallow_info(struct command *commands,
 				struct shallow_info *si,
-				struct sha1_array *ref)
+				struct oid_array *ref)
 {
 	struct command *cmd;
 	int *ref_status;
@@ -1698,8 +1698,8 @@ int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 	int advertise_refs = 0;
 	int i;
 	struct command *commands;
-	struct sha1_array shallow = SHA1_ARRAY_INIT;
-	struct sha1_array ref = SHA1_ARRAY_INIT;
+	struct oid_array shallow = SHA1_ARRAY_INIT;
+	struct oid_array ref = SHA1_ARRAY_INIT;
 	struct shallow_info si;
 
 	packet_trace_identity("receive-pack");

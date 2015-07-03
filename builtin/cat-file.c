@@ -377,7 +377,7 @@ static int batch_objects(struct batch_options *opt)
 		data.info.typep = &data.type;
 
 	if (opt->all_objects) {
-		struct sha1_array sa = SHA1_ARRAY_INIT;
+		struct oid_array sa = SHA1_ARRAY_INIT;
 		struct object_cb_data cb;
 
 		for_each_loose_object(batch_loose_object, &sa, 0);

@@ -441,8 +441,8 @@ struct git_transport_data {
 	struct child_process *conn;
 	int fd[2];
 	unsigned got_remote_heads : 1;
-	struct sha1_array extra_have;
-	struct sha1_array shallow;
+	struct oid_array extra_have;
+	struct oid_array shallow;
 };
 
 static int set_git_option(struct git_transport_options *opts,

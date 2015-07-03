@@ -130,7 +130,7 @@ static int fsck_msg_type(enum fsck_msg_id msg_id,
 
 static void init_skiplist(struct fsck_options *options, const char *path)
 {
-	static struct sha1_array skiplist = SHA1_ARRAY_INIT;
+	static struct oid_array skiplist = SHA1_ARRAY_INIT;
 	int sorted, fd;
 	char buffer[41];
 	struct object_id oid;

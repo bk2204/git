@@ -369,7 +369,7 @@ static void die_on_unclean_work_tree(const char *prefix)
  * Appends merge candidates from FETCH_HEAD that are not marked not-for-merge
  * into merge_heads.
  */
-static void get_merge_heads(struct sha1_array *merge_heads)
+static void get_merge_heads(struct oid_array *merge_heads)
 {
 	const char *filename = git_path("FETCH_HEAD");
 	FILE *fp;
@@ -797,7 +797,7 @@ static int run_rebase(const struct object_id *curr_head,
 int cmd_pull(int argc, const char **argv, const char *prefix)
 {
 	const char *repo, **refspecs;
-	struct sha1_array merge_heads = SHA1_ARRAY_INIT;
+	struct oid_array merge_heads = SHA1_ARRAY_INIT;
 	struct object_id orig_head, curr_head;
 	struct object_id rebase_fork_point;
 

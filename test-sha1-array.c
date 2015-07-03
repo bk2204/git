@@ -8,7 +8,7 @@ static void print_oid(const struct object_id *oid, void *data)
 
 int main(int argc, char **argv)
 {
-	struct sha1_array array = SHA1_ARRAY_INIT;
+	struct oid_array array = SHA1_ARRAY_INIT;
 	struct strbuf line = STRBUF_INIT;
 
 	while (strbuf_getline(&line, stdin, '\n') != EOF) {

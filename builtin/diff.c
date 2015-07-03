@@ -187,7 +187,7 @@ static int builtin_diff_combined(struct rev_info *revs,
 				 struct object_array_entry *ent,
 				 int ents)
 {
-	struct sha1_array parents = SHA1_ARRAY_INIT;
+	struct oid_array parents = SHA1_ARRAY_INIT;
 	int i;
 
 	if (argc > 1)

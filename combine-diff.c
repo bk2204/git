@@ -1340,7 +1340,7 @@ static struct combine_diff_path *find_paths_generic(const unsigned char *sha1,
 			opt->output_format = stat_opt;
 		else
 			opt->output_format = DIFF_FORMAT_NO_OUTPUT;
-		diff_tree_sha1(parents->sha1[i], sha1, "", opt);
+		diff_tree_sha1(parents->oid[i].hash, sha1, "", opt);
 		diffcore_std(opt);
 		paths = intersect_paths(paths, i, num_parent);
 
@@ -1374,7 +1374,7 @@ static struct combine_diff_path *find_paths_multitree(
 
 	parents_sha1 = xmalloc(nparent * sizeof(parents_sha1[0]));
 	for (i = 0; i < nparent; i++)
-		parents_sha1[i] = parents->sha1[i];
+		parents_sha1[i] = parents->oid[i].hash;
 
 	/* fake list head, so worker can assume it is non-NULL */
 	paths_head.next = NULL;
@@ -1467,7 +1467,7 @@ void diff_tree_combined(const struct object_id *oid,
 		if (stat_opt) {
 			diffopts.output_format = stat_opt;
 
-			diff_tree_sha1(parents->sha1[0], oid->hash, "", &diffopts);
+			diff_tree_sha1(parents->oid[0].hash, oid->hash, "", &diffopts);
 			diffcore_std(&diffopts);
 			if (opt->orderfile)
 				diffcore_order(opt->orderfile);

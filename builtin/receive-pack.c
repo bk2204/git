@@ -742,7 +742,7 @@ static int update_shallow_ref(struct command *cmd, struct shallow_info *si)
 		if (si->used_shallow[i] &&
 		    (si->used_shallow[i][cmd->index / 32] & mask) &&
 		    !delayed_reachability_test(si, i))
-			sha1_array_append(&extra, si->shallow->sha1[i]);
+			sha1_array_append(&extra, si->shallow->oid[i].hash);
 
 	setup_alternate_shallow(&shallow_lock, &alt_file, &extra);
 	if (check_shallow_connected(command_singleton_iterator,
@@ -759,7 +759,7 @@ static int update_shallow_ref(struct command *cmd, struct shallow_info *si)
 	 * not lose these new roots..
 	 */
 	for (i = 0; i < extra.nr; i++)
-		register_shallow(extra.sha1[i]);
+		register_shallow(extra.oid[i].hash);
 
 	si->shallow_ref[cmd->index] = 0;
 	sha1_array_clear(&extra);

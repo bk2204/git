@@ -457,7 +457,7 @@ static char *join_sha1_array_hex(struct sha1_array *array, char delim)
 	int i;
 
 	for (i = 0; i < array->nr; i++) {
-		strbuf_addstr(&joined_hexs, sha1_to_hex(array->sha1[i]));
+		strbuf_addstr(&joined_hexs, oid_to_hex(&array->oid[i]));
 		if (i + 1 < array->nr)
 			strbuf_addch(&joined_hexs, delim);
 	}
@@ -621,7 +621,7 @@ static void bisect_rev_setup(struct rev_info *revs, const char *prefix,
 	argv_array_pushf(&rev_argv, bad_format, oid_to_hex(current_bad_oid));
 	for (i = 0; i < good_revs.nr; i++)
 		argv_array_pushf(&rev_argv, good_format,
-				 sha1_to_hex(good_revs.sha1[i]));
+				 oid_to_hex(&good_revs.oid[i]));
 	argv_array_push(&rev_argv, "--");
 	if (read_paths)
 		read_bisect_paths(&rev_argv);
@@ -714,7 +714,7 @@ static struct commit **get_bad_and_good_commits(int *rev_nr)
 
 	rev[n++] = get_commit_reference(current_bad_oid->hash);
 	for (i = 0; i < good_revs.nr; i++)
-		rev[n++] = get_commit_reference(good_revs.sha1[i]);
+		rev[n++] = get_commit_reference(good_revs.oid[i].hash);
 	*rev_nr = n;
 
 	return rev;

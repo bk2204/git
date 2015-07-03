@@ -98,7 +98,7 @@ static int pack_objects(int fd, struct ref *refs, struct sha1_array *extra, stru
 	 * parameters by writing to the pipe.
 	 */
 	for (i = 0; i < extra->nr; i++)
-		if (!feed_object(extra->sha1[i], po.in, 1))
+		if (!feed_object(extra->oid[i].hash, po.in, 1))
 			break;
 
 	while (refs) {

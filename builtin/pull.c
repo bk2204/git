@@ -551,21 +551,19 @@ static int run_fetch(const char *repo, const char **refspecs)
 /**
  * "Pulls into void" by branching off merge_head.
  */
-static int pull_into_void(const unsigned char *merge_head,
+static int pull_into_void(const struct object_id *merge_head,
 		const struct object_id *curr_head)
 {
-	struct object_id temp;
 	/*
 	 * Two-way merge: we treat the index as based on an empty tree,
 	 * and try to fast-forward to HEAD. This ensures we will not lose
 	 * index/worktree changes that the user already made on the unborn
 	 * branch.
 	 */
-	hashcpy(temp.hash, merge_head);
-	if (checkout_fast_forward(&empty_tree_sha1_oid, &temp, 0))
+	if (checkout_fast_forward(&empty_tree_sha1_oid, merge_head, 0))
 		return 1;
 
-	if (update_ref("initial pull", "HEAD", merge_head, curr_head->hash,
+	if (update_ref("initial pull", "HEAD", merge_head->hash, curr_head->hash,
 		0, UPDATE_REFS_DIE_ON_ERR))
 		return 1;
 
@@ -755,16 +753,17 @@ static int get_octopus_merge_base(unsigned char *merge_base,
  * fork point calculated by get_rebase_fork_point(), runs git-rebase with the
  * appropriate arguments and returns its exit status.
  */
-static int run_rebase(const unsigned char *curr_head,
-		const unsigned char *merge_head,
-		const unsigned char *fork_point)
+static int run_rebase(const struct object_id *curr_head,
+		const struct object_id *merge_head,
+		const struct object_id *fork_point)
 {
 	int ret;
-	unsigned char oct_merge_base[GIT_SHA1_RAWSZ];
+	struct object_id oct_merge_base;
 	struct argv_array args = ARGV_ARRAY_INIT;
 
-	if (!get_octopus_merge_base(oct_merge_base, curr_head, merge_head, fork_point))
-		if (!is_null_sha1(fork_point) && !hashcmp(oct_merge_base, fork_point))
+	if (!get_octopus_merge_base(oct_merge_base.hash, curr_head->hash,
+		merge_head->hash, fork_point->hash))
+		if (!is_null_oid(fork_point) && !oidcmp(&oct_merge_base, fork_point))
 			fork_point = NULL;
 
 	argv_array_push(&args, "rebase");
@@ -783,12 +782,12 @@ static int run_rebase(const unsigned char *curr_head,
 		argv_array_push(&args, opt_gpg_sign);
 
 	argv_array_push(&args, "--onto");
-	argv_array_push(&args, sha1_to_hex(merge_head));
+	argv_array_push(&args, oid_to_hex(merge_head));
 
-	if (fork_point && !is_null_sha1(fork_point))
-		argv_array_push(&args, sha1_to_hex(fork_point));
+	if (fork_point && !is_null_oid(fork_point))
+		argv_array_push(&args, oid_to_hex(fork_point));
 	else
-		argv_array_push(&args, sha1_to_hex(merge_head));
+		argv_array_push(&args, oid_to_hex(merge_head));
 
 	ret = run_command_v_opt(args.argv, RUN_GIT_CMD);
 	argv_array_clear(&args);
@@ -880,11 +879,11 @@ int cmd_pull(int argc, const char **argv, const char *prefix)
 	if (is_null_oid(&orig_head)) {
 		if (merge_heads.nr > 1)
 			die(_("Cannot merge multiple branches into empty head."));
-		return pull_into_void(*merge_heads.sha1, &curr_head);
+		return pull_into_void(merge_heads.oid, &curr_head);
 	} else if (opt_rebase) {
 		if (merge_heads.nr > 1)
 			die(_("Cannot rebase onto multiple branches."));
-		return run_rebase(curr_head.hash, *merge_heads.sha1, rebase_fork_point.hash);
+		return run_rebase(&curr_head, merge_heads.oid, &rebase_fork_point);
 	} else
 		return run_merge();
 }

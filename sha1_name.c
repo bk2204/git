@@ -120,8 +120,11 @@ static void find_short_object_filename(int len, const char *hex_pfx, struct disa
 	}
 }
 
-static int match_sha(unsigned len, const unsigned char *a, const unsigned char *b)
+static int match_sha(unsigned len, const struct object_id *p, const struct object_id *q)
 {
+	const unsigned char *a = p->hash;
+	const unsigned char *b = q->hash;
+
 	do {
 		if (*a != *b)
 			return 0;
@@ -136,7 +139,7 @@ static int match_sha(unsigned len, const unsigned char *a, const unsigned char *
 }
 
 static void unique_in_pack(int len,
-			  const unsigned char *bin_pfx,
+			  const struct object_id *bin_pfx,
 			   struct packed_git *p,
 			   struct disambiguate_state *ds)
 {
@@ -152,7 +155,7 @@ static void unique_in_pack(int len,
 		int cmp;
 
 		current = nth_packed_object_oid(p, mid);
-		cmp = hashcmp(bin_pfx, current->hash);
+		cmp = oidcmp(bin_pfx, current);
 		if (!cmp) {
 			first = mid;
 			break;
@@ -171,13 +174,13 @@ static void unique_in_pack(int len,
 	 */
 	for (i = first; i < num && !ds->ambiguous; i++) {
 		current = nth_packed_object_oid(p, i);
-		if (!match_sha(len, bin_pfx, current->hash))
+		if (!match_sha(len, bin_pfx, current))
 			break;
 		update_candidates(ds, current);
 	}
 }
 
-static void find_short_packed_object(int len, const unsigned char *bin_pfx,
+static void find_short_packed_object(int len, const struct object_id *bin_pfx,
 				     struct disambiguate_state *ds)
 {
 	struct packed_git *p;
@@ -279,13 +282,13 @@ static int disambiguate_blob_only(const struct object_id *oid, void *cb_data_unu
 }
 
 static int prepare_prefixes(const char *name, int len,
-			    unsigned char *bin_pfx,
+			    struct object_id *bin_pfx,
 			    char *hex_pfx)
 {
 	int i;
 
-	hashclr(bin_pfx);
-	memset(hex_pfx, 'x', 40);
+	oidclr(bin_pfx);
+	memset(hex_pfx, 'x', GIT_SHA1_HEXSZ);
 	for (i = 0; i < len ;i++) {
 		unsigned char c = name[i];
 		unsigned char val;
@@ -302,7 +305,7 @@ static int prepare_prefixes(const char *name, int len,
 		hex_pfx[i] = c;
 		if (!(i & 1))
 			val <<= 4;
-		bin_pfx[i >> 1] |= val;
+		bin_pfx->hash[i >> 1] |= val;
 	}
 	return 0;
 }
@@ -311,14 +314,14 @@ static int get_short_sha1(const char *name, int len, unsigned char *sha1,
 			  unsigned flags)
 {
 	int status;
-	char hex_pfx[40];
-	unsigned char bin_pfx[20];
+	char hex_pfx[GIT_SHA1_HEXSZ];
+	struct object_id bin_pfx;
 	struct disambiguate_state ds;
 	int quietly = !!(flags & GET_SHA1_QUIETLY);
 
-	if (len < MINIMUM_ABBREV || len > 40)
+	if (len < MINIMUM_ABBREV || len > GIT_SHA1_HEXSZ)
 		return -1;
-	if (prepare_prefixes(name, len, bin_pfx, hex_pfx) < 0)
+	if (prepare_prefixes(name, len, &bin_pfx, hex_pfx) < 0)
 		return -1;
 
 	prepare_alt_odb();
@@ -336,7 +339,7 @@ static int get_short_sha1(const char *name, int len, unsigned char *sha1,
 		ds.fn = disambiguate_blob_only;
 
 	find_short_object_filename(len, hex_pfx, &ds);
-	find_short_packed_object(len, bin_pfx, &ds);
+	find_short_packed_object(len, &bin_pfx, &ds);
 	status = finish_object_disambiguation(&ds, sha1);
 
 	if (!quietly && (status == SHORT_NAME_AMBIGUOUS))
@@ -346,14 +349,14 @@ static int get_short_sha1(const char *name, int len, unsigned char *sha1,
 
 int for_each_abbrev(const char *prefix, each_abbrev_fn fn, void *cb_data)
 {
-	char hex_pfx[40];
-	unsigned char bin_pfx[20];
+	char hex_pfx[GIT_SHA1_HEXSZ];
+	struct object_id bin_pfx;
 	struct disambiguate_state ds;
 	int len = strlen(prefix);
 
 	if (len < MINIMUM_ABBREV || len > 40)
 		return -1;
-	if (prepare_prefixes(prefix, len, bin_pfx, hex_pfx) < 0)
+	if (prepare_prefixes(prefix, len, &bin_pfx, hex_pfx) < 0)
 		return -1;
 
 	prepare_alt_odb();
@@ -364,7 +367,7 @@ int for_each_abbrev(const char *prefix, each_abbrev_fn fn, void *cb_data)
 	ds.fn = fn;
 
 	find_short_object_filename(len, hex_pfx, &ds);
-	find_short_packed_object(len, bin_pfx, &ds);
+	find_short_packed_object(len, &bin_pfx, &ds);
 	return ds.ambiguous;
 }
 
@@ -670,7 +673,7 @@ struct object *peel_to_type(const char *name, int namelen,
 
 static int peel_onion(const char *name, int len, unsigned char *sha1)
 {
-	unsigned char outer[20];
+	struct object_id outer;
 	const char *sp;
 	unsigned int expected_type = 0;
 	unsigned lookup_flags = 0;
@@ -718,10 +721,10 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 	else if (expected_type == OBJ_TREE)
 		lookup_flags = GET_SHA1_TREEISH;
 
-	if (get_sha1_1(name, sp - name - 2, outer, lookup_flags))
+	if (get_sha1_1(name, sp - name - 2, outer.hash, lookup_flags))
 		return -1;
 
-	o = parse_object(outer);
+	o = parse_object(outer.hash);
 	if (!o)
 		return -1;
 	if (!expected_type) {

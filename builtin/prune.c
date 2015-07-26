@@ -120,11 +120,11 @@ int cmd_prune(int argc, const char **argv, const char *prefix)
 	argc = parse_options(argc, argv, prefix, options, prune_usage, 0);
 
 	while (argc--) {
-		unsigned char sha1[20];
+		struct object_id oid;
 		const char *name = *argv++;
 
-		if (!get_sha1(name, sha1)) {
-			struct object *object = parse_object_or_die(sha1, name);
+		if (!get_oid(name, &oid)) {
+			struct object *object = parse_object_or_die(oid.hash, name);
 			add_pending_object(&revs, object, "");
 		}
 		else

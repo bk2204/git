@@ -25,7 +25,7 @@ static void update_progress(struct connectivity_progress *cp)
 static int add_one_ref(const char *path, const struct object_id *oid,
 		       int flag, void *cb_data)
 {
-	struct object *object = parse_object_or_die(oid->hash, path);
+	struct object *object = parse_object_or_die(oid, path);
 	struct rev_info *revs = (struct rev_info *)cb_data;
 
 	add_pending_object(revs, object, "");
@@ -77,7 +77,7 @@ static void add_recent_object(const struct object_id *oid,
 	switch (type) {
 	case OBJ_TAG:
 	case OBJ_COMMIT:
-		obj = parse_object_or_die(oid->hash, NULL);
+		obj = parse_object_or_die(oid, NULL);
 		break;
 	case OBJ_TREE:
 		obj = (struct object *)lookup_tree(oid->hash);

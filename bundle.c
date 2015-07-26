@@ -289,12 +289,12 @@ static int compute_and_write_prerequisites(int bundle_fd,
 		if (buf.len > 0 && buf.buf[0] == '-') {
 			write_or_die(bundle_fd, buf.buf, buf.len);
 			if (!get_oid_hex(buf.buf + 1, &oid)) {
-				struct object *object = parse_object_or_die(oid.hash, buf.buf);
+				struct object *object = parse_object_or_die(&oid, buf.buf);
 				object->flags |= UNINTERESTING;
 				add_pending_object(revs, object, buf.buf);
 			}
 		} else if (!get_oid_hex(buf.buf, &oid)) {
-			struct object *object = parse_object_or_die(oid.hash, buf.buf);
+			struct object *object = parse_object_or_die(&oid, buf.buf);
 			object->flags |= SHOWN;
 		}
 	}
@@ -378,7 +378,7 @@ static int write_bundle_refs(int bundle_fd, struct rev_info *revs)
 				 * end up triggering "empty bundle"
 				 * error.
 				 */
-				obj = parse_object_or_die(oid.hash, e->name);
+				obj = parse_object_or_die(&oid, e->name);
 				obj->flags |= SHOWN;
 				add_pending_object(revs, obj, e->name);
 			}

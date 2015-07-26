@@ -238,14 +238,14 @@ struct object *parse_object_buffer(const unsigned char *sha1, enum object_type t
 	return obj;
 }
 
-struct object *parse_object_or_die(const unsigned char *sha1,
+struct object *parse_object_or_die(const struct object_id *oid,
 				   const char *name)
 {
-	struct object *o = parse_object(sha1);
+	struct object *o = parse_object(oid->hash);
 	if (o)
 		return o;
 
-	die(_("unable to parse object: %s"), name ? name : sha1_to_hex(sha1));
+	die(_("unable to parse object: %s"), name ? name : oid_to_hex(oid));
 }
 
 struct object *parse_object(const unsigned char *sha1)

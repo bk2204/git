@@ -15,7 +15,7 @@ struct cache_tree_sub {
 
 struct cache_tree {
 	int entry_count; /* negative means "invalid" */
-	unsigned char sha1[20];
+	struct object_id oid;
 	int subtree_nr;
 	int subtree_alloc;
 	struct cache_tree_sub **down;

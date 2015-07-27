@@ -350,7 +350,7 @@ static int fsck_obj(struct object *obj)
 
 static int fsck_oid(const struct object_id *oid)
 {
-	struct object *obj = parse_object(oid->hash);
+	struct object *obj = parse_object(oid);
 	if (!obj) {
 		errors_found |= ERROR_OBJECT;
 		return error("%s: object corrupt or missing",
@@ -514,7 +514,7 @@ static int fsck_handle_ref(const char *refname, const struct object_id *oid,
 {
 	struct object *obj;
 
-	obj = parse_object(oid->hash);
+	obj = parse_object(oid);
 	if (!obj) {
 		error("%s: invalid sha1 pointer %s", refname, oid_to_hex(oid));
 		errors_found |= ERROR_REACHABLE;
@@ -611,7 +611,7 @@ static int fsck_cache_tree(struct cache_tree *it)
 		fprintf(stderr, "Checking cache tree\n");
 
 	if (0 <= it->entry_count) {
-		struct object *obj = parse_object(it->oid.hash);
+		struct object *obj = parse_object(&it->oid);
 		if (!obj) {
 			error("%s: invalid sha1 pointer in cache-tree",
 			      oid_to_hex(&it->oid));

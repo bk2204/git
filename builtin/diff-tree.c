@@ -68,7 +68,7 @@ static int diff_tree_stdin(char *line)
 	line[len-1] = 0;
 	if (get_oid_hex(line, &oid))
 		return -1;
-	obj = parse_object(oid.hash);
+	obj = parse_object(&oid);
 	if (!obj)
 		return -1;
 	if (obj->type == OBJ_COMMIT)

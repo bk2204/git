@@ -237,7 +237,7 @@ void fake_reflog_parent(struct reflog_walk_info *info, struct commit *commit)
 	reflog = &commit_reflog->reflogs->items[commit_reflog->recno];
 	info->last_commit_reflog = commit_reflog;
 	commit_reflog->recno--;
-	commit_info->commit = (struct commit *)parse_object(reflog->ooid.hash);
+	commit_info->commit = (struct commit *)parse_object(&reflog->ooid);
 	if (!commit_info->commit) {
 		commit->parents = NULL;
 		return;

@@ -89,7 +89,7 @@ void *object_as_type(struct object *obj, enum object_type type, int quiet);
  *
  * Returns NULL if the object is missing or corrupt.
  */
-struct object *parse_object(const unsigned char *sha1);
+struct object *parse_object(const struct object_id *oid);
 
 /*
  * Like parse_object, but will die() instead of returning NULL. If the

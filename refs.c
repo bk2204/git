@@ -3442,7 +3442,7 @@ static int write_ref_to_lockfile(struct ref_lock *lock,
 	struct object *o;
 	int fd;
 
-	o = parse_object(oid->hash);
+	o = parse_object(oid);
 	if (!o) {
 		strbuf_addf(err,
 			    "Trying to write ref %s with nonexistent object %s",

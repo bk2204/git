@@ -283,7 +283,7 @@ static int try_difference(const char *arg)
 			while (exclude) {
 				struct commit_list *n = exclude->next;
 				show_rev(REVERSED,
-					 get_object_hash(exclude->item->object),NULL);
+					 exclude->item->object.oid.hash,NULL);
 				free(exclude);
 				exclude = n;
 			}
@@ -322,7 +322,7 @@ static int try_parent_shorthands(const char *arg)
 	commit = lookup_commit_reference(sha1);
 	for (parents = commit->parents; parents; parents = parents->next)
 		show_rev(parents_only ? NORMAL : REVERSED,
-				get_object_hash(parents->item->object), arg);
+				parents->item->object.oid.hash, arg);
 
 	*dotdot = '^';
 	return 1;

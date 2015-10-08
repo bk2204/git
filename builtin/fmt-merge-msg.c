@@ -568,7 +568,7 @@ static void find_merge_parents(struct merge_parents *result,
 		if (!parent)
 			continue;
 		commit_list_insert(parent, &parents);
-		add_merge_parent(result, get_object_hash(*obj), get_object_hash(parent->object));
+		add_merge_parent(result, obj->oid.hash, parent->object.oid.hash);
 	}
 	head_commit = lookup_commit(head);
 	if (head_commit)
@@ -578,7 +578,7 @@ static void find_merge_parents(struct merge_parents *result,
 	while (parents) {
 		for (i = 0; i < result->nr; i++)
 			if (!hashcmp(result->item[i].commit,
-				     get_object_hash(parents->item->object)))
+				     parents->item->object.oid.hash))
 				result->item[i].used = 1;
 		next = parents->next;
 		free(parents);

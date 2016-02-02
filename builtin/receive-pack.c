@@ -1421,12 +1421,12 @@ static struct command *read_head_info(struct sha1_array *shallow)
 		if (!line)
 			break;
 
-		if (len == 48 && starts_with(line, "shallow ")) {
-			unsigned char sha1[20];
-			if (get_sha1_hex(line + 8, sha1))
+		if (len == GIT_SHA1_HEXSZ + 8 && starts_with(line, "shallow ")) {
+			struct object_id oid;
+			if (get_oid_hex(line + 8, &oid))
 				die("protocol error: expected shallow sha, got '%s'",
 				    line + 8);
-			sha1_array_append(shallow, sha1);
+			sha1_array_append(shallow, oid.hash);
 			continue;
 		}
 

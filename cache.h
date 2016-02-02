@@ -1357,6 +1357,9 @@ extern struct packed_git *add_packed_git(const char *path, size_t path_len, int 
  */
 extern const unsigned char *nth_packed_object_sha1(struct packed_git *, uint32_t n);
 
+/* Exactly like nth_packed_object_sha1, but for struct object_id. */
+extern const struct object_id *nth_packed_object_oid(struct packed_git *, uint32_t n);
+
 /*
  * Return the offset of the nth object within the specified packfile.
  * The index must already be opened.
@@ -1423,7 +1426,7 @@ int for_each_loose_file_in_objdir_buf(struct strbuf *path,
  * LOCAL_ONLY flag is set).
  */
 #define FOR_EACH_OBJECT_LOCAL_ONLY 0x1
-typedef int each_packed_object_fn(const unsigned char *sha1,
+typedef int each_packed_object_fn(const struct object_id *oid,
 				  struct packed_git *pack,
 				  uint32_t pos,
 				  void *data);

@@ -2426,6 +2426,12 @@ void *unpack_entry(struct packed_git *p, off_t obj_offset,
 	return data;
 }
 
+const struct object_id *nth_packed_object_oid(struct packed_git *p, uint32_t n)
+{
+	/* Just cast the pointer here, as we're pointing directly into a pack. */
+	return (const struct object_id *)nth_packed_object_sha1(p, n);
+}
+
 const unsigned char *nth_packed_object_sha1(struct packed_git *p,
 					    uint32_t n)
 {
@@ -3598,13 +3604,13 @@ static int for_each_object_in_pack(struct packed_git *p, each_packed_object_fn c
 	int r = 0;
 
 	for (i = 0; i < p->num_objects; i++) {
-		const unsigned char *sha1 = nth_packed_object_sha1(p, i);
+		const struct object_id *oid = nth_packed_object_oid(p, i);
 
-		if (!sha1)
-			return error("unable to get sha1 of object %u in %s",
+		if (!oid)
+			return error("unable to get hash of object %u in %s",
 				     i, p->pack_name);
 
-		r = cb(sha1, p, i, data);
+		r = cb(oid, p, i, data);
 		if (r)
 			break;
 	}

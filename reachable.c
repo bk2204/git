@@ -102,11 +102,11 @@ static void add_recent_object(const unsigned char *sha1,
 	add_pending_object(data->revs, obj, "");
 }
 
-static int add_recent_loose(const unsigned char *sha1,
+static int add_recent_loose(const struct object_id *oid,
 			    const char *path, void *data)
 {
 	struct stat st;
-	struct object *obj = lookup_object(sha1);
+	struct object *obj = lookup_object(oid->hash);
 
 	if (obj && obj->flags & SEEN)
 		return 0;
@@ -121,10 +121,10 @@ static int add_recent_loose(const unsigned char *sha1,
 		if (errno == ENOENT)
 			return 0;
 		return error("unable to stat %s: %s",
-			     sha1_to_hex(sha1), strerror(errno));
+			     oid_to_hex(oid), strerror(errno));
 	}
 
-	add_recent_object(sha1, st.st_mtime, data);
+	add_recent_object(oid->hash, st.st_mtime, data);
 	return 0;
 }
 

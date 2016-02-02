@@ -3484,14 +3484,14 @@ static int for_each_file_in_obj_subdir(int subdir_nr,
 		strbuf_addf(path, "/%s", de->d_name);
 
 		if (strlen(de->d_name) == 38)  {
-			char hex[41];
-			unsigned char sha1[20];
+			char hex[GIT_SHA1_HEXSZ + 1];
+			struct object_id oid;
 
 			snprintf(hex, sizeof(hex), "%02x%s",
 				 subdir_nr, de->d_name);
-			if (!get_sha1_hex(hex, sha1)) {
+			if (!get_oid_hex(hex, &oid)) {
 				if (obj_cb) {
-					r = obj_cb(sha1, path->buf, data);
+					r = obj_cb(&oid, path->buf, data);
 					if (r)
 						break;
 				}

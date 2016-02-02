@@ -455,9 +455,9 @@ static void get_default_heads(void)
 	}
 }
 
-static int fsck_loose(const unsigned char *sha1, const char *path, void *data)
+static int fsck_loose(const struct object_id *oid, const char *path, void *data)
 {
-	if (fsck_sha1(sha1))
+	if (fsck_sha1(oid->hash))
 		errors_found |= ERROR_OBJECT;
 	return 0;
 }

@@ -364,7 +364,7 @@ static void squash_message(struct commit *commit, struct commit_list *remotehead
 	ctx.date_mode = rev.date_mode;
 	ctx.fmt = rev.commit_format;
 
-	strbuf_addstr(&out, "Squashed commit of the following:\n");
+	strbuf_addstr(&out, _("Squashed commit of the following:\n"));
 	while ((commit = get_revision(&rev)) != NULL) {
 		strbuf_addch(&out, '\n');
 		strbuf_addf(&out, "commit %s\n",
@@ -856,7 +856,7 @@ static int finish_automerge(struct commit *head,
 	if (commit_tree(merge_msg.buf, merge_msg.len, result_tree, parents,
 			result_commit, NULL, sign_commit))
 		die(_("failed to write commit object"));
-	strbuf_addf(&buf, "Merge made by the '%s' strategy.", wt_strategy);
+	strbuf_addf(&buf, _("Merge made by the '%s' strategy."), wt_strategy);
 	finish(head, remoteheads, result_commit, buf.buf);
 	strbuf_release(&buf);
 	drop_save();
@@ -1295,7 +1295,7 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 	 */
 	if (!have_message &&
 	    is_old_style_invocation(argc, argv, head_commit->object.oid.hash)) {
-		warning("old-style 'git merge <msg> HEAD <commit>' is deprecated.");
+		warning(_("old-style 'git merge <msg> HEAD <commit>' is deprecated."));
 		strbuf_addstr(&merge_msg, argv[0]);
 		head_arg = argv[1];
 		argv += 2;
@@ -1413,7 +1413,7 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 		 * If head can reach all the merge then we are up to date.
 		 * but first the most common case of merging one remote.
 		 */
-		finish_up_to_date("Already up-to-date.");
+		finish_up_to_date(_("Already up-to-date."));
 		goto done;
 	} else if (fast_forward != FF_NO && !remoteheads->next &&
 			!common->next &&
@@ -1430,10 +1430,10 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 					      DEFAULT_ABBREV);
 			printf(_("Updating %s..%s\n"), from, to);
 		}
-		strbuf_addstr(&msg, "Fast-forward");
+		strbuf_addstr(&msg, _("Fast-forward"));
 		if (have_message)
 			strbuf_addstr(&msg,
-				" (no commit created; -m option ignored)");
+				_(" (no commit created; -m option ignored)"));
 		commit = remoteheads->item;
 		if (!commit) {
 			ret = 1;
@@ -1498,7 +1498,7 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 			}
 		}
 		if (up_to_date) {
-			finish_up_to_date("Already up-to-date. Yeeah!");
+			finish_up_to_date(_("Already up-to-date."));
 			goto done;
 		}
 	}

@@ -457,7 +457,7 @@ static int interpret_nth_prior_checkout(const char *name, int namelen, struct st
 static int get_sha1_basic(const char *str, int len, unsigned char *sha1,
 			  unsigned int flags)
 {
-	static const char *warn_msg = "refname '%.*s' is ambiguous.";
+	const char *warn_msg = _("refname '%.*s' is ambiguous.");
 	static const char *object_name_msg = N_(
 	"Git normally never creates a ref that ends with 40 hex characters\n"
 	"because it will be ignored when you just specify 40-hex. These refs\n"

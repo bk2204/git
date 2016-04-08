@@ -324,23 +324,23 @@ void show_submodule_summary(FILE *f, const char *path,
 	int fast_forward = 0, fast_backward = 0;
 
 	if (is_null_sha1(two))
-		message = "(submodule deleted)";
+		message = _("(submodule deleted)");
 	else if (add_submodule_odb(path))
-		message = "(not checked out)";
+		message = _("(not checked out)");
 	else if (is_null_sha1(one))
-		message = "(new submodule)";
+		message = _("(new submodule)");
 	else if (!(left = lookup_commit_reference(one)) ||
 		 !(right = lookup_commit_reference(two)))
-		message = "(commits not present)";
+		message = _("(commits not present)");
 	else if (prepare_submodule_summary(&rev, path, left, right,
 					   &fast_forward, &fast_backward))
 		message = "(revision walker failed)";
 
 	if (dirty_submodule & DIRTY_SUBMODULE_UNTRACKED)
-		fprintf(f, "%sSubmodule %s contains untracked content\n",
+		fprintf(f, _("%sSubmodule %s contains untracked content\n"),
 			line_prefix, path);
 	if (dirty_submodule & DIRTY_SUBMODULE_MODIFIED)
-		fprintf(f, "%sSubmodule %s contains modified content\n",
+		fprintf(f, _("%sSubmodule %s contains modified content\n"),
 			line_prefix, path);
 
 	if (!hashcmp(one, two)) {
@@ -348,7 +348,7 @@ void show_submodule_summary(FILE *f, const char *path,
 		return;
 	}
 
-	strbuf_addf(&sb, "%s%sSubmodule %s %s..", line_prefix, meta, path,
+	strbuf_addf(&sb, _("%s%sSubmodule %s %s.."), line_prefix, meta, path,
 			find_unique_abbrev(one, DEFAULT_ABBREV));
 	if (!fast_backward && !fast_forward)
 		strbuf_addch(&sb, '.');
@@ -356,7 +356,7 @@ void show_submodule_summary(FILE *f, const char *path,
 	if (message)
 		strbuf_addf(&sb, " %s%s\n", message, reset);
 	else
-		strbuf_addf(&sb, "%s:%s\n", fast_backward ? " (rewind)" : "", reset);
+		strbuf_addf(&sb, "%s:%s\n", fast_backward ? _(" (rewind)") : "", reset);
 	fwrite(sb.buf, sb.len, 1, f);
 
 	if (!message) /* only NULL if we succeeded in setting up the walk */
@@ -502,9 +502,9 @@ int push_unpushed_submodules(unsigned char new_sha1[20], const char *remotes_nam
 
 	for (i = 0; i < needs_pushing.nr; i++) {
 		const char *path = needs_pushing.items[i].string;
-		fprintf(stderr, "Pushing submodule '%s'\n", path);
+		fprintf(stderr, _("Pushing submodule '%s'\n"), path);
 		if (!push_submodule(path)) {
-			fprintf(stderr, "Unable to push submodule '%s'\n", path);
+			fprintf(stderr, _("Unable to push submodule '%s'\n"), path);
 			ret = 0;
 		}
 	}
@@ -712,7 +712,7 @@ static int get_next_submodule(struct child_process *cp,
 			cp->env = local_repo_env;
 			cp->git_cmd = 1;
 			if (!spf->quiet)
-				strbuf_addf(err, "Fetching submodule %s%s\n",
+				strbuf_addf(err, _("Fetching submodule %s%s\n"),
 					    spf->prefix, ce->name);
 			argv_array_init(&cp->args);
 			argv_array_pushv(&cp->args, spf->args.argv);

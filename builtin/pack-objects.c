@@ -1979,7 +1979,7 @@ static void ll_find_deltas(struct object_entry **list, unsigned list_size,
 		return;
 	}
 	if (progress > pack_to_stdout)
-		fprintf(stderr, "Delta compression using up to %d threads.\n",
+		fprintf(stderr, _("Delta compression using up to %d threads.\n"),
 				delta_search_threads);
 	p = xcalloc(delta_search_threads, sizeof(*p));
 

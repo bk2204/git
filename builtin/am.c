@@ -1148,7 +1148,7 @@ static int index_has_changes(struct strbuf *sb)
 	struct object_id head;
 	int i;
 
-	if (!get_sha1_tree("HEAD", head.hash)) {
+	if (!get_oid_tree("HEAD", &head)) {
 		struct diff_options opt;
 
 		diff_setup(&opt);
@@ -1468,7 +1468,7 @@ static void write_index_patch(const struct am_state *state)
 	struct rev_info rev_info;
 	FILE *fp;
 
-	if (!get_sha1_tree("HEAD", head.hash))
+	if (!get_oid_tree("HEAD", &head))
 		tree = lookup_tree(head.hash);
 	else
 		tree = lookup_tree(EMPTY_TREE_SHA1_BIN);

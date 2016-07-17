@@ -105,7 +105,7 @@ int cmd_commit_tree(int argc, const char **argv, const char *prefix)
 			continue;
 		}
 
-		if (get_sha1_tree(arg, tree_oid.hash))
+		if (get_oid_tree(arg, &tree_oid))
 			die("Not a valid object name %s", arg);
 		if (got_tree)
 			die("Cannot give more than one trees");

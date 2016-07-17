@@ -217,7 +217,7 @@ static void parse_args(struct pathspec *pathspec,
 		 * can not be a tree
 		 */
 		else if ((!argv[1] && !get_sha1_committish(argv[0], unused.hash)) ||
-			 (argv[1] && !get_sha1_treeish(argv[0], unused.hash))) {
+			 (argv[1] && !get_oid_treeish(argv[0], &unused))) {
 			/*
 			 * Ok, argv[0] looks like a commit/tree; it should not
 			 * be a filename.
@@ -309,7 +309,7 @@ int cmd_reset(int argc, const char **argv, const char *prefix)
 		oidcpy(&oid, &commit->object.oid);
 	} else {
 		struct tree *tree;
-		if (get_sha1_treeish(rev, oid.hash))
+		if (get_oid_treeish(rev, &oid))
 			die(_("Failed to resolve '%s' as a valid tree."), rev);
 		tree = parse_tree_indirect(oid.hash);
 		if (!tree)

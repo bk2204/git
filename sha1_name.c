@@ -1240,11 +1240,11 @@ int get_sha1_committish(const char *name, unsigned char *sha1)
 				     sha1, &unused);
 }
 
-int get_sha1_treeish(const char *name, unsigned char *sha1)
+int get_oid_treeish(const char *name, struct object_id *oid)
 {
 	struct object_context unused;
 	return get_sha1_with_context(name, GET_SHA1_TREEISH,
-				     sha1, &unused);
+				     oid->hash, &unused);
 }
 
 int get_sha1_commit(const char *name, unsigned char *sha1)
@@ -1254,11 +1254,11 @@ int get_sha1_commit(const char *name, unsigned char *sha1)
 				     sha1, &unused);
 }
 
-int get_sha1_tree(const char *name, unsigned char *sha1)
+int get_oid_tree(const char *name, struct object_id *oid)
 {
 	struct object_context unused;
 	return get_sha1_with_context(name, GET_SHA1_TREE,
-				     sha1, &unused);
+				     oid->hash, &unused);
 }
 
 int get_oid_blob(const char *name, struct object_id *oid)

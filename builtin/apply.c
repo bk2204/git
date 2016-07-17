@@ -4022,7 +4022,7 @@ static void build_fake_ancestor(struct patch *list, const char *filename)
 			else
 				die("sha1 information is lacking or useless for submodule %s",
 				    name);
-		} else if (!get_sha1_blob(patch->old_sha1_prefix, oid.hash)) {
+		} else if (!get_oid_blob(patch->old_sha1_prefix, &oid)) {
 			; /* ok */
 		} else if (!patch->lines_added && !patch->lines_deleted) {
 			/* mode-only change: update the current */

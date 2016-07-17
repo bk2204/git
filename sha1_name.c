@@ -1261,11 +1261,11 @@ int get_sha1_tree(const char *name, unsigned char *sha1)
 				     sha1, &unused);
 }
 
-int get_sha1_blob(const char *name, unsigned char *sha1)
+int get_oid_blob(const char *name, struct object_id *oid)
 {
 	struct object_context unused;
 	return get_sha1_with_context(name, GET_SHA1_BLOB,
-				     sha1, &unused);
+				     oid->hash, &unused);
 }
 
 /* Must be called only when object_name:filename doesn't exist. */

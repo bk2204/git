@@ -27,7 +27,7 @@ static int rerere_dir_alloc;
 #define RR_HAS_POSTIMAGE 1
 #define RR_HAS_PREIMAGE 2
 static struct rerere_dir {
-	unsigned char sha1[20];
+	struct object_id oid;
 	int status_alloc, status_nr;
 	unsigned char *status;
 } **rerere_dir;
@@ -51,7 +51,7 @@ static void free_rerere_id(struct string_list_item *item)
 
 static const char *rerere_id_hex(const struct rerere_id *id)
 {
-	return sha1_to_hex(id->collection->sha1);
+	return oid_to_hex(&id->collection->oid);
 }
 
 static void fit_variant(struct rerere_dir *rr_dir, int variant)
@@ -114,7 +114,7 @@ static int is_rr_file(const char *name, const char *filename, int *variant)
 static void scan_rerere_dir(struct rerere_dir *rr_dir)
 {
 	struct dirent *de;
-	DIR *dir = opendir(git_path("rr-cache/%s", sha1_to_hex(rr_dir->sha1)));
+	DIR *dir = opendir(git_path("rr-cache/%s", oid_to_hex(&rr_dir->oid)));
 
 	if (!dir)
 		return;
@@ -135,21 +135,21 @@ static void scan_rerere_dir(struct rerere_dir *rr_dir)
 static const unsigned char *rerere_dir_sha1(size_t i, void *table)
 {
 	struct rerere_dir **rr_dir = table;
-	return rr_dir[i]->sha1;
+	return rr_dir[i]->oid.hash;
 }
 
 static struct rerere_dir *find_rerere_dir(const char *hex)
 {
-	unsigned char sha1[20];
+	struct object_id oid;
 	struct rerere_dir *rr_dir;
 	int pos;
 
-	if (get_sha1_hex(hex, sha1))
+	if (get_oid_hex(hex, &oid))
 		return NULL; /* BUG */
-	pos = sha1_pos(sha1, rerere_dir, rerere_dir_nr, rerere_dir_sha1);
+	pos = sha1_pos(oid.hash, rerere_dir, rerere_dir_nr, rerere_dir_sha1);
 	if (pos < 0) {
 		rr_dir = xmalloc(sizeof(*rr_dir));
-		hashcpy(rr_dir->sha1, sha1);
+		oidcpy(&rr_dir->oid, &oid);
 		rr_dir->status = NULL;
 		rr_dir->status_nr = 0;
 		rr_dir->status_alloc = 0;
@@ -185,9 +185,9 @@ static struct rerere_id *new_rerere_id_hex(char *hex)
 	return id;
 }
 
-static struct rerere_id *new_rerere_id(unsigned char *sha1)
+static struct rerere_id *new_rerere_id(const struct object_id *oid)
 {
-	return new_rerere_id_hex(sha1_to_hex(sha1));
+	return new_rerere_id_hex(oid_to_hex(oid));
 }
 
 /*
@@ -206,26 +206,29 @@ static void read_rr(struct string_list *rr)
 		return;
 	while (!strbuf_getwholeline(&buf, in, '\0')) {
 		char *path;
-		unsigned char sha1[20];
+		struct object_id oid;
 		struct rerere_id *id;
 		int variant;
+		const char *p;
+		char *q;
 
 		/* There has to be the hash, tab, path and then NUL */
-		if (buf.len < 42 || get_sha1_hex(buf.buf, sha1))
+		if (parse_oid_hex(buf.buf, &oid, &p) || buf.len < (p - buf.buf) + 2)
 			die("corrupt MERGE_RR");
 
-		if (buf.buf[40] != '.') {
+		q = (char *)p;
+		if (*q != '.') {
 			variant = 0;
-			path = buf.buf + 40;
+			path = q;
 		} else {
 			errno = 0;
-			variant = strtol(buf.buf + 41, &path, 10);
+			variant = strtol(q + 1, &path, 10);
 			if (errno)
 				die("corrupt MERGE_RR");
 		}
 		if (*(path++) != '\t')
 			die("corrupt MERGE_RR");
-		buf.buf[40] = '\0';
+		*q = '\0';
 		id = new_rerere_id_hex(buf.buf);
 		id->variant = variant;
 		string_list_insert(rr, path)->util = id;
@@ -399,7 +402,7 @@ static int is_cmarker(char *buf, int marker_char, int marker_size)
  * normalization may deserve to be documented somewhere, perhaps in
  * Documentation/technical/rerere.txt.
  */
-static int handle_path(unsigned char *sha1, struct rerere_io *io, int marker_size)
+static int handle_path(struct object_id *oid, struct rerere_io *io, int marker_size)
 {
 	git_SHA_CTX ctx;
 	int hunk_no = 0;
@@ -409,7 +412,7 @@ static int handle_path(unsigned char *sha1, struct rerere_io *io, int marker_siz
 	struct strbuf one = STRBUF_INIT, two = STRBUF_INIT;
 	struct strbuf buf = STRBUF_INIT;
 
-	if (sha1)
+	if (oid)
 		git_SHA1_Init(&ctx);
 
 	while (!io->getline(&buf, io)) {
@@ -437,7 +440,7 @@ static int handle_path(unsigned char *sha1, struct rerere_io *io, int marker_siz
 			rerere_io_putconflict('=', marker_size, io);
 			rerere_io_putmem(two.buf, two.len, io);
 			rerere_io_putconflict('>', marker_size, io);
-			if (sha1) {
+			if (oid) {
 				git_SHA1_Update(&ctx, one.buf ? one.buf : "",
 					    one.len + 1);
 				git_SHA1_Update(&ctx, two.buf ? two.buf : "",
@@ -462,8 +465,8 @@ static int handle_path(unsigned char *sha1, struct rerere_io *io, int marker_siz
 	strbuf_release(&two);
 	strbuf_release(&buf);
 
-	if (sha1)
-		git_SHA1_Final(sha1, &ctx);
+	if (oid)
+		git_SHA1_Final(oid->hash, &ctx);
 	if (hunk != RR_CONTEXT)
 		return -1;
 	return hunk_no;
@@ -473,7 +476,7 @@ static int handle_path(unsigned char *sha1, struct rerere_io *io, int marker_siz
  * Scan the path for conflicts, do the "handle_path()" thing above, and
  * return the number of conflict hunks found.
  */
-static int handle_file(const char *path, unsigned char *sha1, const char *output)
+static int handle_file(const char *path, struct object_id *oid, const char *output)
 {
 	int hunk_no = 0;
 	struct rerere_io_file io;
@@ -494,7 +497,7 @@ static int handle_file(const char *path, unsigned char *sha1, const char *output
 		}
 	}
 
-	hunk_no = handle_path(sha1, (struct rerere_io *)&io, marker_size);
+	hunk_no = handle_path(oid, (struct rerere_io *)&io, marker_size);
 
 	fclose(io.input);
 	if (io.io.wrerror)
@@ -827,7 +830,7 @@ static int do_plain_rerere(struct string_list *rr, int fd)
 	 */
 	for (i = 0; i < conflict.nr; i++) {
 		struct rerere_id *id;
-		unsigned char sha1[20];
+		struct object_id oid;
 		const char *path = conflict.items[i].string;
 		int ret;
 
@@ -839,11 +842,11 @@ static int do_plain_rerere(struct string_list *rr, int fd)
 		 * conflict ID.  No need to write anything out
 		 * yet.
 		 */
-		ret = handle_file(path, sha1, NULL);
+		ret = handle_file(path, &oid, NULL);
 		if (ret < 1)
 			continue;
 
-		id = new_rerere_id(sha1);
+		id = new_rerere_id(&oid);
 		string_list_insert(rr, path)->util = id;
 
 		/* Ensure that the directory exists. */
@@ -953,7 +956,7 @@ static int rerere_mem_getline(struct strbuf *sb, struct rerere_io *io_)
 	return 0;
 }
 
-static int handle_cache(const char *path, unsigned char *sha1, const char *output)
+static int handle_cache(const char *path, struct object_id *oid, const char *output)
 {
 	mmfile_t mmfile[3] = {{NULL}};
 	mmbuffer_t result = {NULL, 0};
@@ -1012,7 +1015,7 @@ static int handle_cache(const char *path, unsigned char *sha1, const char *outpu
 	 * Grab the conflict ID and optionally write the original
 	 * contents with conflict markers out.
 	 */
-	hunk_no = handle_path(sha1, (struct rerere_io *)&io, marker_size);
+	hunk_no = handle_path(oid, (struct rerere_io *)&io, marker_size);
 	strbuf_release(&io.input);
 	if (io.io.output)
 		fclose(io.io.output);
@@ -1023,7 +1026,7 @@ static int rerere_forget_one_path(const char *path, struct string_list *rr)
 {
 	const char *filename;
 	struct rerere_id *id;
-	unsigned char sha1[20];
+	struct object_id oid;
 	int ret;
 	struct string_list_item *item;
 
@@ -1031,12 +1034,12 @@ static int rerere_forget_one_path(const char *path, struct string_list *rr)
 	 * Recreate the original conflict from the stages in the
 	 * index and compute the conflict ID
 	 */
-	ret = handle_cache(path, sha1, NULL);
+	ret = handle_cache(path, &oid, NULL);
 	if (ret < 1)
 		return error("Could not parse conflict hunks in '%s'", path);
 
 	/* Nuke the recorded resolution for the conflict */
-	id = new_rerere_id(sha1);
+	id = new_rerere_id(&oid);
 
 	for (id->variant = 0;
 	     id->variant < id->collection->status_nr;
@@ -1048,7 +1051,7 @@ static int rerere_forget_one_path(const char *path, struct string_list *rr)
 		if (!has_rerere_resolution(id))
 			continue;
 
-		handle_cache(path, sha1, rerere_path(id, "thisimage"));
+		handle_cache(path, &oid, rerere_path(id, "thisimage"));
 		if (read_mmfile(&cur, rerere_path(id, "thisimage"))) {
 			free(cur.ptr);
 			error("Failed to update conflicted state in '%s'", path);
@@ -1080,7 +1083,7 @@ static int rerere_forget_one_path(const char *path, struct string_list *rr)
 	 * conflict in the working tree, run us again to record
 	 * the postimage.
 	 */
-	handle_cache(path, sha1, rerere_path(id, "preimage"));
+	handle_cache(path, &oid, rerere_path(id, "preimage"));
 	fprintf(stderr, "Updated preimage for '%s'\n", path);
 
 	/*

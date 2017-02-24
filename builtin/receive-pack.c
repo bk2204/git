@@ -280,7 +280,7 @@ static int show_one_alternate_sha1(const unsigned char sha1[20], void *unused)
 static void collect_one_alternate_ref(const struct ref *ref, void *data)
 {
 	struct sha1_array *sa = data;
-	sha1_array_append(sa, ref->old_oid.hash);
+	sha1_array_append(sa, &ref->old_oid);
 }
 
 static void write_head_info(void)
@@ -839,7 +839,7 @@ static int update_shallow_ref(struct command *cmd, struct shallow_info *si)
 		if (si->used_shallow[i] &&
 		    (si->used_shallow[i][cmd->index / 32] & mask) &&
 		    !delayed_reachability_test(si, i))
-			sha1_array_append(&extra, si->shallow->oid[i].hash);
+			sha1_array_append(&extra, si->shallow->oid + i);
 
 	opt.env = tmp_objdir_env(tmp_objdir);
 	setup_alternate_shallow(&shallow_lock, &opt.shallow_file, &extra);
@@ -1547,7 +1547,7 @@ static struct command *read_head_info(struct sha1_array *shallow)
 			if (get_oid_hex(line + 8, &oid))
 				die("protocol error: expected shallow sha, got '%s'",
 				    line + 8);
-			sha1_array_append(shallow, oid.hash);
+			sha1_array_append(shallow, &oid);
 			continue;
 		}
 
@@ -1815,7 +1815,7 @@ static void update_shallow_info(struct command *commands,
 	for (cmd = commands; cmd; cmd = cmd->next) {
 		if (is_null_oid(&cmd->new_oid))
 			continue;
-		sha1_array_append(ref, cmd->new_oid.hash);
+		sha1_array_append(ref, &cmd->new_oid);
 		cmd->index = ref->nr - 1;
 	}
 	si->ref = ref;

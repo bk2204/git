@@ -24,7 +24,7 @@ void record_resolve_undo(struct index_state *istate, struct cache_entry *ce)
 	if (!lost->util)
 		lost->util = xcalloc(1, sizeof(*ui));
 	ui = lost->util;
-	hashcpy(ui->sha1[stage - 1], ce->oid.hash);
+	oidcpy(&ui->oid[stage - 1], &ce->oid);
 	ui->mode[stage - 1] = ce->ce_mode;
 }
 
@@ -44,7 +44,7 @@ void resolve_undo_write(struct strbuf *sb, struct string_list *resolve_undo)
 		for (i = 0; i < 3; i++) {
 			if (!ui->mode[i])
 				continue;
-			strbuf_add(sb, ui->sha1[i], 20);
+			strbuf_add(sb, ui->oid[i].hash, the_hash_algo->rawsz);
 		}
 	}
 }
@@ -89,7 +89,7 @@ struct string_list *resolve_undo_read(const char *data, unsigned long size)
 				continue;
 			if (size < 20)
 				goto error;
-			hashcpy(ui->sha1[i], (const unsigned char *)data);
+			hashcpy(ui->oid[i].hash, (const unsigned char *)data);
 			size -= 20;
 			data += 20;
 		}
@@ -145,7 +145,7 @@ int unmerge_index_entry_at(struct index_state *istate, int pos)
 		struct cache_entry *nce;
 		if (!ru->mode[i])
 			continue;
-		nce = make_cache_entry(ru->mode[i], ru->sha1[i],
+		nce = make_cache_entry(ru->mode[i], ru->oid[i].hash,
 				       name, i + 1, 0);
 		if (matched)
 			nce->ce_flags |= CE_MATCHED;

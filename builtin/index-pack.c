@@ -1378,7 +1378,7 @@ static void fix_unresolved_deltas(struct sha1file *f)
 		if (!base_obj->data)
 			continue;
 
-		if (check_sha1_signature(d->oid.hash, base_obj->data,
+		if (check_object_signature(&d->oid, base_obj->data,
 				base_obj->size, typename(type)))
 			die(_("local object %s is corrupt"), oid_to_hex(&d->oid));
 		base_obj->obj = append_obj_to_pack(f, d->oid.hash,

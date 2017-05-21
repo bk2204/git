@@ -12,10 +12,10 @@
  * - author/committer: the default determined by commit_tree().
  * - commit message: msg
  *
- * The resulting commit SHA1 is stored in result_sha1.
+ * The resulting commit object ID is stored in result_oid.
  */
 void create_notes_commit(struct notes_tree *t, struct commit_list *parents,
-			 const char *msg, size_t msg_len, unsigned char *result_sha1);
+			 const char *msg, size_t msg_len, struct object_id *result_oid);
 
 void commit_notes(struct notes_tree *t, const char *msg);
 

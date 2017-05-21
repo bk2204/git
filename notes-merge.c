@@ -644,7 +644,7 @@ int notes_merge(struct notes_merge_options *o,
 		commit_list_insert(local, &parents);
 		create_notes_commit(local_tree, parents,
 				    o->commit_msg.buf, o->commit_msg.len,
-				    result_oid->hash);
+				    result_oid);
 	}
 
 found_result:
@@ -719,7 +719,7 @@ int notes_merge_commit(struct notes_merge_options *o,
 	}
 
 	create_notes_commit(partial_tree, partial_commit->parents,
-			    msg, strlen(msg), result_oid->hash);
+			    msg, strlen(msg), result_oid);
 	unuse_commit_buffer(partial_commit, buffer);
 	if (o->verbosity >= 4)
 		printf("Finalized notes merge commit: %s\n",

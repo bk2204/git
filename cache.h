@@ -1236,8 +1236,8 @@ static inline const unsigned char *lookup_replace_object(const unsigned char *sh
 	return do_lookup_replace_object(sha1);
 }
 
-/* Read and unpack a sha1 file into memory, write memory to a sha1 file */
-extern int sha1_object_info(const unsigned char *, unsigned long *);
+/* Read and unpack an object file into memory, write memory to an object file */
+extern int oid_object_info(const struct object_id *, unsigned long *);
 extern int hash_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *sha1);
 extern int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *return_sha1);
 extern int hash_sha1_file_literally(const void *buf, unsigned long len, const char *type, struct object_id *oid, unsigned flags);
@@ -1785,7 +1785,7 @@ struct object_info {
 #define OBJECT_INFO_SKIP_CACHED 4
 /* Do not retry packed storage after checking packed and loose storage */
 #define OBJECT_INFO_QUICK 8
-extern int sha1_object_info_extended(const unsigned char *, struct object_info *, unsigned flags);
+extern int oid_object_info_extended(const struct object_id *, struct object_info *, unsigned flags);
 
 /* Dumb servers support */
 extern int update_server_info(int);

@@ -53,8 +53,8 @@ static int show_reference(const char *refname, const struct object_id *oid,
 			if (get_oid(refname, &object))
 				return error("Failed to resolve '%s' as a valid ref.", refname);
 
-			obj_type = sha1_object_info(object.hash, NULL);
-			repl_type = sha1_object_info(oid->hash, NULL);
+			obj_type = oid_object_info(&object, NULL);
+			repl_type = oid_object_info(oid, NULL);
 
 			printf("%s (%s) -> %s (%s)\n", refname, typename(obj_type),
 			       oid_to_hex(oid), typename(repl_type));
@@ -162,8 +162,8 @@ static int replace_object_oid(const char *object_ref,
 	struct ref_transaction *transaction;
 	struct strbuf err = STRBUF_INIT;
 
-	obj_type = sha1_object_info(object->hash, NULL);
-	repl_type = sha1_object_info(repl->hash, NULL);
+	obj_type = oid_object_info(object, NULL);
+	repl_type = oid_object_info(repl, NULL);
 	if (!force && obj_type != repl_type)
 		die("Objects must be of the same type.\n"
 		    "'%s' points to a replaced object of type '%s'\n"
@@ -290,7 +290,7 @@ static int edit_and_replace(const char *object_ref, int force, int raw)
 	if (get_oid(object_ref, &old) < 0)
 		die("Not a valid object name: '%s'", object_ref);
 
-	type = sha1_object_info(old.hash, NULL);
+	type = oid_object_info(&old, NULL);
 	if (type < 0)
 		die("unable to get object type for %s", oid_to_hex(&old));
 

@@ -23,13 +23,13 @@
  * combine_notes_concatenate(), which appends the contents of the new note to
  * the contents of the existing note.
  */
-typedef int (*combine_notes_fn)(unsigned char *cur_sha1, const unsigned char *new_sha1);
+typedef int (*combine_notes_fn)(struct object_id *cur_oid, const struct object_id *new_oid);
 
 /* Common notes combinators */
-int combine_notes_concatenate(unsigned char *cur_sha1, const unsigned char *new_sha1);
-int combine_notes_overwrite(unsigned char *cur_sha1, const unsigned char *new_sha1);
-int combine_notes_ignore(unsigned char *cur_sha1, const unsigned char *new_sha1);
-int combine_notes_cat_sort_uniq(unsigned char *cur_sha1, const unsigned char *new_sha1);
+int combine_notes_concatenate(struct object_id *cur_oid, const struct object_id *new_oid);
+int combine_notes_overwrite(struct object_id *cur_oid, const struct object_id *new_oid);
+int combine_notes_ignore(struct object_id *cur_oid, const struct object_id *new_oid);
+int combine_notes_cat_sort_uniq(struct object_id *cur_oid, const struct object_id *new_oid);
 
 /*
  * Notes tree object

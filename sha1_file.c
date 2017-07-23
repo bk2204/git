@@ -1218,21 +1218,17 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 	static struct object_info blank_oi = OBJECT_INFO_INIT;
 	struct pack_entry e;
 	int rtype;
-	const unsigned char *real = (flags & OBJECT_INFO_LOOKUP_REPLACE) ?
-				    lookup_replace_object(oid->hash) :
-				    oid->hash;
-	struct object_id realoid;
-
-	hashcpy(realoid.hash, real);
-
-	if (is_null_sha1(real))
+	const struct object_id *real = (flags & OBJECT_INFO_LOOKUP_REPLACE) ?
+				       lookup_replace_object(oid) :
+				       oid;
+	if (is_null_oid(real))
 		return -1;
 
 	if (!oi)
 		oi = &blank_oi;
 
 	if (!(flags & OBJECT_INFO_SKIP_CACHED)) {
-		struct cached_object *co = find_cached_object(real);
+		struct cached_object *co = find_cached_object(real->hash);
 		if (co) {
 			if (oi->typep)
 				*(oi->typep) = co->type;
@@ -1251,9 +1247,9 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 		}
 	}
 
-	if (!find_pack_entry(real, &e)) {
+	if (!find_pack_entry(real->hash, &e)) {
 		/* Most likely it's a loose object. */
-		if (!sha1_loose_object_info(real, oi, flags))
+		if (!sha1_loose_object_info(real->hash, oi, flags))
 			return 0;
 
 		/* Not a loose object; someone else may have just packed it. */
@@ -1261,7 +1257,7 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 			return -1;
 		} else {
 			reprepare_packed_git();
-			if (!find_pack_entry(real, &e))
+			if (!find_pack_entry(real->hash, &e))
 				return -1;
 		}
 	}
@@ -1275,8 +1271,8 @@ int oid_object_info_extended(const struct object_id *oid, struct object_info *oi
 
 	rtype = packed_object_info(e.p, e.offset, oi);
 	if (rtype < 0) {
-		mark_bad_packed_object(e.p, real);
-		return oid_object_info_extended(&realoid, oi, 0);
+		mark_bad_packed_object(e.p, real->hash);
+		return oid_object_info_extended(real, oi, 0);
 	} else if (oi->whence == OI_PACKED) {
 		oi->u.packed.offset = e.offset;
 		oi->u.packed.pack = e.p;
@@ -1350,11 +1346,11 @@ void *read_object_file_extended(const struct object_id *oid,
 	const struct packed_git *p;
 	const char *path;
 	struct stat st;
-	const unsigned char *repl = lookup_replace ? lookup_replace_object(oid->hash)
-						   : oid->hash;
+	const struct object_id *repl = lookup_replace ? lookup_replace_object(oid)
+						      : oid;
 
 	errno = 0;
-	data = read_object(repl, type, size);
+	data = read_object(repl->hash, type, size);
 	if (data)
 		return data;
 
@@ -1362,17 +1358,17 @@ void *read_object_file_extended(const struct object_id *oid,
 		die_errno("failed to read object %s", oid_to_hex(oid));
 
 	/* die if we replaced an object with one that does not exist */
-	if (repl != oid->hash)
+	if (repl != oid)
 		die("replacement %s not found for %s",
-		    sha1_to_hex(repl), oid_to_hex(oid));
+		    oid_to_hex(repl), oid_to_hex(oid));
 
-	if (!stat_sha1_file(repl, &st, &path))
+	if (!stat_sha1_file(repl->hash, &st, &path))
 		die("loose object %s (stored in %s) is corrupt",
-		    sha1_to_hex(repl), path);
+		    oid_to_hex(repl), path);
 
-	if ((p = has_packed_and_bad(repl)) != NULL)
+	if ((p = has_packed_and_bad(repl->hash)) != NULL)
 		die("packed object %s (stored in %s) is corrupt",
-		    sha1_to_hex(repl), p->pack_name);
+		    oid_to_hex(repl), p->pack_name);
 
 	return NULL;
 }

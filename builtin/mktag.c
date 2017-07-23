@@ -165,7 +165,7 @@ int cmd_mktag(int argc, const char **argv, const char *prefix)
 	if (verify_tag(buf.buf, buf.len) < 0)
 		die("invalid tag signature file");
 
-	if (write_sha1_file(buf.buf, buf.len, tag_type, result_oid.hash) < 0)
+	if (write_object_file(buf.buf, buf.len, tag_type, &result_oid) < 0)
 		die("unable to write tag file");
 
 	strbuf_release(&buf);

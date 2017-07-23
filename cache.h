@@ -1239,7 +1239,7 @@ static inline const struct object_id *lookup_replace_object(const struct object_
 /* Read and unpack an object file into memory, write memory to an object file */
 extern int oid_object_info(const struct object_id *, unsigned long *);
 extern int hash_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *sha1);
-extern int write_sha1_file(const void *buf, unsigned long len, const char *type, unsigned char *return_sha1);
+extern int write_object_file(const void *buf, unsigned long len, const char *type, struct object_id *return_oid);
 extern int hash_sha1_file_literally(const void *buf, unsigned long len, const char *type, struct object_id *oid, unsigned flags);
 extern int pretend_object_file(void *, unsigned long, enum object_type, struct object_id *);
 extern int force_object_loose(const struct object_id *oid, time_t mtime);

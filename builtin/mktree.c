@@ -57,7 +57,7 @@ static void write_tree(struct object_id *oid)
 		strbuf_add(&buf, ent->oid.hash, GIT_SHA1_RAWSZ);
 	}
 
-	write_sha1_file(buf.buf, buf.len, tree_type, oid->hash);
+	write_object_file(buf.buf, buf.len, tree_type, oid);
 	strbuf_release(&buf);
 }
 

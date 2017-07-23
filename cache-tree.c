@@ -409,7 +409,7 @@ static int update_one(struct cache_tree *it,
 	} else if (dryrun)
 		hash_sha1_file(buffer.buf, buffer.len, tree_type,
 			       it->oid.hash);
-	else if (write_sha1_file(buffer.buf, buffer.len, tree_type, it->oid.hash)) {
+	else if (write_object_file(buffer.buf, buffer.len, tree_type, &it->oid)) {
 		strbuf_release(&buffer);
 		return -1;
 	}

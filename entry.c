@@ -85,7 +85,7 @@ static int create_file(const char *path, unsigned int mode)
 static void *read_blob_entry(const struct cache_entry *ce, unsigned long *size)
 {
 	enum object_type type;
-	void *new = read_sha1_file(ce->oid.hash, &type, size);
+	void *new = read_object_file(&ce->oid, &type, size);
 
 	if (new) {
 		if (type == OBJ_BLOB)

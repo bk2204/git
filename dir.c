@@ -245,7 +245,7 @@ static int do_read_blob(const struct object_id *oid,
 	*size_out = 0;
 	*data_out = NULL;
 
-	data = read_sha1_file(oid->hash, &type, &sz);
+	data = read_object_file(oid, &type, &sz);
 	if (!data || type != OBJ_BLOB) {
 		free(data);
 		return -1;

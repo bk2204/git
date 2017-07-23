@@ -2545,8 +2545,8 @@ struct ondisk_untracked_cache {
 	struct stat_data info_exclude_stat;
 	struct stat_data excludes_file_stat;
 	uint32_t dir_flags;
-	unsigned char info_exclude_sha1[20];
-	unsigned char excludes_file_sha1[20];
+	struct object_id info_exclude_oid;
+	struct object_id excludes_file_oid;
 	char exclude_per_dir[FLEX_ARRAY];
 };
 
@@ -2638,8 +2638,8 @@ void write_untracked_extension(struct strbuf *out, struct untracked_cache *untra
 	FLEX_ALLOC_MEM(ouc, exclude_per_dir, untracked->exclude_per_dir, len);
 	stat_data_to_disk(&ouc->info_exclude_stat, &untracked->ss_info_exclude.stat);
 	stat_data_to_disk(&ouc->excludes_file_stat, &untracked->ss_excludes_file.stat);
-	hashcpy(ouc->info_exclude_sha1, untracked->ss_info_exclude.oid.hash);
-	hashcpy(ouc->excludes_file_sha1, untracked->ss_excludes_file.oid.hash);
+	oidcpy(&ouc->info_exclude_oid, &untracked->ss_info_exclude.oid);
+	oidcpy(&ouc->excludes_file_oid, &untracked->ss_excludes_file.oid);
 	ouc->dir_flags = htonl(untracked->dir_flags);
 
 	varint_len = encode_varint(untracked->ident.len, varbuf);
@@ -2818,10 +2818,10 @@ static void read_sha1(size_t pos, void *cb)
 
 static void load_oid_stat(struct oid_stat *oid_stat,
 			   const unsigned char *data,
-			   const unsigned char *sha1)
+			   const unsigned char *hash)
 {
 	stat_data_from_disk(&oid_stat->stat, data);
-	hashcpy(oid_stat->oid.hash, sha1);
+	hashcpy(oid_stat->oid.hash, hash);
 	oid_stat->valid = 1;
 }
 
@@ -2852,10 +2852,10 @@ struct untracked_cache *read_untracked_extension(const void *data, unsigned long
 	strbuf_add(&uc->ident, ident, ident_len);
 	load_oid_stat(&uc->ss_info_exclude,
 		      next + ouc_offset(info_exclude_stat),
-		      next + ouc_offset(info_exclude_sha1));
+		      next + ouc_offset(info_exclude_oid));
 	load_oid_stat(&uc->ss_excludes_file,
 		      next + ouc_offset(excludes_file_stat),
-		      next + ouc_offset(excludes_file_sha1));
+		      next + ouc_offset(excludes_file_oid));
 	uc->dir_flags = get_be32(next + ouc_offset(dir_flags));
 	exclude_per_dir = (const char *)next + ouc_offset(exclude_per_dir);
 	uc->exclude_per_dir = xstrdup(exclude_per_dir);

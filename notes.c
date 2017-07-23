@@ -1123,7 +1123,7 @@ int for_each_note(struct notes_tree *t, int flags, each_note_fn fn,
 	return for_each_note_helper(t, t->root, 0, 0, flags, fn, cb_data);
 }
 
-int write_notes_tree(struct notes_tree *t, unsigned char *result)
+int write_notes_tree(struct notes_tree *t, struct object_id *result)
 {
 	struct tree_write_stack root;
 	struct write_each_note_data cb_data;
@@ -1146,7 +1146,7 @@ int write_notes_tree(struct notes_tree *t, unsigned char *result)
 			write_each_note, &cb_data) ||
 		write_each_non_note_until(NULL, &cb_data) ||
 		tree_write_stack_finish_subtree(&root) ||
-		write_sha1_file(root.buf.buf, root.buf.len, tree_type, result);
+		write_sha1_file(root.buf.buf, root.buf.len, tree_type, result->hash);
 	strbuf_release(&root.buf);
 	return ret;
 }

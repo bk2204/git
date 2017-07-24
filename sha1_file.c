@@ -799,7 +799,7 @@ int check_object_signature(const struct object_id *oid, void *map,
 	int hdrlen;
 
 	if (map) {
-		hash_sha1_file(map, size, type, real_oid.hash);
+		hash_object_file(map, size, type, &real_oid);
 		return oidcmp(oid, &real_oid) ? -1 : 0;
 	}
 
@@ -1322,7 +1322,7 @@ int pretend_object_file(void *buf, unsigned long len, enum object_type type,
 {
 	struct cached_object *co;
 
-	hash_sha1_file(buf, len, typename(type), oid->hash);
+	hash_object_file(buf, len, typename(type), oid);
 	if (has_object_file(oid) || find_cached_object(oid->hash))
 		return 0;
 	ALLOC_GROW(cached_objects, cached_object_nr + 1, cached_object_alloc);
@@ -1490,12 +1490,12 @@ static int write_buffer(int fd, const void *buf, size_t len)
 	return 0;
 }
 
-int hash_sha1_file(const void *buf, unsigned long len, const char *type,
-                   unsigned char *sha1)
+int hash_object_file(const void *buf, unsigned long len, const char *type,
+		    struct object_id *oid)
 {
 	char hdr[MAX_HEADER_LEN];
 	int hdrlen = sizeof(hdr);
-	write_sha1_file_prepare(buf, len, type, sha1, hdr, &hdrlen);
+	write_sha1_file_prepare(buf, len, type, oid->hash, hdr, &hdrlen);
 	return 0;
 }
 
@@ -1652,8 +1652,8 @@ int write_object_file(const void *buf, unsigned long len, const char *type, stru
 	return write_loose_object(oid->hash, hdr, hdrlen, buf, len, 0);
 }
 
-int hash_sha1_file_literally(const void *buf, unsigned long len, const char *type,
-			     struct object_id *oid, unsigned flags)
+int hash_object_file_literally(const void *buf, unsigned long len, const char *type,
+			       struct object_id *oid, unsigned flags)
 {
 	char *header;
 	int hdrlen, status = 0;
@@ -1776,7 +1776,7 @@ static int index_mem(struct object_id *oid, void *buf, size_t size,
 	if (write_object)
 		ret = write_object_file(buf, size, typename(type), oid);
 	else
-		ret = hash_sha1_file(buf, size, typename(type), oid->hash);
+		ret = hash_object_file(buf, size, typename(type), oid);
 	if (re_allocated)
 		free(buf);
 	return ret;
@@ -1799,8 +1799,8 @@ static int index_stream_convert_blob(struct object_id *oid, int fd,
 		ret = write_object_file(sbuf.buf, sbuf.len,
 					typename(OBJ_BLOB), oid);
 	else
-		ret = hash_sha1_file(sbuf.buf, sbuf.len, typename(OBJ_BLOB),
-				     oid->hash);
+		ret = hash_object_file(sbuf.buf, sbuf.len, typename(OBJ_BLOB),
+				       oid);
 	strbuf_release(&sbuf);
 	return ret;
 }
@@ -1914,7 +1914,7 @@ int index_path(struct object_id *oid, const char *path, struct stat *st, unsigne
 		if (strbuf_readlink(&sb, path, st->st_size))
 			return error_errno("readlink(\"%s\")", path);
 		if (!(flags & HASH_WRITE_OBJECT))
-			hash_sha1_file(sb.buf, sb.len, blob_type, oid->hash);
+			hash_object_file(sb.buf, sb.len, blob_type, oid);
 		else if (write_object_file(sb.buf, sb.len, blob_type, oid))
 			rc = error("%s: failed to insert into database", path);
 		strbuf_release(&sb);

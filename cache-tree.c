@@ -401,14 +401,13 @@ static int update_one(struct cache_tree *it,
 
 	if (repair) {
 		struct object_id oid;
-		hash_sha1_file(buffer.buf, buffer.len, tree_type, oid.hash);
+		hash_object_file(buffer.buf, buffer.len, tree_type, &oid);
 		if (has_sha1_file(oid.hash))
 			oidcpy(&it->oid, &oid);
 		else
 			to_invalidate = 1;
 	} else if (dryrun)
-		hash_sha1_file(buffer.buf, buffer.len, tree_type,
-			       it->oid.hash);
+		hash_object_file(buffer.buf, buffer.len, tree_type, &it->oid);
 	else if (write_object_file(buffer.buf, buffer.len, tree_type, &it->oid)) {
 		strbuf_release(&buffer);
 		return -1;

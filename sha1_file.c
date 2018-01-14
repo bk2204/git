@@ -78,7 +78,6 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		0x00000000,
 		0,
 		0,
-		0,
 		git_hash_unknown_init,
 		git_hash_unknown_update,
 		git_hash_unknown_final,
@@ -89,7 +88,6 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		"sha-1",
 		/* "sha1", big-endian */
 		0x73686131,
-		sizeof(git_SHA_CTX),
 		GIT_SHA1_RAWSZ,
 		GIT_SHA1_HEXSZ,
 		git_hash_sha1_init,

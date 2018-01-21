@@ -14,7 +14,7 @@ void initialize_the_repository(void)
 
 	the_repo.index = &the_index;
 	the_repo.objects = raw_object_store_new();
-	repo_set_hash_algo(&the_repo, GIT_HASH_SHA1);
+	repo_set_hash_algo(&the_repo, GIT_HASH_SBLAKE2);
 }
 
 static void expand_base_dir(char **out, const char *in,

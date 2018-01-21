@@ -45,6 +45,10 @@ unsigned long git_deflate_bound(git_zstream *, unsigned long);
 #define GIT_SHA1_RAWSZ 20
 #define GIT_SHA1_HEXSZ (2 * GIT_SHA1_RAWSZ)
 
+/* The length in bytes and in hex digits of an object name (short BLAKE2b value). */
+#define GIT_SBLAKE2B_RAWSZ 20
+#define GIT_SBLAKE2B_HEXSZ (2 * GIT_SBLAKE2B_RAWSZ)
+
 /* The length in byte and in hex digits of the largest possible hash value. */
 #define GIT_MAX_RAWSZ GIT_SHA1_RAWSZ
 #define GIT_MAX_HEXSZ GIT_SHA1_HEXSZ

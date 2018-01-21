@@ -40,10 +40,16 @@
 #define EMPTY_TREE_SHA1_BIN_LITERAL \
 	 "\x4b\x82\x5d\xc6\x42\xcb\x6e\xb9\xa0\x60" \
 	 "\xe5\x4b\xf8\xd6\x92\x88\xfb\xee\x49\x04"
+#define EMPTY_TREE_SBLAKE2B_BIN_LITERAL \
+	"\xf4\x44\x22\xa6\x44\xbf\xa5\x21\x23\x87" \
+	"\x09\x8f\x25\x3a\x1e\x89\xeb\xa9\x45\x48"
 
 #define EMPTY_BLOB_SHA1_BIN_LITERAL \
 	"\xe6\x9d\xe2\x9b\xb2\xd1\xd6\x43\x4b\x8b" \
 	"\x29\xae\x77\x5a\xd8\xc2\xe4\x8c\x53\x91"
+#define EMPTY_BLOB_SBLAKE2B_BIN_LITERAL \
+	"\xa7\x06\x65\x0a\x47\x7f\x63\xb9\xb0\x0e" \
+	"\xba\x41\x27\x2b\xf3\x6e\xf5\xa7\xdf\xa2"
 
 const unsigned char null_sha1[GIT_MAX_RAWSZ];
 const struct object_id null_oid;
@@ -52,6 +58,12 @@ static const struct object_id empty_tree_oid = {
 };
 static const struct object_id empty_blob_oid = {
 	EMPTY_BLOB_SHA1_BIN_LITERAL
+};
+static const struct object_id empty_tree_oid_sblake2b = {
+	EMPTY_TREE_SBLAKE2B_BIN_LITERAL
+};
+static const struct object_id empty_blob_oid_sblake2b = {
+	EMPTY_BLOB_SBLAKE2B_BIN_LITERAL
 };
 
 static void git_hash_sha1_init(git_hash_ctx *ctx)
@@ -67,6 +79,21 @@ static void git_hash_sha1_update(git_hash_ctx *ctx, const void *data, size_t len
 static void git_hash_sha1_final(unsigned char *hash, git_hash_ctx *ctx)
 {
 	git_SHA1_Final(hash, &ctx->sha1);
+}
+
+static void git_hash_sblake2b_init(git_hash_ctx *ctx)
+{
+	blake2b_init(&ctx->blake2b, GIT_SBLAKE2B_RAWSZ);
+}
+
+static void git_hash_sblake2b_update(git_hash_ctx *ctx, const void *data, size_t len)
+{
+	blake2b_update(&ctx->blake2b, data, len);
+}
+
+static void git_hash_sblake2b_final(unsigned char *hash, git_hash_ctx *ctx)
+{
+	blake2b_final(&ctx->blake2b, hash, GIT_SBLAKE2B_RAWSZ);
 }
 
 static void git_hash_unknown_init(git_hash_ctx *ctx)
@@ -108,6 +135,18 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		&empty_tree_oid,
 		&empty_blob_oid,
 	},
+	{
+		"sblake2b",
+		/* "sb2b", big-endian */
+		0x73623262,
+		GIT_SBLAKE2B_RAWSZ,
+		GIT_SBLAKE2B_HEXSZ,
+		git_hash_sblake2b_init,
+		git_hash_sblake2b_update,
+		git_hash_sblake2b_final,
+		&empty_tree_oid_sblake2b,
+		&empty_blob_oid_sblake2b,
+	}
 };
 
 const char *empty_tree_oid_hex(void)

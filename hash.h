@@ -15,6 +15,8 @@
 #include "block-sha1/sha1.h"
 #endif
 
+#include <blake2.h>
+
 #ifndef platform_SHA_CTX
 /*
  * platform's underlying implementation of SHA-1; could be OpenSSL,
@@ -40,6 +42,8 @@
 #define git_SHA1_Update		git_SHA1_Update_Chunked
 #endif
 
+#define git_BLAKE2B_CTX		blake2b_state
+
 /*
  * Note that these constants are suitable for indexing the hash_algos array and
  * comparing against each other, but are otherwise arbitrary, so they should not
@@ -52,12 +56,15 @@
 #define GIT_HASH_UNKNOWN 0
 /* SHA-1 */
 #define GIT_HASH_SHA1 1
+/* 20-byte BLAKE2b ("short" BLAKE2b) */
+#define GIT_HASH_SBLAKE2 2
 /* Number of algorithms supported (including unknown). */
-#define GIT_HASH_NALGOS (GIT_HASH_SHA1 + 1)
+#define GIT_HASH_NALGOS (GIT_HASH_SBLAKE2 + 1)
 
 /* A suitably aligned type for stack allocations of hash contexts. */
 union git_hash_ctx {
 	git_SHA_CTX sha1;
+	git_BLAKE2B_CTX blake2b;
 };
 typedef union git_hash_ctx git_hash_ctx;
 

@@ -31,6 +31,7 @@ static struct test_cmd cmds[] = {
 	{ "regex", cmd__regex },
 	{ "revision-walking", cmd__revision_walking },
 	{ "run-command", cmd__run_command },
+	{ "sblake2b", cmd__sblake2b },
 	{ "scrap-cache-tree", cmd__scrap_cache_tree },
 	{ "sha1-array", cmd__sha1_array },
 	{ "sha1", cmd__sha1 },

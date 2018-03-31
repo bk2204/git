@@ -6,7 +6,7 @@ test_description='diff honors config option, diff.suppressBlankEmpty'
 
 . ./test-lib.sh
 
-cat <<\EOF > exp ||
+cat <<\EOF >expected ||
 diff --git a/f b/f
 index 5f6a263..8cb8bae 100644
 --- a/f
@@ -20,9 +20,12 @@ exit 1
 
 test_expect_success "$test_description" '
 	printf "\nx\n" > f &&
+	before=$(git rev-parse --short $(git hash-object f)) &&
 	git add f &&
 	git commit -q -m. f &&
 	printf "\ny\n" > f &&
+	after=$(git rev-parse --short $(git hash-object f)) &&
+	sed -e "s/^index .*/index $before..$after 100644/" expected >exp &&
 	git config --bool diff.suppressBlankEmpty true &&
 	git diff f > actual &&
 	test_cmp exp actual &&

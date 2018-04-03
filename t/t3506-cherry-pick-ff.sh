@@ -95,7 +95,7 @@ test_expect_success 'cherry pick a merge relative to nonexistent parent with --f
 	test_must_fail git cherry-pick --ff -m 3 C
 '
 
-test_expect_success 'cherry pick a root commit with --ff' '
+test_expect_success SHA1 'cherry pick a root commit with --ff' '
 	git reset --hard first -- &&
 	git rm file1 &&
 	echo first >file2 &&

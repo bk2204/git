@@ -3,6 +3,12 @@
 test_description='bounds-checking of access to mmapped on-disk file formats'
 . ./test-lib.sh
 
+if ! test_have_prereq SHA1
+then
+       skip_all='not using SHA-1 for objects'
+       test_done
+fi
+
 clear_base () {
 	test_when_finished 'restore_base' &&
 	rm -f $base

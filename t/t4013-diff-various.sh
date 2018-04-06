@@ -409,19 +409,25 @@ test_expect_success 'log -S requires an argument' '
 	test_must_fail git log -S
 '
 
-test_expect_success SHA1 'diff --cached on unborn branch' '
+test_expect_success 'diff --cached on unborn branch' '
 	echo ref: refs/heads/unborn >.git/HEAD &&
 	git diff --cached >result &&
-	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--cached" result
+	process_diffs result >actual &&
+	process_diffs "$TEST_DIRECTORY/t4013/diff.diff_--cached" >expected &&
+	test_cmp expected actual
 '
 
-test_expect_success SHA1 'diff --cached -- file on unborn branch' '
+test_expect_success 'diff --cached -- file on unborn branch' '
 	git diff --cached -- file0 >result &&
-	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--cached_--_file0" result
+	process_diffs result >actual &&
+	process_diffs "$TEST_DIRECTORY/t4013/diff.diff_--cached_--_file0" >expected &&
+	test_cmp expected actual
 '
-test_expect_success SHA1 'diff --line-prefix with spaces' '
+test_expect_success 'diff --line-prefix with spaces' '
 	git diff --line-prefix="| | | " --cached -- file0 >result &&
-	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--line-prefix_--cached_--_file0" result
+	process_diffs result >actual &&
+	process_diffs "$TEST_DIRECTORY/t4013/diff.diff_--line-prefix_--cached_--_file0" >expected &&
+	test_cmp expected actual
 '
 
 test_expect_success 'diff-tree --stdin with log formatting' '

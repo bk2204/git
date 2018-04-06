@@ -81,7 +81,7 @@ cat > expect << EOF
 100644 fd7923529855d0b274795ae3349c5e0438333979 3	a1
 EOF
 
-test_expect_success "virtual trees were processed" "test_cmp expect out"
+test_expect_success SHA1 "virtual trees were processed" "test_cmp expect out"
 
 test_expect_success 'refuse to merge binary files' '
 	git reset --hard &&

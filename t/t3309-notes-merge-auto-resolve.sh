@@ -7,6 +7,12 @@ test_description='Test notes merging with auto-resolving strategies'
 
 . ./test-lib.sh
 
+if ! test_have_prereq SHA1
+then
+       skip_all='not using SHA-1 for objects'
+       test_done
+fi
+
 # Set up a notes merge scenario with all kinds of potential conflicts
 test_expect_success 'setup commits' '
 	test_commit 1st &&

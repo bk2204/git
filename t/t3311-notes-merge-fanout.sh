@@ -7,6 +7,12 @@ test_description='Test notes merging at various fanout levels'
 
 . ./test-lib.sh
 
+if ! test_have_prereq SHA1
+then
+       skip_all='not using SHA-1 for objects'
+       test_done
+fi
+
 verify_notes () {
 	notes_ref="$1"
 	commit="$2"

@@ -7,6 +7,13 @@ test_description='Test diff raw-output.
 
 '
 . ./test-lib.sh
+
+if ! test_have_prereq SHA1
+then
+       skip_all='not using SHA-1 for objects'
+       test_done
+fi
+
 . "$TEST_DIRECTORY"/lib-read-tree-m-3way.sh
 
 cat >.test-plain-OA <<\EOF

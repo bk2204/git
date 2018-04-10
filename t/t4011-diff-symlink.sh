@@ -10,10 +10,12 @@ test_description='Test diff of symlinks.
 . "$TEST_DIRECTORY"/diff-lib.sh
 
 test_expect_success 'diff new symlink and file' '
-	cat >expected <<-\EOF &&
+	symlink=$(git rev-parse --short \
+		$(printf xyzzy | git hash-object --stdin)) &&
+	cat >expected <<-EOF &&
 	diff --git a/frotz b/frotz
 	new file mode 120000
-	index 0000000..7c465af
+	index 0000000..$symlink
 	--- /dev/null
 	+++ b/frotz
 	@@ -0,0 +1 @@
@@ -21,7 +23,7 @@ test_expect_success 'diff new symlink and file' '
 	\ No newline at end of file
 	diff --git a/nitfol b/nitfol
 	new file mode 100644
-	index 0000000..7c465af
+	index 0000000..$symlink
 	--- /dev/null
 	+++ b/nitfol
 	@@ -0,0 +1 @@
@@ -46,10 +48,10 @@ test_expect_success 'diff unchanged symlink and file'  '
 '
 
 test_expect_success 'diff removed symlink and file' '
-	cat >expected <<-\EOF &&
+	cat >expected <<-EOF &&
 	diff --git a/frotz b/frotz
 	deleted file mode 120000
-	index 7c465af..0000000
+	index $symlink..0000000
 	--- a/frotz
 	+++ /dev/null
 	@@ -1 +0,0 @@
@@ -57,7 +59,7 @@ test_expect_success 'diff removed symlink and file' '
 	\ No newline at end of file
 	diff --git a/nitfol b/nitfol
 	deleted file mode 100644
-	index 7c465af..0000000
+	index $symlink..0000000
 	--- a/nitfol
 	+++ /dev/null
 	@@ -1 +0,0 @@
@@ -90,9 +92,11 @@ test_expect_success 'diff identical, but newly created symlink and file' '
 '
 
 test_expect_success 'diff different symlink and file' '
-	cat >expected <<-\EOF &&
+	new=$(git rev-parse --short \
+		$(printf yxyyz | git hash-object --stdin)) &&
+	cat >expected <<-EOF &&
 	diff --git a/frotz b/frotz
-	index 7c465af..df1db54 120000
+	index $symlink..$new 120000
 	--- a/frotz
 	+++ b/frotz
 	@@ -1 +1 @@
@@ -101,7 +105,7 @@ test_expect_success 'diff different symlink and file' '
 	+yxyyz
 	\ No newline at end of file
 	diff --git a/nitfol b/nitfol
-	index 7c465af..df1db54 100644
+	index $symlink..$new 100644
 	--- a/nitfol
 	+++ b/nitfol
 	@@ -1 +1 @@
@@ -137,14 +141,17 @@ test_expect_success SYMLINKS 'setup symlinks with attributes' '
 '
 
 test_expect_success SYMLINKS 'symlinks do not respect userdiff config by path' '
-	cat >expect <<-\EOF &&
+	file=$(git rev-parse --short $(git hash-object file.bin)) &&
+	link=$(git rev-parse --short \
+		$(printf file.bin | git hash-object --stdin)) &&
+	cat >expect <<-EOF &&
 	diff --git a/file.bin b/file.bin
 	new file mode 100644
-	index 0000000..d95f3ad
+	index 0000000..$file
 	Binary files /dev/null and b/file.bin differ
 	diff --git a/link.bin b/link.bin
 	new file mode 120000
-	index 0000000..dce41ec
+	index 0000000..$link
 	--- /dev/null
 	+++ b/link.bin
 	@@ -0,0 +1 @@

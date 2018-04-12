@@ -248,7 +248,7 @@ test_expect_success 'A: verify pack' '
 
 test_expect_success 'A: verify diff' '
 	cat >expect <<-EOF &&
-	:000000 100755 0000000000000000000000000000000000000000 7123f7f44e39be127c5eb701e5968176ee9d78b1 A	copy-of-file2
+	:000000 100755 0000000000000000000000000000000000000000 $(git rev-parse --verify master:file2) A	copy-of-file2
 	EOF
 	git diff-tree -M -r master verify--import-marks >actual &&
 	compare_diff_raw expect actual &&
@@ -463,6 +463,7 @@ test_expect_success 'B: fail on invalid committer (5)' '
 test_expect_success 'C: incremental import create pack from stdin' '
 	newf=$(echo hi newf | git hash-object -w --stdin) &&
 	oldf=$(git rev-parse --verify master:file2) &&
+	thrf=$(git rev-parse --verify master:file3) &&
 	test_tick &&
 	cat >input <<-INPUT_END &&
 	commit refs/heads/branch
@@ -505,10 +506,11 @@ test_expect_success 'C: verify commit' '
 '
 
 test_expect_success 'C: validate rename result' '
+	zero=$ZERO_OID &&
 	cat >expect <<-EOF &&
-	:000000 100755 0000000000000000000000000000000000000000 f1fb5da718392694d0076d677d6d0e364c79b0bc A	file2/newf
-	:100644 100644 7123f7f44e39be127c5eb701e5968176ee9d78b1 7123f7f44e39be127c5eb701e5968176ee9d78b1 R100	file2	file2/oldf
-	:100644 000000 0d92e9f3374ae2947c23aa477cbc68ce598135f1 0000000000000000000000000000000000000000 D	file3
+	:000000 100755 $zero $newf A	file2/newf
+	:100644 100644 $oldf $oldf R100	file2	file2/oldf
+	:100644 000000 $thrf $zero D	file3
 	EOF
 	git diff-tree -M -r master branch >actual &&
 	compare_diff_raw expect actual
@@ -549,9 +551,11 @@ test_expect_success 'D: verify pack' '
 '
 
 test_expect_success 'D: validate new files added' '
+	f5id=$(echo "$file5_data" | git hash-object --stdin) &&
+	f6id=$(echo "$file6_data" | git hash-object --stdin) &&
 	cat >expect <<-EOF &&
-	:000000 100755 0000000000000000000000000000000000000000 e74b7d465e52746be2b4bae983670711e6e66657 A	newdir/exec.sh
-	:000000 100644 0000000000000000000000000000000000000000 fcf778cda181eaa1cbc9e9ce3a2e15ee9f9fe791 A	newdir/interesting
+	:000000 100755 0000000000000000000000000000000000000000 $f6id A	newdir/exec.sh
+	:000000 100644 0000000000000000000000000000000000000000 $f5id A	newdir/interesting
 	EOF
 	git diff-tree -M -r branch^ branch >actual &&
 	compare_diff_raw expect actual
@@ -714,12 +718,13 @@ test_expect_success 'H: verify pack' '
 '
 
 test_expect_success 'H: validate old files removed, new files added' '
+	f4id=$(git rev-parse HEAD:file4) &&
 	cat >expect <<-EOF &&
-	:100755 000000 f1fb5da718392694d0076d677d6d0e364c79b0bc 0000000000000000000000000000000000000000 D	file2/newf
-	:100644 000000 7123f7f44e39be127c5eb701e5968176ee9d78b1 0000000000000000000000000000000000000000 D	file2/oldf
-	:100755 000000 85df50785d62d3b05ab03d9cbf7e4a0b49449730 0000000000000000000000000000000000000000 D	file4
-	:100644 100644 fcf778cda181eaa1cbc9e9ce3a2e15ee9f9fe791 fcf778cda181eaa1cbc9e9ce3a2e15ee9f9fe791 R100	newdir/interesting	h/e/l/lo
-	:100755 000000 e74b7d465e52746be2b4bae983670711e6e66657 0000000000000000000000000000000000000000 D	newdir/exec.sh
+	:100755 000000 $newf $zero D	file2/newf
+	:100644 000000 $oldf $zero D	file2/oldf
+	:100755 000000 $f4id $zero D	file4
+	:100644 100644 $f6id $f6id R100	newdir/interesting	h/e/l/lo
+	:100755 000000 $f5id $zero D	newdir/exec.sh
 	EOF
 	git diff-tree -M -r H^ H >actual &&
 	compare_diff_raw expect actual

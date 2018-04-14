@@ -9,7 +9,7 @@ test_expect_success 'setup (import history)' '
 '
 
 canned_test_1 () {
-	test_expect_$1 "$2" "
+	test_expect_$1 SHA1 "$2" "
 		git log $2 >actual &&
 		test_cmp \"\$TEST_DIRECTORY\"/t4211/expect.$3 actual
 	"

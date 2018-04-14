@@ -43,7 +43,7 @@ test_expect_success 'gc is not aborted due to a stale symref' '
 	)
 '
 
-test_expect_success 'auto gc with too many loose objects does not attempt to create bitmaps' '
+test_expect_success SHA1 'auto gc with too many loose objects does not attempt to create bitmaps' '
 	test_config gc.auto 3 &&
 	test_config gc.autodetach false &&
 	test_config pack.writebitmaps true &&
@@ -77,7 +77,7 @@ run_and_wait_for_auto_gc () {
 	doesnt_matter=$(git gc --auto 9>&1)
 }
 
-test_expect_success 'background auto gc does not run if gc.log is present and recent but does if it is old' '
+test_expect_success SHA1 'background auto gc does not run if gc.log is present and recent but does if it is old' '
 	test_commit foo &&
 	test_commit bar &&
 	git repack &&
@@ -95,7 +95,7 @@ test_expect_success 'background auto gc does not run if gc.log is present and re
 	test_line_count = 1 packs
 '
 
-test_expect_success 'background auto gc respects lock for all operations' '
+test_expect_success SHA1 'background auto gc respects lock for all operations' '
 	# make sure we run a background auto-gc
 	test_commit make-pack &&
 	git repack &&

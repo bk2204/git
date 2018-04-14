@@ -87,12 +87,12 @@ test_expect_success 'format %w(,1,2)' '
 '
 
 cat > expect << EOF
-804a787 sixth
-394ef78 fifth
-5d31159 fourth
-2fbe8c0 third
-f7dab8e second
-3a2fdcb initial
+$(git rev-parse --short :/sixth  ) sixth
+$(git rev-parse --short :/fifth  ) fifth
+$(git rev-parse --short :/fourth ) fourth
+$(git rev-parse --short :/third  ) third
+$(git rev-parse --short :/second ) second
+$(git rev-parse --short :/initial) initial
 EOF
 test_expect_success 'oneline' '
 
@@ -173,43 +173,45 @@ test_expect_success 'git config log.follow is overridden by --no-follow' '
 	verbose test "$actual" = "$expect"
 '
 
+# Note that these commits are intentionally listed out of order.
+last_three="$(git rev-parse :/fourth :/sixth :/fifth)"
 cat > expect << EOF
-804a787 sixth
-394ef78 fifth
-5d31159 fourth
+$(git rev-parse --short :/sixth ) sixth
+$(git rev-parse --short :/fifth ) fifth
+$(git rev-parse --short :/fourth) fourth
 EOF
 test_expect_success 'git log --no-walk <commits> sorts by commit time' '
-	git log --no-walk --oneline 5d31159 804a787 394ef78 > actual &&
+	git log --no-walk --oneline $last_three > actual &&
 	test_cmp expect actual
 '
 
 test_expect_success 'git log --no-walk=sorted <commits> sorts by commit time' '
-	git log --no-walk=sorted --oneline 5d31159 804a787 394ef78 > actual &&
+	git log --no-walk=sorted --oneline $last_three > actual &&
 	test_cmp expect actual
 '
 
 cat > expect << EOF
-=== 804a787 sixth
-=== 394ef78 fifth
-=== 5d31159 fourth
+=== $(git rev-parse --short :/sixth ) sixth
+=== $(git rev-parse --short :/fifth ) fifth
+=== $(git rev-parse --short :/fourth) fourth
 EOF
 test_expect_success 'git log --line-prefix="=== " --no-walk <commits> sorts by commit time' '
-	git log --line-prefix="=== " --no-walk --oneline 5d31159 804a787 394ef78 > actual &&
+	git log --line-prefix="=== " --no-walk --oneline $last_three > actual &&
 	test_cmp expect actual
 '
 
 cat > expect << EOF
-5d31159 fourth
-804a787 sixth
-394ef78 fifth
+$(git rev-parse --short :/fourth) fourth
+$(git rev-parse --short :/sixth ) sixth
+$(git rev-parse --short :/fifth ) fifth
 EOF
 test_expect_success 'git log --no-walk=unsorted <commits> leaves list of commits as given' '
-	git log --no-walk=unsorted --oneline 5d31159 804a787 394ef78 > actual &&
+	git log --no-walk=unsorted --oneline $last_three > actual &&
 	test_cmp expect actual
 '
 
 test_expect_success 'git show <commits> leaves list of commits as given' '
-	git show --oneline -s 5d31159 804a787 394ef78 > actual &&
+	git show --oneline -s $last_three > actual &&
 	test_cmp expect actual
 '
 
@@ -942,7 +944,7 @@ cat >expect <<\EOF
 | |
 | | diff --git a/reach.t b/reach.t
 | | new file mode 100644
-| | index 0000000..10c9591
+| | index BEFORE..AFTER
 | | --- /dev/null
 | | +++ b/reach.t
 | | @@ -0,0 +1 @@
@@ -965,7 +967,7 @@ cat >expect <<\EOF
 | | |
 | | |   diff --git a/octopus-b.t b/octopus-b.t
 | | |   new file mode 100644
-| | |   index 0000000..d5fcad0
+| | |   index BEFORE..AFTER
 | | |   --- /dev/null
 | | |   +++ b/octopus-b.t
 | | |   @@ -0,0 +1 @@
@@ -981,7 +983,7 @@ cat >expect <<\EOF
 | |
 | |   diff --git a/octopus-a.t b/octopus-a.t
 | |   new file mode 100644
-| |   index 0000000..11ee015
+| |   index BEFORE..AFTER
 | |   --- /dev/null
 | |   +++ b/octopus-a.t
 | |   @@ -0,0 +1 @@
@@ -997,7 +999,7 @@ cat >expect <<\EOF
 |
 |   diff --git a/seventh.t b/seventh.t
 |   new file mode 100644
-|   index 0000000..9744ffc
+|   index BEFORE..AFTER
 |   --- /dev/null
 |   +++ b/seventh.t
 |   @@ -0,0 +1 @@
@@ -1031,7 +1033,7 @@ cat >expect <<\EOF
 | | | |
 | | | | diff --git a/tangle-a b/tangle-a
 | | | | new file mode 100644
-| | | | index 0000000..7898192
+| | | | index BEFORE..AFTER
 | | | | --- /dev/null
 | | | | +++ b/tangle-a
 | | | | @@ -0,0 +1 @@
@@ -1053,7 +1055,7 @@ cat >expect <<\EOF
 | | | |
 | | | |   diff --git a/2 b/2
 | | | |   new file mode 100644
-| | | |   index 0000000..0cfbf08
+| | | |   index BEFORE..AFTER
 | | | |   --- /dev/null
 | | | |   +++ b/2
 | | | |   @@ -0,0 +1 @@
@@ -1069,7 +1071,7 @@ cat >expect <<\EOF
 | | | |
 | | | | diff --git a/1 b/1
 | | | | new file mode 100644
-| | | | index 0000000..d00491f
+| | | | index BEFORE..AFTER
 | | | | --- /dev/null
 | | | | +++ b/1
 | | | | @@ -0,0 +1 @@
@@ -1085,7 +1087,7 @@ cat >expect <<\EOF
 | | | |
 | | | | diff --git a/one b/one
 | | | | new file mode 100644
-| | | | index 0000000..9a33383
+| | | | index BEFORE..AFTER
 | | | | --- /dev/null
 | | | | +++ b/one
 | | | | @@ -0,0 +1 @@
@@ -1101,7 +1103,7 @@ cat >expect <<\EOF
 | | |
 | | |   diff --git a/a/two b/a/two
 | | |   deleted file mode 100644
-| | |   index 9245af5..0000000
+| | |   index BEFORE..AFTER
 | | |   --- a/a/two
 | | |   +++ /dev/null
 | | |   @@ -1 +0,0 @@
@@ -1117,7 +1119,7 @@ cat >expect <<\EOF
 | | |
 | | | diff --git a/a/two b/a/two
 | | | new file mode 100644
-| | | index 0000000..9245af5
+| | | index BEFORE..AFTER
 | | | --- /dev/null
 | | | +++ b/a/two
 | | | @@ -0,0 +1 @@
@@ -1133,7 +1135,7 @@ cat >expect <<\EOF
 | |
 | |   diff --git a/ein b/ein
 | |   new file mode 100644
-| |   index 0000000..9d7e69f
+| |   index BEFORE..AFTER
 | |   --- /dev/null
 | |   +++ b/ein
 | |   @@ -0,0 +1 @@
@@ -1150,14 +1152,14 @@ cat >expect <<\EOF
 |
 |   diff --git a/ichi b/ichi
 |   new file mode 100644
-|   index 0000000..9d7e69f
+|   index BEFORE..AFTER
 |   --- /dev/null
 |   +++ b/ichi
 |   @@ -0,0 +1 @@
 |   +ichi
 |   diff --git a/one b/one
 |   deleted file mode 100644
-|   index 9d7e69f..0000000
+|   index BEFORE..AFTER
 |   --- a/one
 |   +++ /dev/null
 |   @@ -1 +0,0 @@
@@ -1172,7 +1174,7 @@ cat >expect <<\EOF
 |  1 file changed, 1 insertion(+), 1 deletion(-)
 |
 | diff --git a/one b/one
-| index 5626abf..9d7e69f 100644
+| index BEFORE..AFTER 100644
 | --- a/one
 | +++ b/one
 | @@ -1 +1 @@
@@ -1189,7 +1191,7 @@ cat >expect <<\EOF
 
   diff --git a/one b/one
   new file mode 100644
-  index 0000000..5626abf
+  index BEFORE..AFTER
   --- /dev/null
   +++ b/one
   @@ -0,0 +1 @@
@@ -1206,7 +1208,8 @@ sanitize_output () {
 	    -e 's/, 0 insertions(+)//' \
 	    -e 's/ 1 files changed, / 1 file changed, /' \
 	    -e 's/, 1 deletions(-)/, 1 deletion(-)/' \
-	    -e 's/, 1 insertions(+)/, 1 insertion(+)/'
+	    -e 's/, 1 insertions(+)/, 1 insertion(+)/' \
+	    -e 's/index [0-9a-f]*\.\.[0-9a-f]*/index BEFORE..AFTER/'
 }
 
 test_expect_success 'log --graph with diff and stats' '
@@ -1232,7 +1235,7 @@ cat >expect <<\EOF
 *** | |
 *** | | diff --git a/reach.t b/reach.t
 *** | | new file mode 100644
-*** | | index 0000000..10c9591
+*** | | index BEFORE..AFTER
 *** | | --- /dev/null
 *** | | +++ b/reach.t
 *** | | @@ -0,0 +1 @@
@@ -1255,7 +1258,7 @@ cat >expect <<\EOF
 *** | | |
 *** | | |   diff --git a/octopus-b.t b/octopus-b.t
 *** | | |   new file mode 100644
-*** | | |   index 0000000..d5fcad0
+*** | | |   index BEFORE..AFTER
 *** | | |   --- /dev/null
 *** | | |   +++ b/octopus-b.t
 *** | | |   @@ -0,0 +1 @@
@@ -1271,7 +1274,7 @@ cat >expect <<\EOF
 *** | |
 *** | |   diff --git a/octopus-a.t b/octopus-a.t
 *** | |   new file mode 100644
-*** | |   index 0000000..11ee015
+*** | |   index BEFORE..AFTER
 *** | |   --- /dev/null
 *** | |   +++ b/octopus-a.t
 *** | |   @@ -0,0 +1 @@
@@ -1287,7 +1290,7 @@ cat >expect <<\EOF
 *** |
 *** |   diff --git a/seventh.t b/seventh.t
 *** |   new file mode 100644
-*** |   index 0000000..9744ffc
+*** |   index BEFORE..AFTER
 *** |   --- /dev/null
 *** |   +++ b/seventh.t
 *** |   @@ -0,0 +1 @@
@@ -1321,7 +1324,7 @@ cat >expect <<\EOF
 *** | | | |
 *** | | | | diff --git a/tangle-a b/tangle-a
 *** | | | | new file mode 100644
-*** | | | | index 0000000..7898192
+*** | | | | index BEFORE..AFTER
 *** | | | | --- /dev/null
 *** | | | | +++ b/tangle-a
 *** | | | | @@ -0,0 +1 @@
@@ -1343,7 +1346,7 @@ cat >expect <<\EOF
 *** | | | |
 *** | | | |   diff --git a/2 b/2
 *** | | | |   new file mode 100644
-*** | | | |   index 0000000..0cfbf08
+*** | | | |   index BEFORE..AFTER
 *** | | | |   --- /dev/null
 *** | | | |   +++ b/2
 *** | | | |   @@ -0,0 +1 @@
@@ -1359,7 +1362,7 @@ cat >expect <<\EOF
 *** | | | |
 *** | | | | diff --git a/1 b/1
 *** | | | | new file mode 100644
-*** | | | | index 0000000..d00491f
+*** | | | | index BEFORE..AFTER
 *** | | | | --- /dev/null
 *** | | | | +++ b/1
 *** | | | | @@ -0,0 +1 @@
@@ -1375,7 +1378,7 @@ cat >expect <<\EOF
 *** | | | |
 *** | | | | diff --git a/one b/one
 *** | | | | new file mode 100644
-*** | | | | index 0000000..9a33383
+*** | | | | index BEFORE..AFTER
 *** | | | | --- /dev/null
 *** | | | | +++ b/one
 *** | | | | @@ -0,0 +1 @@
@@ -1391,7 +1394,7 @@ cat >expect <<\EOF
 *** | | |
 *** | | |   diff --git a/a/two b/a/two
 *** | | |   deleted file mode 100644
-*** | | |   index 9245af5..0000000
+*** | | |   index BEFORE..AFTER
 *** | | |   --- a/a/two
 *** | | |   +++ /dev/null
 *** | | |   @@ -1 +0,0 @@
@@ -1407,7 +1410,7 @@ cat >expect <<\EOF
 *** | | |
 *** | | | diff --git a/a/two b/a/two
 *** | | | new file mode 100644
-*** | | | index 0000000..9245af5
+*** | | | index BEFORE..AFTER
 *** | | | --- /dev/null
 *** | | | +++ b/a/two
 *** | | | @@ -0,0 +1 @@
@@ -1423,7 +1426,7 @@ cat >expect <<\EOF
 *** | |
 *** | |   diff --git a/ein b/ein
 *** | |   new file mode 100644
-*** | |   index 0000000..9d7e69f
+*** | |   index BEFORE..AFTER
 *** | |   --- /dev/null
 *** | |   +++ b/ein
 *** | |   @@ -0,0 +1 @@
@@ -1440,14 +1443,14 @@ cat >expect <<\EOF
 *** |
 *** |   diff --git a/ichi b/ichi
 *** |   new file mode 100644
-*** |   index 0000000..9d7e69f
+*** |   index BEFORE..AFTER
 *** |   --- /dev/null
 *** |   +++ b/ichi
 *** |   @@ -0,0 +1 @@
 *** |   +ichi
 *** |   diff --git a/one b/one
 *** |   deleted file mode 100644
-*** |   index 9d7e69f..0000000
+*** |   index BEFORE..AFTER
 *** |   --- a/one
 *** |   +++ /dev/null
 *** |   @@ -1 +0,0 @@
@@ -1462,7 +1465,7 @@ cat >expect <<\EOF
 *** |  1 file changed, 1 insertion(+), 1 deletion(-)
 *** |
 *** | diff --git a/one b/one
-*** | index 5626abf..9d7e69f 100644
+*** | index BEFORE..AFTER 100644
 *** | --- a/one
 *** | +++ b/one
 *** | @@ -1 +1 @@
@@ -1479,7 +1482,7 @@ cat >expect <<\EOF
 ***
 ***   diff --git a/one b/one
 ***   new file mode 100644
-***   index 0000000..5626abf
+***   index BEFORE..AFTER
 ***   --- /dev/null
 ***   +++ b/one
 ***   @@ -0,0 +1 @@
@@ -1674,10 +1677,10 @@ test_expect_success 'set up --source tests' '
 '
 
 test_expect_success 'log --source paints branch names' '
-	cat >expect <<-\EOF &&
-	09e12a9	source-b three
-	8e393e1	source-a two
-	1ac6c77	source-b one
+	cat >expect <<-EOF &&
+	$(git rev-parse --short :/three)	source-b three
+	$(git rev-parse --short :/two  )	source-a two
+	$(git rev-parse --short :/one  )	source-b one
 	EOF
 	git log --oneline --source source-a source-b >actual &&
 	test_cmp expect actual
@@ -1685,19 +1688,19 @@ test_expect_success 'log --source paints branch names' '
 
 test_expect_success 'log --source paints tag names' '
 	git tag -m tagged source-tag &&
-	cat >expect <<-\EOF &&
-	09e12a9	source-tag three
-	8e393e1	source-a two
-	1ac6c77	source-tag one
+	cat >expect <<-EOF &&
+	$(git rev-parse --short :/three)	source-tag three
+	$(git rev-parse --short :/two  )	source-a two
+	$(git rev-parse --short :/one  )	source-tag one
 	EOF
 	git log --oneline --source source-tag source-a >actual &&
 	test_cmp expect actual
 '
 
 test_expect_success 'log --source paints symmetric ranges' '
-	cat >expect <<-\EOF &&
-	09e12a9	source-b three
-	8e393e1	source-a two
+	cat >expect <<-EOF &&
+	$(git rev-parse --short :/three)	source-b three
+	$(git rev-parse --short :/two  )	source-a two
 	EOF
 	git log --oneline --source source-a...source-b >actual &&
 	test_cmp expect actual

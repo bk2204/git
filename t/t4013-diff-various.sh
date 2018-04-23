@@ -123,6 +123,30 @@ test_expect_success setup '
 +*++ [initial] Initial
 EOF
 
+process_diffs () {
+	x04="[0-9a-f][0-9a-f][0-9a-f][0-9a-f]" &&
+	x07="$_x05[0-9a-f][0-9a-f]" &&
+	sed -e "s/$OID_REGEX/$ZERO_OID/g" \
+	    -e "s/From $_x40 /From $ZERO_OID /" \
+	    -e "s/from $_x40)/from $ZERO_OID)/" \
+	    -e "s/commit $_x40\$/commit $ZERO_OID/" \
+	    -e "s/commit $_x40 (/commit $ZERO_OID (/" \
+	    -e "s/$_x40 $_x40 $_x40/$ZERO_OID $ZERO_OID $ZERO_OID/" \
+	    -e "s/$_x40 $_x40 /$ZERO_OID $ZERO_OID /" \
+	    -e "s/^$_x40 $_x40$/$ZERO_OID $ZERO_OID/" \
+	    -e "s/^$_x40 /$ZERO_OID /" \
+	    -e "s/^$_x40$/$ZERO_OID/" \
+	    -e "s/$x07\.\.$x07/fffffff..fffffff/g" \
+	    -e "s/$x07,$x07\.\.$x07/fffffff,fffffff..fffffff/g" \
+	    -e "s/$x07 $x07 $x07/fffffff fffffff fffffff/g" \
+	    -e "s/$x07 $x07 /fffffff fffffff /g" \
+	    -e "s/Merge: $x07 $x07/Merge: fffffff fffffff/g" \
+	    -e "s/$x07\.\.\./fffffff.../g" \
+	    -e "s/ $x04\.\.\./ ffff.../g" \
+	    -e "s/ $x04/ ffff/g" \
+	    "$1"
+}
+
 V=$(git version | sed -e 's/^git version //' -e 's/\./\\./g')
 while read magic cmd
 do
@@ -161,13 +185,15 @@ do
 		} >"$actual" &&
 		if test -f "$expect"
 		then
+			process_diffs "$actual" >actual &&
+			process_diffs "$expect" >expect &&
 			case $cmd in
 			*format-patch* | *-stat*)
-				test_i18ncmp "$expect" "$actual";;
+				test_i18ncmp expect actual;;
 			*)
-				test_cmp "$expect" "$actual";;
+				test_cmp expect actual;;
 			esac &&
-			rm -f "$actual"
+			rm -f "$actual" actual expect
 		else
 			# this is to help developing new tests.
 			cp "$actual" "$expect"
@@ -383,17 +409,17 @@ test_expect_success 'log -S requires an argument' '
 	test_must_fail git log -S
 '
 
-test_expect_success 'diff --cached on unborn branch' '
+test_expect_success SHA1 'diff --cached on unborn branch' '
 	echo ref: refs/heads/unborn >.git/HEAD &&
 	git diff --cached >result &&
 	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--cached" result
 '
 
-test_expect_success 'diff --cached -- file on unborn branch' '
+test_expect_success SHA1 'diff --cached -- file on unborn branch' '
 	git diff --cached -- file0 >result &&
 	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--cached_--_file0" result
 '
-test_expect_success 'diff --line-prefix with spaces' '
+test_expect_success SHA1 'diff --line-prefix with spaces' '
 	git diff --line-prefix="| | | " --cached -- file0 >result &&
 	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--line-prefix_--cached_--_file0" result
 '

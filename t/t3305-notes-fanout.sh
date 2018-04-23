@@ -72,7 +72,7 @@ test_expect_success 'most notes deleted correctly with git-notes' '
 	test_cmp expect output
 '
 
-test_expect_success 'deleting most notes triggers fanout consolidation' '
+test_expect_success SHA1 'deleting most notes triggers fanout consolidation' '
 	# Expect entire notes tree to have a fanout == 0
 	git ls-tree -r --name-only refs/notes/commits |
 	while read path

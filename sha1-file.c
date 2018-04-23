@@ -40,10 +40,20 @@
 #define EMPTY_TREE_SHA1_BIN_LITERAL \
 	 "\x4b\x82\x5d\xc6\x42\xcb\x6e\xb9\xa0\x60" \
 	 "\xe5\x4b\xf8\xd6\x92\x88\xfb\xee\x49\x04"
+#define EMPTY_TREE_LBLAKE2B_BIN_LITERAL \
+	"\x39\xa6\x0a\xea\xbe\xd0\xb6\xde\x19\x40" \
+	"\xb6\x40\x45\x54\x38\xb7\x4d\xb7\x1d\xb9" \
+	"\x7d\x8c\x7d\xfc\x7d\xf2\xd1\xaf\x91\x11" \
+	"\xc1\xce"
 
 #define EMPTY_BLOB_SHA1_BIN_LITERAL \
 	"\xe6\x9d\xe2\x9b\xb2\xd1\xd6\x43\x4b\x8b" \
 	"\x29\xae\x77\x5a\xd8\xc2\xe4\x8c\x53\x91"
+#define EMPTY_BLOB_LBLAKE2B_BIN_LITERAL \
+	"\xc7\x20\x7e\xd4\xae\xba\x8e\x7d\x55\x61" \
+	"\x7d\x32\xdd\x23\x2c\x84\x66\x95\x3b\x1a" \
+	"\x58\x2f\x9c\x35\x48\x95\x8d\x19\x88\x13" \
+	"\x31\x9c"
 
 const unsigned char null_sha1[GIT_MAX_RAWSZ];
 const struct object_id null_oid;
@@ -52,6 +62,12 @@ static const struct object_id empty_tree_oid = {
 };
 static const struct object_id empty_blob_oid = {
 	EMPTY_BLOB_SHA1_BIN_LITERAL
+};
+static const struct object_id empty_tree_oid_lblake2b = {
+	EMPTY_TREE_LBLAKE2B_BIN_LITERAL
+};
+static const struct object_id empty_blob_oid_lblake2b = {
+	EMPTY_BLOB_LBLAKE2B_BIN_LITERAL
 };
 
 static void git_hash_sha1_init(git_hash_ctx *ctx)
@@ -67,6 +83,21 @@ static void git_hash_sha1_update(git_hash_ctx *ctx, const void *data, size_t len
 static void git_hash_sha1_final(unsigned char *hash, git_hash_ctx *ctx)
 {
 	git_SHA1_Final(hash, &ctx->sha1);
+}
+
+static void git_hash_blake2b_init(git_hash_ctx *ctx)
+{
+	blake2b_init(&ctx->blake2b, GIT_BLAKE2B_RAWSZ);
+}
+
+static void git_hash_blake2b_update(git_hash_ctx *ctx, const void *data, size_t len)
+{
+	blake2b_update(&ctx->blake2b, data, len);
+}
+
+static void git_hash_blake2b_final(unsigned char *hash, git_hash_ctx *ctx)
+{
+	blake2b_final(&ctx->blake2b, hash, GIT_BLAKE2B_RAWSZ);
 }
 
 static void git_hash_unknown_init(git_hash_ctx *ctx)
@@ -110,6 +141,19 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		&empty_tree_oid,
 		&empty_blob_oid,
 	},
+	{
+		"x-blake2b",
+		/* "xb2b", big-endian */
+		0x78623262,
+		GIT_BLAKE2B_RAWSZ,
+		GIT_BLAKE2B_HEXSZ,
+		GIT_BLAKE2B_BLKSZ,
+		git_hash_blake2b_init,
+		git_hash_blake2b_update,
+		git_hash_blake2b_final,
+		&empty_tree_oid_lblake2b,
+		&empty_blob_oid_lblake2b,
+	}
 };
 
 const char *empty_tree_oid_hex(void)

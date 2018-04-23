@@ -8,6 +8,12 @@ exec </dev/null
 
 . ./test-lib.sh
 
+if ! test_have_prereq SHA1
+then
+       skip_all='not using SHA-1 for objects'
+       test_done
+fi
+
 add_line_into_file()
 {
     _line=$1

@@ -226,7 +226,7 @@ hex2oct() {
 	perl -ne 'printf "\\%03o", hex for /../g'
 }
 
-test_expect_success 'tree entry with type mismatch' '
+test_expect_success SHA1 'tree entry with type mismatch' '
 	test_when_finished "remove_object \$blob" &&
 	test_when_finished "remove_object \$tree" &&
 	test_when_finished "remove_object \$commit" &&
@@ -354,7 +354,7 @@ test_expect_success 'rev-list --verify-objects' '
 	test_cmp empty out
 '
 
-test_expect_success 'rev-list --verify-objects with bad sha1' '
+test_expect_success SHA1 'rev-list --verify-objects with bad sha1' '
 	sha=$(echo blob | git hash-object -w --stdin) &&
 	old=$(echo $sha | sed "s+^..+&/+") &&
 	new=$(dirname $old)/ffffffffffffffffffffffffffffffffffffff &&
@@ -537,7 +537,7 @@ test_expect_success 'fsck notices ref pointing to missing tag' '
 	test_must_fail git -C missing fsck
 '
 
-test_expect_success 'fsck --connectivity-only' '
+test_expect_success SHA1 'fsck --connectivity-only' '
 	rm -rf connectivity-only &&
 	git init connectivity-only &&
 	(

@@ -12,6 +12,12 @@ This test tries to verify the sanity of --submodule=diff option of git diff.
 
 . ./test-lib.sh
 
+if ! test_have_prereq SHA1
+then
+       skip_all='not using SHA-1 for objects'
+       test_done
+fi
+
 # Tested non-UTF-8 encoding
 test_encoding="ISO8859-1"
 

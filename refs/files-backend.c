@@ -1587,7 +1587,7 @@ static int log_ref_write_fd(int fd, const struct object_id *old_oid,
 	char *logrec;
 
 	msglen = msg ? strlen(msg) : 0;
-	maxlen = strlen(committer) + msglen + 100;
+	maxlen = strlen(committer) + msglen + 200;
 	logrec = xmalloc(maxlen);
 	len = xsnprintf(logrec, maxlen, "%s %s %s\n",
 			oid_to_hex(old_oid),

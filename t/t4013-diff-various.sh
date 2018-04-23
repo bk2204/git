@@ -140,7 +140,7 @@ do
 	expect="$TEST_DIRECTORY/t4013/diff.$test"
 	actual="$pfx-diff.$test"
 
-	test_expect_success "git $cmd # magic is ${magic:-"(not used)"}" '
+	test_expect_success SHA1 "git $cmd # magic is ${magic:-"(not used)"}" '
 		{
 			echo "$ git $cmd"
 			case "$magic" in
@@ -372,17 +372,17 @@ test_expect_success 'log -S requires an argument' '
 	test_must_fail git log -S
 '
 
-test_expect_success 'diff --cached on unborn branch' '
+test_expect_success SHA1 'diff --cached on unborn branch' '
 	echo ref: refs/heads/unborn >.git/HEAD &&
 	git diff --cached >result &&
 	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--cached" result
 '
 
-test_expect_success 'diff --cached -- file on unborn branch' '
+test_expect_success SHA1 'diff --cached -- file on unborn branch' '
 	git diff --cached -- file0 >result &&
 	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--cached_--_file0" result
 '
-test_expect_success 'diff --line-prefix with spaces' '
+test_expect_success SHA1 'diff --line-prefix with spaces' '
 	git diff --line-prefix="| | | " --cached -- file0 >result &&
 	test_cmp "$TEST_DIRECTORY/t4013/diff.diff_--line-prefix_--cached_--_file0" result
 '

@@ -7,6 +7,18 @@ test_description='Test git stash'
 
 . ./test-lib.sh
 
+diff_cmp () {
+	for i in "$1" "$2"
+	do
+		sed -e 's/^index 0000000\.\.[0-9a-f]*/index 0000000..1234567/' \
+		-e 's/^index [0-9a-f]*\.\.[0-9a-f]*/index 1234567..89abcde/' \
+		-e 's/^index [0-9a-f]*,[0-9a-f]*\.\.[0-9a-f]*/index 1234567,7654321..89abcde/' \
+		"$i" > "$i.compare"
+	done &&
+	test_cmp "$1.compare" "$2.compare" &&
+	rm -f "$1.compare" "$2.compare"
+}
+
 test_expect_success 'stash some dirty working directory' '
 	echo 1 > file &&
 	git add file &&
@@ -36,7 +48,7 @@ EOF
 test_expect_success 'parents of stash' '
 	test $(git rev-parse stash^) = $(git rev-parse HEAD) &&
 	git diff stash^2..stash > output &&
-	test_cmp output expect
+	diff_cmp output expect
 '
 
 test_expect_success 'applying bogus stash does nothing' '
@@ -210,13 +222,13 @@ test_expect_success 'stash branch' '
 	test refs/heads/stashbranch = $(git symbolic-ref HEAD) &&
 	test $(git rev-parse HEAD) = $(git rev-parse master^) &&
 	git diff --cached > output &&
-	test_cmp output expect &&
+	diff_cmp output expect &&
 	git diff > output &&
-	test_cmp output expect1 &&
+	diff_cmp output expect1 &&
 	git add file &&
 	git commit -m alternate\ second &&
 	git diff master..stashbranch > output &&
-	test_cmp output expect2 &&
+	diff_cmp output expect2 &&
 	test 0 = $(git stash list | wc -l)
 '
 
@@ -374,7 +386,9 @@ test_expect_success SYMLINKS 'this must have re-created the symlink' '
 
 test_expect_success 'unstash must re-create the file' '
 	git stash apply &&
+	echo a &&
 	! test -h filelink &&
+	cat file &&
 	test bar = "$(cat file)"
 '
 
@@ -532,7 +546,7 @@ test_expect_success 'stash show -p - stashes on stack, stash-like argument' '
 	+bar
 	EOF
 	git stash show -p ${STASH_ID} >actual &&
-	test_cmp expected actual
+	diff_cmp expected actual
 '
 
 test_expect_success 'stash show - no stashes on stack, stash-like argument' '
@@ -564,7 +578,7 @@ test_expect_success 'stash show -p - no stashes on stack, stash-like argument' '
 	+foo
 	EOF
 	git stash show -p ${STASH_ID} >actual &&
-	test_cmp expected actual
+	diff_cmp expected actual
 '
 
 test_expect_success 'stash drop - fail early if specified stash is not a stash reference' '
@@ -710,7 +724,7 @@ test_expect_success 'stash where working directory contains "HEAD" file' '
 	git diff-index --cached --quiet HEAD &&
 	test "$(git rev-parse stash^)" = "$(git rev-parse HEAD)" &&
 	git diff stash^..stash > output &&
-	test_cmp output expect
+	diff_cmp output expect
 '
 
 test_expect_success 'store called with invalid commit' '
@@ -766,7 +780,7 @@ test_expect_success 'stash list implies --first-parent -m' '
 	+working
 	EOF
 	git stash list --format=%gd -p >actual &&
-	test_cmp expect actual
+	diff_cmp expect actual
 '
 
 test_expect_success 'stash list --cc shows combined diff' '
@@ -783,7 +797,7 @@ test_expect_success 'stash list --cc shows combined diff' '
 	++working
 	EOF
 	git stash list --format=%gd -p --cc >actual &&
-	test_cmp expect actual
+	diff_cmp expect actual
 '
 
 test_expect_success 'stash is not confused by partial renames' '

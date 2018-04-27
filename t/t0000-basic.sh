@@ -978,12 +978,13 @@ test_expect_success SHA1 'validate object ID for a known tree' '
 
 test_expect_success 'put invalid objects into the index' '
 	rm -f .git/index &&
-	cat >badobjects <<-\EOF &&
-	100644 blob 1000000000000000000000000000000000000000	dir/file1
-	100644 blob 2000000000000000000000000000000000000000	dir/file2
-	100644 blob 3000000000000000000000000000000000000000	dir/file3
-	100644 blob 4000000000000000000000000000000000000000	dir/file4
-	100644 blob 5000000000000000000000000000000000000000	dir/file5
+	suffix=$(echo $ZERO_OID | sed -e "s/^.//") &&
+	cat >badobjects <<-EOF &&
+	100644 blob 1$suffix	dir/file1
+	100644 blob 2$suffix	dir/file2
+	100644 blob 3$suffix	dir/file3
+	100644 blob 4$suffix	dir/file4
+	100644 blob 5$suffix	dir/file5
 	EOF
 	git update-index --index-info <badobjects
 '

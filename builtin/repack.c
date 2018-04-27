@@ -407,8 +407,8 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 
 	out = xfdopen(cmd.out, "r");
 	while (strbuf_getline_lf(&line, out) != EOF) {
-		if (line.len != 40)
-			die("repack: Expecting 40 character sha1 lines only from pack-objects.");
+		if (line.len != the_hash_algo->hexsz)
+			die("repack: Expecting full hex object ID lines only from pack-objects.");
 		string_list_append(&names, line.buf);
 	}
 	fclose(out);

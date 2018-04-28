@@ -1039,7 +1039,7 @@ static int rebuild_bitmap(uint32_t *reposition,
 
 int rebuild_existing_bitmaps(struct bitmap_index *bitmap_git,
 			     struct packing_data *mapping,
-			     khash_sha1 *reused_bitmaps,
+			     khash_oid *reused_bitmaps,
 			     int show_progress)
 {
 	uint32_t i, num_objects;
@@ -1078,9 +1078,9 @@ int rebuild_existing_bitmaps(struct bitmap_index *bitmap_git,
 			if (!rebuild_bitmap(reposition,
 					    lookup_stored_bitmap(stored),
 					    rebuild)) {
-				hash_pos = kh_put_sha1(reused_bitmaps,
-						       stored->oid.hash,
-						       &hash_ret);
+				hash_pos = kh_put_oid(reused_bitmaps,
+						      &stored->oid,
+						      &hash_ret);
 				kh_value(reused_bitmaps, hash_pos) =
 					bitmap_to_ewah(rebuild);
 			}

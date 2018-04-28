@@ -61,7 +61,7 @@ struct bitmap_index {
 	struct ewah_bitmap *tags;
 
 	/* Map from SHA1 -> `stored_bitmap` for all the bitmapped commits */
-	khash_sha1 *bitmaps;
+	khash_oid *bitmaps;
 
 	/* Number of bitmapped commits */
 	uint32_t entry_count;
@@ -80,7 +80,7 @@ struct bitmap_index {
 		struct object **objects;
 		uint32_t *hashes;
 		uint32_t count, alloc;
-		khash_sha1_pos *positions;
+		khash_oid_pos *positions;
 	} ext_index;
 
 	/* Bitmap result of the last performed walk */
@@ -183,7 +183,7 @@ static struct stored_bitmap *store_bitmap(struct bitmap_index *index,
 	stored->flags = flags;
 	oidread(&stored->oid, sha1);
 
-	hash_pos = kh_put_sha1(index->bitmaps, stored->oid.hash, &ret);
+	hash_pos = kh_put_oid(index->bitmaps, &stored->oid, &ret);
 
 	/* a 0 return code means the insertion succeeded with no changes,
 	 * because the SHA1 already existed on the map. this is bad, there
@@ -306,8 +306,8 @@ static int load_pack_bitmap(struct bitmap_index *bitmap_git)
 {
 	assert(bitmap_git->map);
 
-	bitmap_git->bitmaps = kh_init_sha1();
-	bitmap_git->ext_index.positions = kh_init_sha1_pos();
+	bitmap_git->bitmaps = kh_init_oid();
+	bitmap_git->ext_index.positions = kh_init_oid_pos();
 	load_pack_revindex(bitmap_git->pack);
 
 	if (!(bitmap_git->commits = read_bitmap_1(bitmap_git)) ||
@@ -361,10 +361,10 @@ struct include_data {
 };
 
 static inline int bitmap_position_extended(struct bitmap_index *bitmap_git,
-					   const unsigned char *sha1)
+					   const struct object_id *oid)
 {
-	khash_sha1_pos *positions = bitmap_git->ext_index.positions;
-	khiter_t pos = kh_get_sha1_pos(positions, sha1);
+	khash_oid_pos *positions = bitmap_git->ext_index.positions;
+	khiter_t pos = kh_get_oid_pos(positions, oid);
 
 	if (pos < kh_end(positions)) {
 		int bitmap_pos = kh_value(positions, pos);
@@ -375,9 +375,9 @@ static inline int bitmap_position_extended(struct bitmap_index *bitmap_git,
 }
 
 static inline int bitmap_position_packfile(struct bitmap_index *bitmap_git,
-					   const unsigned char *sha1)
+					   const struct object_id *oid)
 {
-	off_t offset = find_pack_entry_one(sha1, bitmap_git->pack);
+	off_t offset = find_pack_entry_one(oid->hash, bitmap_git->pack);
 	if (!offset)
 		return -1;
 
@@ -385,10 +385,10 @@ static inline int bitmap_position_packfile(struct bitmap_index *bitmap_git,
 }
 
 static int bitmap_position(struct bitmap_index *bitmap_git,
-			   const unsigned char *sha1)
+			   const struct object_id *oid)
 {
-	int pos = bitmap_position_packfile(bitmap_git, sha1);
-	return (pos >= 0) ? pos : bitmap_position_extended(bitmap_git, sha1);
+	int pos = bitmap_position_packfile(bitmap_git, oid);
+	return (pos >= 0) ? pos : bitmap_position_extended(bitmap_git, oid);
 }
 
 static int ext_index_add_object(struct bitmap_index *bitmap_git,
@@ -400,7 +400,7 @@ static int ext_index_add_object(struct bitmap_index *bitmap_git,
 	int hash_ret;
 	int bitmap_pos;
 
-	hash_pos = kh_put_sha1_pos(eindex->positions, object->oid.hash, &hash_ret);
+	hash_pos = kh_put_oid_pos(eindex->positions, &object->oid, &hash_ret);
 	if (hash_ret > 0) {
 		if (eindex->count >= eindex->alloc) {
 			eindex->alloc = (eindex->alloc + 16) * 3 / 2;
@@ -430,7 +430,7 @@ static void show_object(struct object *object, const char *name, void *data_)
 	struct bitmap_show_data *data = data_;
 	int bitmap_pos;
 
-	bitmap_pos = bitmap_position(data->bitmap_git, object->oid.hash);
+	bitmap_pos = bitmap_position(data->bitmap_git, &object->oid);
 
 	if (bitmap_pos < 0)
 		bitmap_pos = ext_index_add_object(data->bitmap_git, object,
@@ -445,7 +445,7 @@ static void show_commit(struct commit *commit, void *data)
 
 static int add_to_include_set(struct bitmap_index *bitmap_git,
 			      struct include_data *data,
-			      const unsigned char *sha1,
+			      const struct object_id *oid,
 			      int bitmap_pos)
 {
 	khiter_t hash_pos;
@@ -456,7 +456,7 @@ static int add_to_include_set(struct bitmap_index *bitmap_git,
 	if (bitmap_get(data->base, bitmap_pos))
 		return 0;
 
-	hash_pos = kh_get_sha1(bitmap_git->bitmaps, sha1);
+	hash_pos = kh_get_oid(bitmap_git->bitmaps, oid);
 	if (hash_pos < kh_end(bitmap_git->bitmaps)) {
 		struct stored_bitmap *st = kh_value(bitmap_git->bitmaps, hash_pos);
 		bitmap_or_ewah(data->base, lookup_stored_bitmap(st));
@@ -472,13 +472,13 @@ static int should_include(struct commit *commit, void *_data)
 	struct include_data *data = _data;
 	int bitmap_pos;
 
-	bitmap_pos = bitmap_position(data->bitmap_git, commit->object.oid.hash);
+	bitmap_pos = bitmap_position(data->bitmap_git, &commit->object.oid);
 	if (bitmap_pos < 0)
 		bitmap_pos = ext_index_add_object(data->bitmap_git,
 						  (struct object *)commit,
 						  NULL);
 
-	if (!add_to_include_set(data->bitmap_git, data, commit->object.oid.hash,
+	if (!add_to_include_set(data->bitmap_git, data, &commit->object.oid,
 				bitmap_pos)) {
 		struct commit_list *parent = commit->parents;
 
@@ -516,7 +516,7 @@ static struct bitmap *find_objects(struct bitmap_index *bitmap_git,
 		roots = roots->next;
 
 		if (object->type == OBJ_COMMIT) {
-			khiter_t pos = kh_get_sha1(bitmap_git->bitmaps, object->oid.hash);
+			khiter_t pos = kh_get_oid(bitmap_git->bitmaps, &object->oid);
 
 			if (pos < kh_end(bitmap_git->bitmaps)) {
 				struct stored_bitmap *st = kh_value(bitmap_git->bitmaps, pos);
@@ -558,7 +558,7 @@ static struct bitmap *find_objects(struct bitmap_index *bitmap_git,
 		int pos;
 
 		roots = roots->next;
-		pos = bitmap_position(bitmap_git, object->oid.hash);
+		pos = bitmap_position(bitmap_git, &object->oid);
 
 		if (pos < 0 || base == NULL || !bitmap_get(base, pos)) {
 			object->flags &= ~UNINTERESTING;
@@ -924,7 +924,7 @@ static void test_show_object(struct object *object, const char *name,
 	struct bitmap_test_data *tdata = data;
 	int bitmap_pos;
 
-	bitmap_pos = bitmap_position(tdata->bitmap_git, object->oid.hash);
+	bitmap_pos = bitmap_position(tdata->bitmap_git, &object->oid);
 	if (bitmap_pos < 0)
 		die("Object not in bitmap: %s\n", oid_to_hex(&object->oid));
 
@@ -938,7 +938,7 @@ static void test_show_commit(struct commit *commit, void *data)
 	int bitmap_pos;
 
 	bitmap_pos = bitmap_position(tdata->bitmap_git,
-				     commit->object.oid.hash);
+				     &commit->object.oid);
 	if (bitmap_pos < 0)
 		die("Object not in bitmap: %s\n", oid_to_hex(&commit->object.oid));
 
@@ -965,7 +965,7 @@ void test_bitmap_walk(struct rev_info *revs)
 		bitmap_git->version, bitmap_git->entry_count);
 
 	root = revs->pending.objects[0].item;
-	pos = kh_get_sha1(bitmap_git->bitmaps, root->oid.hash);
+	pos = kh_get_oid(bitmap_git->bitmaps, &root->oid);
 
 	if (pos < kh_end(bitmap_git->bitmaps)) {
 		struct stored_bitmap *st = kh_value(bitmap_git->bitmaps, pos);
@@ -1107,7 +1107,7 @@ void free_bitmap_index(struct bitmap_index *b)
 	ewah_pool_free(b->trees);
 	ewah_pool_free(b->blobs);
 	ewah_pool_free(b->tags);
-	kh_destroy_sha1(b->bitmaps);
+	kh_destroy_oid(b->bitmaps);
 	free(b->ext_index.objects);
 	free(b->ext_index.hashes);
 	bitmap_free(b->result);

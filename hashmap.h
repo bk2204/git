@@ -129,6 +129,9 @@ static inline unsigned int sha1hash(const unsigned char *sha1)
 	return hash;
 }
 
+struct object_id;
+unsigned int oidhash(const struct object_id *oid);
+
 /*
  * struct hashmap_entry is an opaque structure representing an entry in the
  * hash table, which must be used as first member of user data structures.

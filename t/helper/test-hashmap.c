@@ -1,6 +1,5 @@
 #include "test-tool.h"
-#include "git-compat-util.h"
-#include "hashmap.h"
+#include "cache.h"
 #include "strbuf.h"
 
 struct test_entry

@@ -371,13 +371,13 @@ test_expect_success 'setup master' '
 	git checkout -b master &&
 	git add .gitattributes &&
 	git commit -m "add .gitattributes" . &&
-	printf "\$Id: 0000000000000000000000000000000000000000 \$\nLINEONE\nLINETWO\nLINETHREE"     >LF &&
-	printf "\$Id: 0000000000000000000000000000000000000000 \$\r\nLINEONE\r\nLINETWO\r\nLINETHREE" >CRLF &&
-	printf "\$Id: 0000000000000000000000000000000000000000 \$\nLINEONE\r\nLINETWO\nLINETHREE"   >CRLF_mix_LF &&
-	printf "\$Id: 0000000000000000000000000000000000000000 \$\nLINEONE\nLINETWO\rLINETHREE"     >LF_mix_CR &&
-	printf "\$Id: 0000000000000000000000000000000000000000 \$\r\nLINEONE\r\nLINETWO\rLINETHREE"   >CRLF_mix_CR &&
-	printf "\$Id: 0000000000000000000000000000000000000000 \$\r\nLINEONEQ\r\nLINETWO\r\nLINETHREE" | q_to_nul >CRLF_nul &&
-	printf "\$Id: 0000000000000000000000000000000000000000 \$\nLINEONEQ\nLINETWO\nLINETHREE" | q_to_nul >LF_nul &&
+	printf "\$Id: $ZERO_OID \$\nLINEONE\nLINETWO\nLINETHREE"     >LF &&
+	printf "\$Id: $ZERO_OID \$\r\nLINEONE\r\nLINETWO\r\nLINETHREE" >CRLF &&
+	printf "\$Id: $ZERO_OID \$\nLINEONE\r\nLINETWO\nLINETHREE"   >CRLF_mix_LF &&
+	printf "\$Id: $ZERO_OID \$\nLINEONE\nLINETWO\rLINETHREE"     >LF_mix_CR &&
+	printf "\$Id: $ZERO_OID \$\r\nLINEONE\r\nLINETWO\rLINETHREE"   >CRLF_mix_CR &&
+	printf "\$Id: $ZERO_OID \$\r\nLINEONEQ\r\nLINETWO\r\nLINETHREE" | q_to_nul >CRLF_nul &&
+	printf "\$Id: $ZERO_OID \$\nLINEONEQ\nLINETWO\nLINETHREE" | q_to_nul >LF_nul &&
 	create_NNO_MIX_files &&
 	git -c core.autocrlf=false add NNO_*.txt MIX_*.txt &&
 	git commit -m "mixed line endings" &&

@@ -916,7 +916,7 @@ static int submodule_needs_pushing(const char *path, struct oid_array *commits)
 		if (start_command(&cp))
 			die("Could not run 'git rev-list <commits> --not --remotes -n 1' command in submodule %s",
 					path);
-		if (strbuf_read(&buf, cp.out, 41))
+		if (strbuf_read(&buf, cp.out, the_hash_algo->hexsz + 1))
 			needs_pushing = 1;
 		finish_command(&cp);
 		close(cp.out);
@@ -1709,7 +1709,7 @@ static int find_first_merges(struct object_array *result, const char *path,
 	struct commit *commit;
 	int contains_another;
 
-	char merged_revision[42];
+	char merged_revision[GIT_MAX_HEXSZ + 2];
 	const char *rev_args[] = { "rev-list", "--merges", "--ancestry-path",
 				   "--all", merged_revision, NULL };
 	struct rev_info revs;

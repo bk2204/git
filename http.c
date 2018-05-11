@@ -2123,10 +2123,10 @@ int finish_http_pack_request(struct http_pack_request *preq)
 		return -1;
 	}
 
-	unlink(sha1_pack_index_name(p->sha1));
+	unlink(sha1_pack_index_name(p->hash));
 
-	if (finalize_object_file(preq->tmpfile, sha1_pack_name(p->sha1))
-	 || finalize_object_file(tmp_idx, sha1_pack_index_name(p->sha1))) {
+	if (finalize_object_file(preq->tmpfile, sha1_pack_name(p->hash))
+	    || finalize_object_file(tmp_idx, sha1_pack_index_name(p->hash))) {
 		free(tmp_idx);
 		return -1;
 	}
@@ -2148,11 +2148,11 @@ struct http_pack_request *new_http_pack_request(
 
 	end_url_with_slash(&buf, base_url);
 	strbuf_addf(&buf, "objects/pack/pack-%s.pack",
-		sha1_to_hex(target->sha1));
+		sha1_to_hex(target->hash));
 	preq->url = strbuf_detach(&buf, NULL);
 
 	snprintf(preq->tmpfile, sizeof(preq->tmpfile), "%s.temp",
-		sha1_pack_name(target->sha1));
+		sha1_pack_name(target->hash));
 	preq->packfile = fopen(preq->tmpfile, "a");
 	if (!preq->packfile) {
 		error("Unable to open local file %s for pack",
@@ -2176,7 +2176,8 @@ struct http_pack_request *new_http_pack_request(
 		if (http_is_verbose)
 			fprintf(stderr,
 				"Resuming fetch of pack %s at byte %"PRIuMAX"\n",
-				sha1_to_hex(target->sha1), (uintmax_t)prev_posn);
+				sha1_to_hex(target->hash),
+				(uintmax_t)prev_posn);
 		http_opt_request_remainder(preq->slot->curl, prev_posn);
 	}
 

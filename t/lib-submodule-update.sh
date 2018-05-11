@@ -139,7 +139,7 @@ create_lib_submodule_repo () {
 		git revert HEAD &&
 
 		git checkout -b invalid_sub1 add_sub1 &&
-		git update-index --cacheinfo 160000 0123456789012345678901234567890123456789 sub1 &&
+		git update-index --cacheinfo 160000 $(echo $ZERO_OID | sed 's/0000000000/0123456789/g') sub1 &&
 		git commit -m "Invalid sub1 commit" &&
 		git checkout -b valid_sub1 &&
 		git revert HEAD &&

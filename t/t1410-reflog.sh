@@ -30,12 +30,12 @@ check_fsck () {
 }
 
 corrupt () {
-	aa=${1%??????????????????????????????????????} zz=${1#??}
+	aa=$(echo $1 | cut -c 1-2) zz=${1#??}
 	mv .git/objects/$aa/$zz .git/$aa$zz
 }
 
 recover () {
-	aa=${1%??????????????????????????????????????} zz=${1#??}
+	aa=$(echo $1 | cut -c 1-2) zz=${1#??}
 	mkdir -p .git/objects/$aa
 	mv .git/$aa$zz .git/objects/$aa/$zz
 }
@@ -305,12 +305,12 @@ test_expect_success 'stale dirs do not cause d/f conflicts (reflogs off)' '
 # Each line is 114 characters, so we need 75 to still have a few before the
 # last 8K. The 89-character padding on the final entry lines up our
 # newline exactly.
-test_expect_success 'parsing reverse reflogs at BUFSIZ boundaries' '
+test_expect_success SHA1 'parsing reverse reflogs at BUFSIZ boundaries' '
 	git checkout -b reflogskip &&
-	z38=00000000000000000000000000000000000000 &&
+	zf=$(echo $ZERO_OID | sed -e "s/^..//") &&
 	ident="abc <xyz> 0000000001 +0000" &&
 	for i in $(test_seq 1 75); do
-		printf "$z38%02d $z38%02d %s\t" $i $(($i+1)) "$ident" &&
+		printf "$zf%02d $zf%02d %s\t" $i $(($i+1)) "$ident" &&
 		if test $i = 75; then
 			for j in $(test_seq 1 89); do
 				printf X
@@ -321,7 +321,7 @@ test_expect_success 'parsing reverse reflogs at BUFSIZ boundaries' '
 		printf "\n"
 	done >.git/logs/refs/heads/reflogskip &&
 	git rev-parse reflogskip@{73} >actual &&
-	echo ${z38}03 >expect &&
+	echo ${zf}03 >expect &&
 	test_cmp expect actual
 '
 

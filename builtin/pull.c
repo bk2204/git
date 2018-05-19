@@ -362,9 +362,10 @@ static void get_merge_heads(struct oid_array *merge_heads)
 
 	fp = xfopen(filename, "r");
 	while (strbuf_getline_lf(&sb, fp) != EOF) {
-		if (get_oid_hex(sb.buf, &oid))
+		const char *p;
+		if (parse_oid_hex(sb.buf, &oid, &p))
 			continue;  /* invalid line: does not start with SHA1 */
-		if (starts_with(sb.buf + GIT_SHA1_HEXSZ, "\tnot-for-merge\t"))
+		if (starts_with(p, "\tnot-for-merge\t"))
 			continue;  /* ref is not-for-merge */
 		oid_array_append(merge_heads, &oid);
 	}

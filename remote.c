@@ -554,7 +554,7 @@ static struct refspec *parse_refspec_internal(int nr_refspec, const char **refsp
 			/* LHS */
 			if (!*rs[i].src)
 				; /* empty is ok; it means "HEAD" */
-			else if (llen == GIT_SHA1_HEXSZ && !get_oid_hex(rs[i].src, &unused))
+			else if (llen == the_hash_algo->hexsz && !get_oid_hex(rs[i].src, &unused))
 				rs[i].exact_sha1 = 1; /* ok */
 			else if (!check_refname_format(rs[i].src, flags))
 				; /* valid looking ref is ok */

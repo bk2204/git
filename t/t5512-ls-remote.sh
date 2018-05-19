@@ -224,6 +224,7 @@ test_expect_success 'ls-remote --symref' '
 '
 
 test_expect_success 'ls-remote with filtered symref (refname)' '
+	rev=$(git rev-parse HEAD) &&
 	cat >expect <<-EOF &&
 	ref: refs/heads/master	HEAD
 	$rev	HEAD

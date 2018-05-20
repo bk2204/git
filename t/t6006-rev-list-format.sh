@@ -455,9 +455,10 @@ test_expect_success '--abbrev' '
 '
 
 test_expect_success '%H is not affected by --abbrev-commit' '
+	expected=$(echo $ZERO_OID | wc -c) &&
 	git log -1 --format=%H --abbrev-commit --abbrev=20 HEAD >actual &&
 	len=$(wc -c <actual) &&
-	test $len = 41
+	test $len = $expected
 '
 
 test_expect_success '%h is not affected by --abbrev-commit' '

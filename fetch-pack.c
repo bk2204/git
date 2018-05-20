@@ -267,16 +267,16 @@ static enum ack_type get_ack(int fd, struct object_id *result_oid)
 	if (!strcmp(line, "NAK"))
 		return NAK;
 	if (skip_prefix(line, "ACK ", &arg)) {
-		if (!get_oid_hex(arg, result_oid)) {
-			arg += 40;
-			len -= arg - line;
+		const char *p;
+		if (!parse_oid_hex(arg, result_oid, &p)) {
+			len -= p - line;
 			if (len < 1)
 				return ACK;
-			if (strstr(arg, "continue"))
+			if (strstr(p, "continue"))
 				return ACK_continue;
-			if (strstr(arg, "common"))
+			if (strstr(p, "common"))
 				return ACK_common;
-			if (strstr(arg, "ready"))
+			if (strstr(p, "ready"))
 				return ACK_ready;
 			return ACK;
 		}

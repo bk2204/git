@@ -5,7 +5,7 @@ test_description='for-each-ref errors for broken refs'
 . ./test-lib.sh
 
 ZEROS=$ZERO_OID
-MISSING=abababababababababababababababababababab
+MISSING=$(test_translate -f oid deadbeef)
 
 test_expect_success setup '
 	git commit --allow-empty -m "Initial" &&

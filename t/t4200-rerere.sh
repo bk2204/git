@@ -210,7 +210,7 @@ test_expect_success 'set up for garbage collection tests' '
 	echo Hello >$rr/preimage &&
 	echo World >$rr/postimage &&
 
-	sha2=4000000000000000000000000000000000000000 &&
+	sha2=$(test_translate -f oid deadbeef) &&
 	rr2=.git/rr-cache/$sha2 &&
 	mkdir $rr2 &&
 	echo Hello >$rr2/preimage &&

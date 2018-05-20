@@ -5,7 +5,7 @@ test_description='for-each-ref errors for broken refs'
 . ./test-lib.sh
 
 ZEROS=$ZERO_OID
-MISSING=abababababababababababababababababababab
+MISSING=$(echo $ZERO_OID | sed -e "s/00/ab/g")
 
 test_expect_success setup '
 	git commit --allow-empty -m "Initial" &&

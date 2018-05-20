@@ -52,7 +52,8 @@ test_expect_success 'creating initial files and commits' '
 	# $test_encoding encoded parameter to git.
 	commit_msg $test_encoding | git -c "i18n.commitEncoding=$test_encoding" commit -a -F - &&
 	head5=$(git rev-parse --verify HEAD) &&
-	head5s=$(git rev-parse --short HEAD:secondfile)
+	head5s=$(git rev-parse --short HEAD:secondfile) &&
+	head5sl=$(git rev-parse HEAD:secondfile)
 '
 # git log --pretty=oneline # to see those SHA1 involved
 
@@ -99,7 +100,7 @@ test_expect_success 'giving a non existing revision should fail' '
 
 test_expect_success 'reset --soft with unmerged index should fail' '
 	touch .git/MERGE_HEAD &&
-	echo "100644 44c5b5884550c17758737edcced463447b91d42b 1	un" |
+	echo "100644 $head5sl 1	un" |
 		git update-index --index-info &&
 	test_must_fail git reset --soft HEAD &&
 	rm .git/MERGE_HEAD &&

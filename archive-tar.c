@@ -332,7 +332,8 @@ static void write_global_extended_header(struct archiver_args *args)
 
 	if (sha1)
 		strbuf_append_ext_header(&ext_header, "comment",
-					 sha1_to_hex(sha1), 40);
+					 sha1_to_hex(sha1),
+					 the_hash_algo->hexsz);
 	if (args->time > USTAR_MAX_MTIME) {
 		strbuf_append_ext_header_uint(&ext_header, "mtime",
 					      args->time);

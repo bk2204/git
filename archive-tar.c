@@ -326,14 +326,15 @@ static int write_tar_entry(struct archiver_args *args,
 
 static void write_global_extended_header(struct archiver_args *args)
 {
-	const unsigned char *sha1 = args->commit_sha1;
+	const unsigned char *hash = args->commit_sha1;
 	struct strbuf ext_header = STRBUF_INIT;
 	struct ustar_header header;
 	unsigned int mode;
 
-	if (sha1)
+	if (hash)
 		strbuf_append_ext_header(&ext_header, "comment",
-					 sha1_to_hex(sha1), 40);
+					 hash_to_hex(hash),
+					 the_hash_algo->hexsz);
 	if (args->time > USTAR_MAX_MTIME) {
 		strbuf_append_ext_header_uint(&ext_header, "mtime",
 					      args->time);

@@ -5,6 +5,7 @@
 #include "commit.h"
 #include "tar.h"
 #include "builtin.h"
+#include "strbuf.h"
 #include "quote.h"
 
 static const char builtin_get_tar_commit_id_usage[] =
@@ -21,6 +22,8 @@ int cmd_get_tar_commit_id(int argc, const char **argv, const char *prefix)
 	char *content = buffer + RECORDSIZE;
 	const char *comment;
 	ssize_t n;
+	char *hdrprefix;
+	int ret;
 
 	if (argc != 1)
 		usage(builtin_get_tar_commit_id_usage);
@@ -32,10 +35,14 @@ int cmd_get_tar_commit_id(int argc, const char **argv, const char *prefix)
 		die_errno("git get-tar-commit-id: EOF before reading tar header");
 	if (header->typeflag[0] != 'g')
 		return 1;
-	if (!skip_prefix(content, "52 comment=", &comment))
+
+	hdrprefix = xstrfmt("%zu comment=", the_hash_algo->hexsz + strlen(" comment=") + 2 + 1);
+	ret = skip_prefix(content, hdrprefix, &comment);
+	free(hdrprefix);
+	if (!ret)
 		return 1;
 
-	if (write_in_full(1, comment, 41) < 0)
+	if (write_in_full(1, comment, the_hash_algo->hexsz + 1) < 0)
 		die_errno("git get-tar-commit-id: write error");
 
 	return 0;

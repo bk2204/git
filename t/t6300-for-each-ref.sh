@@ -20,6 +20,7 @@ setdate_and_increment () {
 }
 
 test_expect_success setup '
+	test_oid_init &&
 	setdate_and_increment &&
 	echo "Using $datestamp" > one &&
 	git add one &&
@@ -49,6 +50,8 @@ test_atom() {
 		test_cmp expected actual.clean
 	"
 }
+
+hexlen=$(test_oid hexsz)
 
 test_atom head refname refs/heads/master
 test_atom head refname: refs/heads/master
@@ -82,7 +85,7 @@ test_atom head push:rstrip=-1 refs
 test_atom head push:strip=1 remotes/myfork/master
 test_atom head push:strip=-1 master
 test_atom head objecttype commit
-test_atom head objectsize 171
+test_atom head objectsize $((131 + hexlen))
 test_atom head objectsize:disk 138
 test_atom head deltabase 0000000000000000000000000000000000000000
 test_atom head objectname $(git rev-parse refs/heads/master)
@@ -125,7 +128,7 @@ test_atom tag refname:short testtag
 test_atom tag upstream ''
 test_atom tag push ''
 test_atom tag objecttype tag
-test_atom tag objectsize 154
+test_atom tag objectsize $((114 + hexlen))
 test_atom tag objectsize:disk 138
 test_atom tag '*objectsize:disk' 138
 test_atom tag deltabase 0000000000000000000000000000000000000000

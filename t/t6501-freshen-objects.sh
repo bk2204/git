@@ -128,9 +128,10 @@ for repack in '' true; do
 done
 
 test_expect_success 'do not complain about existing broken links (commit)' '
-	cat >broken-commit <<-\EOF &&
-	tree 0000000000000000000000000000000000000001
-	parent 0000000000000000000000000000000000000002
+	prefix=$(echo $ZERO_OID | sed -e "s/.$//") &&
+	cat >broken-commit <<-EOF &&
+	tree ${prefix}1
+	parent ${prefix}2
 	author whatever <whatever@example.com> 1234 -0000
 	committer whatever <whatever@example.com> 1234 -0000
 
@@ -143,8 +144,8 @@ test_expect_success 'do not complain about existing broken links (commit)' '
 '
 
 test_expect_success 'do not complain about existing broken links (tree)' '
-	cat >broken-tree <<-\EOF &&
-	100644 blob 0000000000000000000000000000000000000003	foo
+	cat >broken-tree <<-EOF &&
+	100644 blob ${prefix}3	foo
 	EOF
 	tree=$(git mktree --missing <broken-tree) &&
 	git gc 2>stderr &&
@@ -153,8 +154,8 @@ test_expect_success 'do not complain about existing broken links (tree)' '
 '
 
 test_expect_success 'do not complain about existing broken links (tag)' '
-	cat >broken-tag <<-\EOF &&
-	object 0000000000000000000000000000000000000004
+	cat >broken-tag <<-EOF &&
+	object ${prefix}4
 	type commit
 	tag broken
 	tagger whatever <whatever@example.com> 1234 -0000

@@ -433,12 +433,12 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 		int opts = 0;
 		string_list_sort(&names);
 		for_each_string_list_item(item, &existing_packs) {
-			char *sha1;
+			char *hash;
 			size_t len = strlen(item->string);
-			if (len < 40)
+			if (len < the_hash_algo->hexsz)
 				continue;
-			sha1 = item->string + len - 40;
-			if (!string_list_has_string(&names, sha1))
+			hash = item->string + len - the_hash_algo->hexsz;
+			if (!string_list_has_string(&names, hash))
 				remove_redundant_pack(packdir, item->string);
 		}
 		if (!quiet && isatty(2))

@@ -36,6 +36,8 @@ OPTIONS_SPEC=
 
 _x40='[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
 _x40="$_x40$_x40$_x40$_x40$_x40$_x40$_x40$_x40"
+_x64='[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+_x64="$_x64$_x64$_x64$_x64$_x40[0-9a-f][0-9a-f][0-9a-f][0-9a-f]"
 TERM_BAD=bad
 TERM_GOOD=good
 
@@ -169,7 +171,7 @@ bisect_start() {
 	else
 		# Get rev from where we start.
 		case "$head" in
-		refs/heads/*|$_x40)
+		refs/heads/*|$_x40|$_x64)
 			# This error message should only be triggered by
 			# cogito usage, and cogito users should understand
 			# it relates to cg-seek.

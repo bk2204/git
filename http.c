@@ -2242,7 +2242,7 @@ struct http_object_request *new_http_object_request(const char *base_url,
 	struct http_object_request *freq;
 
 	freq = xcalloc(1, sizeof(*freq));
-	hashcpy(freq->sha1, sha1);
+	hashcpy(freq->oid.hash, sha1);
 	freq->localfile = -1;
 
 	sha1_file_name(the_repository, &filename, sha1);
@@ -2385,16 +2385,16 @@ int finish_http_object_request(struct http_object_request *freq)
 	}
 
 	git_inflate_end(&freq->stream);
-	git_SHA1_Final(freq->real_sha1, &freq->c);
+	git_SHA1_Final(freq->real_oid.hash, &freq->c);
 	if (freq->zret != Z_STREAM_END) {
 		unlink_or_warn(freq->tmpfile);
 		return -1;
 	}
-	if (hashcmp(freq->sha1, freq->real_sha1)) {
+	if (oidcmp(&freq->oid, &freq->real_oid)) {
 		unlink_or_warn(freq->tmpfile);
 		return -1;
 	}
-	sha1_file_name(the_repository, &filename, freq->sha1);
+	sha1_file_name(the_repository, &filename, freq->oid.hash);
 	freq->rename = finalize_object_file(freq->tmpfile, filename.buf);
 	strbuf_release(&filename);
 

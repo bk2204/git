@@ -47,11 +47,17 @@ unsigned long git_deflate_bound(git_zstream *, unsigned long);
 /* The block size of SHA-1. */
 #define GIT_SHA1_BLKSZ 64
 
+/* The length in bytes and in hex digits of an object name (BLAKE2b value). */
+#define GIT_BLAKE2B_RAWSZ 32
+#define GIT_BLAKE2B_HEXSZ (2 * GIT_BLAKE2B_RAWSZ)
+/* The block size of BLAKE2b. */
+#define GIT_BLAKE2B_BLKSZ 128
+
 /* The length in byte and in hex digits of the largest possible hash value. */
-#define GIT_MAX_RAWSZ GIT_SHA1_RAWSZ
-#define GIT_MAX_HEXSZ GIT_SHA1_HEXSZ
+#define GIT_MAX_RAWSZ GIT_BLAKE2B_RAWSZ
+#define GIT_MAX_HEXSZ GIT_BLAKE2B_HEXSZ
 /* The largest possible block size for any supported hash. */
-#define GIT_MAX_BLKSZ GIT_SHA1_BLKSZ
+#define GIT_MAX_BLKSZ GIT_BLAKE2B_BLKSZ
 
 struct object_id {
 	unsigned char hash[GIT_MAX_RAWSZ];
@@ -1001,7 +1007,7 @@ static inline void hashcpy(unsigned char *sha_dst, const unsigned char *sha_src)
 
 static inline void oidcpy(struct object_id *dst, const struct object_id *src)
 {
-	hashcpy(dst->hash, src->hash);
+	memcpy(dst->hash, src->hash, GIT_MAX_RAWSZ);
 }
 
 static inline struct object_id *oiddup(const struct object_id *src)

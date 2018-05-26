@@ -1603,6 +1603,13 @@ endif
 endif
 endif
 
+ifdef LIBB2_BLAKE2
+	EXTLIBS += -lb2
+	BASIC_CFLAGS += -DLIBB2_BLAKE2
+else
+	BASIC_CFLAGS += -DBLOCK_BLAKE2
+endif
+
 ifdef SHA1_MAX_BLOCK_SIZE
 	LIB_OBJS += compat/sha1-chunked.o
 	BASIC_CFLAGS += -DSHA1_MAX_BLOCK_SIZE="$(SHA1_MAX_BLOCK_SIZE)"

@@ -1019,7 +1019,7 @@ static void make_cover_letter(struct rev_info *rev, int use_stdout,
 	    open_next_file(NULL, rev->numbered_files ? NULL : "cover-letter", rev, quiet))
 		return;
 
-	log_write_email_headers(rev, head, &pp.after_subject, &need_8bit_cte);
+	log_write_email_headers(rev, head, &pp.after_subject, &need_8bit_cte, 0);
 
 	for (i = 0; !need_8bit_cte && i < nr; i++) {
 		const char *buf = get_commit_buffer(list[i], NULL);
@@ -1067,8 +1067,8 @@ static void make_cover_letter(struct rev_info *rev, int use_stdout,
 
 	diff_setup_done(&opts);
 
-	diff_tree_oid(&origin->tree->object.oid,
-		      &head->tree->object.oid,
+	diff_tree_oid(get_commit_tree_oid(origin),
+		      get_commit_tree_oid(head),
 		      "", &opts);
 	diffcore_std(&opts);
 	diff_flush(&opts);

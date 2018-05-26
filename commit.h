@@ -22,7 +22,13 @@ struct commit {
 	unsigned int index;
 	timestamp_t date;
 	struct commit_list *parents;
-	struct tree *tree;
+
+	/*
+	 * If the commit is loaded from the commit-graph file, then this
+	 * member may be NULL. Only access it through get_commit_tree()
+	 * or get_commit_tree_oid().
+	 */
+	struct tree *maybe_tree;
 	uint32_t graph_pos;
 };
 
@@ -101,6 +107,9 @@ void unuse_commit_buffer(const struct commit *, const void *buffer);
  * Free any cached object buffer associated with the commit.
  */
 void free_commit_buffer(struct commit *);
+
+struct tree *get_commit_tree(const struct commit *);
+struct object_id *get_commit_tree_oid(const struct commit *);
 
 /*
  * Disassociate any cached object buffer from the commit, but do not free it.
@@ -294,10 +303,10 @@ extern const char *find_commit_header(const char *msg, const char *key,
 /* Find the end of the log message, the right place for a new trailer. */
 extern int ignore_non_trailer(const char *buf, size_t len);
 
-typedef void (*each_mergetag_fn)(struct commit *commit, struct commit_extra_header *extra,
+typedef int (*each_mergetag_fn)(struct commit *commit, struct commit_extra_header *extra,
 				 void *cb_data);
 
-extern void for_each_mergetag(each_mergetag_fn fn, struct commit *commit, void *data);
+extern int for_each_mergetag(each_mergetag_fn fn, struct commit *commit, void *data);
 
 struct merge_remote_desc {
 	struct object *obj; /* the named object, could be a tag */

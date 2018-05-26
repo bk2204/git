@@ -303,7 +303,7 @@ enum peel_status peel_object(const struct object_id *name, struct object_id *oid
 	struct object *o = lookup_unknown_object(name->hash);
 
 	if (o->type == OBJ_NONE) {
-		int type = oid_object_info(name, NULL);
+		int type = oid_object_info(the_repository, name, NULL);
 		if (type < 0 || !object_as_type(o, type, 0))
 			return PEEL_INVALID;
 	}
@@ -615,7 +615,8 @@ int dwim_log(const char *str, int len, struct object_id *oid, char **log)
 static int is_per_worktree_ref(const char *refname)
 {
 	return !strcmp(refname, "HEAD") ||
-		starts_with(refname, "refs/bisect/");
+		starts_with(refname, "refs/bisect/") ||
+		starts_with(refname, "refs/rewritten/");
 }
 
 static int is_pseudoref_syntax(const char *refname)
@@ -1667,6 +1668,9 @@ struct ref_store *get_main_ref_store(struct repository *r)
 {
 	if (r->refs)
 		return r->refs;
+
+	if (!r->gitdir)
+		BUG("attempting to get main_ref_store outside of repository");
 
 	r->refs = ref_store_init(r->gitdir, REF_STORE_ALL_CAPS);
 	return r->refs;

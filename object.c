@@ -257,7 +257,7 @@ struct object *parse_object(const struct object_id *oid)
 
 	if ((obj && obj->type == OBJ_BLOB && has_object_file(oid)) ||
 	    (!obj && has_object_file(oid) &&
-	     oid_object_info(oid, NULL) == OBJ_BLOB)) {
+	     oid_object_info(the_repository, oid, NULL) == OBJ_BLOB)) {
 		if (check_object_signature(repl, NULL, 0, NULL) < 0) {
 			error("sha1 mismatch %s", oid_to_hex(oid));
 			return NULL;
@@ -480,6 +480,9 @@ void raw_object_store_clear(struct raw_object_store *o)
 {
 	FREE_AND_NULL(o->objectdir);
 	FREE_AND_NULL(o->alternate_db);
+
+	oidmap_free(o->replace_map, 1);
+	FREE_AND_NULL(o->replace_map);
 
 	free_alt_odbs(o);
 	o->alt_odb_tail = NULL;

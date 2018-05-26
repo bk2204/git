@@ -362,7 +362,8 @@ void fmt_output_email_subject(struct strbuf *sb, struct rev_info *opt)
 
 void log_write_email_headers(struct rev_info *opt, struct commit *commit,
 			     const char **extra_headers_p,
-			     int *need_8bit_cte_p)
+			     int *need_8bit_cte_p,
+			     int maybe_multipart)
 {
 	const char *extra_headers = opt->extra_headers;
 	const char *name = oid_to_hex(opt->zero_commit ?
@@ -385,7 +386,7 @@ void log_write_email_headers(struct rev_info *opt, struct commit *commit,
 			       opt->ref_message_ids->items[i].string);
 		graph_show_oneline(opt->graph);
 	}
-	if (opt->mime_boundary) {
+	if (opt->mime_boundary && maybe_multipart) {
 		static char subject_buffer[1024];
 		static char buffer[1024];
 		struct strbuf filename =  STRBUF_INIT;
@@ -488,9 +489,9 @@ static int is_common_merge(const struct commit *commit)
 		&& !commit->parents->next->next);
 }
 
-static void show_one_mergetag(struct commit *commit,
-			      struct commit_extra_header *extra,
-			      void *data)
+static int show_one_mergetag(struct commit *commit,
+			     struct commit_extra_header *extra,
+			     void *data)
 {
 	struct rev_info *opt = (struct rev_info *)data;
 	struct object_id oid;
@@ -502,7 +503,7 @@ static void show_one_mergetag(struct commit *commit,
 	hash_object_file(extra->value, extra->len, type_name(OBJ_TAG), &oid);
 	tag = lookup_tag(&oid);
 	if (!tag)
-		return; /* error message already given */
+		return -1; /* error message already given */
 
 	strbuf_init(&verify_message, 256);
 	if (parse_tag_buffer(tag, extra->value, extra->len))
@@ -536,11 +537,12 @@ static void show_one_mergetag(struct commit *commit,
 
 	show_sig_lines(opt, status, verify_message.buf);
 	strbuf_release(&verify_message);
+	return 0;
 }
 
-static void show_mergetag(struct rev_info *opt, struct commit *commit)
+static int show_mergetag(struct rev_info *opt, struct commit *commit)
 {
-	for_each_mergetag(show_one_mergetag, commit, opt);
+	return for_each_mergetag(show_one_mergetag, commit, opt);
 }
 
 void show_log(struct rev_info *opt)
@@ -610,7 +612,7 @@ void show_log(struct rev_info *opt)
 
 	if (cmit_fmt_is_mail(opt->commit_format)) {
 		log_write_email_headers(opt, commit, &extra_headers,
-					&ctx.need_8bit_cte);
+					&ctx.need_8bit_cte, 1);
 		ctx.rev = opt;
 		ctx.print_email_subject = 1;
 	} else if (opt->commit_format != CMIT_FMT_USERFORMAT) {
@@ -806,7 +808,7 @@ static int log_tree_diff(struct rev_info *opt, struct commit *commit, struct log
 		return 0;
 
 	parse_commit_or_die(commit);
-	oid = &commit->tree->object.oid;
+	oid = get_commit_tree_oid(commit);
 
 	/* Root commit? */
 	parents = get_saved_parents(opt, commit);
@@ -831,7 +833,7 @@ static int log_tree_diff(struct rev_info *opt, struct commit *commit, struct log
 			 * we merged _in_.
 			 */
 			parse_commit_or_die(parents->item);
-			diff_tree_oid(&parents->item->tree->object.oid,
+			diff_tree_oid(get_commit_tree_oid(parents->item),
 				      oid, "", &opt->diffopt);
 			log_tree_diff_flush(opt);
 			return !opt->loginfo;
@@ -846,7 +848,7 @@ static int log_tree_diff(struct rev_info *opt, struct commit *commit, struct log
 		struct commit *parent = parents->item;
 
 		parse_commit_or_die(parent);
-		diff_tree_oid(&parent->tree->object.oid,
+		diff_tree_oid(get_commit_tree_oid(parent),
 			      oid, "", &opt->diffopt);
 		log_tree_diff_flush(opt);
 

@@ -1949,7 +1949,7 @@ _git_rebase ()
 	--*)
 		__gitcomp "
 			--onto --merge --strategy --interactive
-			--preserve-merges --stat --no-stat
+			--rebase-merges --preserve-merges --stat --no-stat
 			--committer-date-is-author-date --ignore-date
 			--ignore-whitespace --whitespace=
 			--autosquash --no-autosquash
@@ -2120,7 +2120,7 @@ _git_config ()
 		return
 		;;
 	branch.*.rebase)
-		__gitcomp "false true preserve interactive"
+		__gitcomp "false true merges preserve interactive"
 		return
 		;;
 	remote.pushdefault)
@@ -2177,7 +2177,7 @@ _git_config ()
 		__gitcomp "$__git_log_date_formats"
 		return
 		;;
-	sendemail.aliasesfiletype)
+	sendemail.aliasfiletype)
 		__gitcomp "mutt mailrc pine elm gnus"
 		return
 		;;
@@ -3073,10 +3073,17 @@ __git_support_parseopt_helper () {
 __git_complete_command () {
 	local command="$1"
 	local completion_func="_git_${command//-/_}"
-	if declare -f $completion_func >/dev/null 2>/dev/null; then
+	if ! declare -f $completion_func >/dev/null 2>/dev/null &&
+		declare -f _completion_loader >/dev/null 2>/dev/null
+	then
+		_completion_loader "git-$command"
+	fi
+	if declare -f $completion_func >/dev/null 2>/dev/null
+	then
 		$completion_func
 		return 0
-	elif __git_support_parseopt_helper "$command"; then
+	elif __git_support_parseopt_helper "$command"
+	then
 		__git_complete_common "$command"
 		return 0
 	else

@@ -373,6 +373,13 @@ extern void free_name_hash(struct index_state *istate);
 #define read_blob_data_from_cache(path, sz) read_blob_data_from_index(&the_index, (path), (sz))
 #endif
 
+#define TYPE_BITS 3
+
+/*
+ * Values in this enum (except those outside the 3 bit range) are part
+ * of pack file format. See Documentation/technical/pack-format.txt
+ * for more information.
+ */
 enum object_type {
 	OBJ_BAD = -1,
 	OBJ_NONE = 0,
@@ -1186,7 +1193,7 @@ static inline void *read_object_file(const struct object_id *oid, enum object_ty
 }
 
 /* Read and unpack an object file into memory, write memory to an object file */
-extern int oid_object_info(const struct object_id *, unsigned long *);
+int oid_object_info(struct repository *r, const struct object_id *, unsigned long *);
 
 extern int hash_object_file(const void *buf, unsigned long len,
 			    const char *type, struct object_id *oid);
@@ -1665,7 +1672,10 @@ struct object_info {
 #define OBJECT_INFO_QUICK 8
 /* Do not check loose object */
 #define OBJECT_INFO_IGNORE_LOOSE 16
-extern int oid_object_info_extended(const struct object_id *, struct object_info *, unsigned flags);
+
+int oid_object_info_extended(struct repository *r,
+			     const struct object_id *,
+			     struct object_info *, unsigned flags);
 
 /*
  * Set this to 0 to prevent sha1_object_info_extended() from fetching missing

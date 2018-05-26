@@ -45,6 +45,11 @@
 	"\xb6\x40\x45\x54\x38\xb7\x4d\xb7\x1d\xb9" \
 	"\x7d\x8c\x7d\xfc\x7d\xf2\xd1\xaf\x91\x11" \
 	"\xc1\xce"
+#define EMPTY_TREE_SHA256_BIN_LITERAL \
+	"\x6e\xf1\x9b\x41\x22\x5c\x53\x69\xf1\xc1" \
+	"\x04\xd4\x5d\x8d\x85\xef\xa9\xb0\x57\xb5" \
+	"\x3b\x14\xb4\xb9\xb9\x39\xdd\x74\xde\xcc" \
+	"\x53\x21"
 
 #define EMPTY_BLOB_SHA1_BIN_LITERAL \
 	"\xe6\x9d\xe2\x9b\xb2\xd1\xd6\x43\x4b\x8b" \
@@ -54,6 +59,11 @@
 	"\x7d\x32\xdd\x23\x2c\x84\x66\x95\x3b\x1a" \
 	"\x58\x2f\x9c\x35\x48\x95\x8d\x19\x88\x13" \
 	"\x31\x9c"
+#define EMPTY_BLOB_SHA256_BIN_LITERAL \
+	"\x47\x3a\x0f\x4c\x3b\xe8\xa9\x36\x81\xa2" \
+	"\x67\xe3\xb1\xe9\xa7\xdc\xda\x11\x85\x43" \
+	"\x6f\xe1\x41\xf7\x74\x91\x20\xa3\x03\x72" \
+	"\x18\x13"
 
 const unsigned char null_sha1[GIT_MAX_RAWSZ];
 const struct object_id null_oid;
@@ -68,6 +78,12 @@ static const struct object_id empty_tree_oid_lblake2b = {
 };
 static const struct object_id empty_blob_oid_lblake2b = {
 	EMPTY_BLOB_BLAKE2B_BIN_LITERAL
+};
+static const struct object_id empty_tree_oid_sha256 = {
+	EMPTY_TREE_SHA256_BIN_LITERAL
+};
+static const struct object_id empty_blob_oid_sha256 = {
+	EMPTY_BLOB_SHA256_BIN_LITERAL
 };
 
 static void git_hash_sha1_init(git_hash_ctx *ctx)
@@ -98,6 +114,21 @@ static void git_hash_blake2b_update(git_hash_ctx *ctx, const void *data, size_t 
 static void git_hash_blake2b_final(unsigned char *hash, git_hash_ctx *ctx)
 {
 	blake2b_final(&ctx->blake2b, hash, GIT_BLAKE2B_RAWSZ);
+}
+
+static void git_hash_sha256_init(git_hash_ctx *ctx)
+{
+	SHA256_Init(&ctx->sha256);
+}
+
+static void git_hash_sha256_update(git_hash_ctx *ctx, const void *data, size_t len)
+{
+	SHA256_Update(&ctx->sha256, data, len);
+}
+
+static void git_hash_sha256_final(unsigned char *hash, git_hash_ctx *ctx)
+{
+	SHA256_Final(hash, &ctx->sha256);
 }
 
 static void git_hash_unknown_init(git_hash_ctx *ctx)
@@ -153,6 +184,19 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		git_hash_blake2b_final,
 		&empty_tree_oid_lblake2b,
 		&empty_blob_oid_lblake2b,
+	},
+	{
+		"x-sha256",
+		/* "xs23", big-endian */
+		0x78683233,
+		GIT_SHA256_RAWSZ,
+		GIT_SHA256_HEXSZ,
+		GIT_SHA256_BLKSZ,
+		git_hash_sha256_init,
+		git_hash_sha256_update,
+		git_hash_sha256_final,
+		&empty_tree_oid_sha256,
+		&empty_blob_oid_sha256,
 	}
 };
 

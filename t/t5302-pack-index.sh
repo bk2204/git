@@ -32,7 +32,9 @@ test_expect_success \
 	 echo $tree &&
 	 git ls-tree $tree | sed -e "s/.* \\([0-9a-f]*\\)	.*/\\1/"
      } >obj-list &&
-     git update-ref HEAD $commit'
+     git update-ref HEAD $commit &&
+     rawsz=$(test_translate -f hash-info rawsz)
+'
 
 test_expect_success \
     'pack-objects with index version 1' \
@@ -152,6 +154,7 @@ test_expect_success \
     '[index v1] 2) create a stealth corruption in a delta base reference' \
     '# This test assumes file_101 is a delta smaller than 16 bytes.
      # It should be against file_100 but we substitute its base for file_099
+     offset=$((rawsz + 4)) &&
      sha1_101=$(git hash-object file_101) &&
      sha1_099=$(git hash-object file_099) &&
      offs_101=$(index_obj_offset 1.idx $sha1_101) &&
@@ -159,8 +162,8 @@ test_expect_success \
      chmod +w ".git/objects/pack/pack-${pack1}.pack" &&
      dd of=".git/objects/pack/pack-${pack1}.pack" seek=$(($offs_101 + 1)) \
         if=".git/objects/pack/pack-${pack1}.idx" \
-        skip=$((4 + 256 * 4 + $nr_099 * 24)) \
-        bs=1 count=20 conv=notrunc &&
+        skip=$((4 + 256 * 4 + $nr_099 * offset)) \
+        bs=1 count=$rawsz conv=notrunc &&
      git cat-file blob $sha1_101 > file_101_foo1'
 
 test_expect_success \
@@ -200,8 +203,8 @@ test_expect_success \
      chmod +w ".git/objects/pack/pack-${pack1}.pack" &&
      dd of=".git/objects/pack/pack-${pack1}.pack" seek=$(($offs_101 + 1)) \
         if=".git/objects/pack/pack-${pack1}.idx" \
-        skip=$((8 + 256 * 4 + $nr_099 * 20)) \
-        bs=1 count=20 conv=notrunc &&
+        skip=$((8 + 256 * 4 + $nr_099 * rawsz)) \
+        bs=1 count=$rawsz conv=notrunc &&
      git cat-file blob $sha1_101 > file_101_foo2'
 
 test_expect_success \
@@ -226,7 +229,7 @@ test_expect_success \
      nr=$(index_obj_nr ".git/objects/pack/pack-${pack1}.idx" $obj) &&
      chmod +w ".git/objects/pack/pack-${pack1}.idx" &&
      printf xxxx | dd of=".git/objects/pack/pack-${pack1}.idx" conv=notrunc \
-        bs=1 count=4 seek=$((8 + 256 * 4 + $(wc -l <obj-list) * 20 + $nr * 4)) &&
+        bs=1 count=4 seek=$((8 + 256 * 4 + $(wc -l <obj-list) * rawsz + $nr * 4)) &&
      ( while read obj
        do git cat-file -p $obj >/dev/null || exit 1
        done <obj-list ) &&

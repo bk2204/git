@@ -513,7 +513,7 @@ test_expect_success 'delete refspec' '
 	git fast-export --refspec :refs/heads/to-delete to-delete ^to-delete > actual &&
 	cat > expected <<-EOF &&
 	reset refs/heads/to-delete
-	from 0000000000000000000000000000000000000000
+	from $ZERO_OID
 
 	EOF
 	test_cmp expected actual

@@ -53,6 +53,12 @@ unsigned long git_deflate_bound(git_zstream *, unsigned long);
 /* The block size of BLAKE2b. */
 #define GIT_BLAKE2B_BLKSZ 128
 
+/* The length in bytes and in hex digits of an object name (SHA-256 value). */
+#define GIT_SHA256_RAWSZ 32
+#define GIT_SHA256_HEXSZ (2 * GIT_SHA256_RAWSZ)
+/* The block size of SHA-256. */
+#define GIT_SHA256_BLKSZ 64
+
 /* The length in byte and in hex digits of the largest possible hash value. */
 #define GIT_MAX_RAWSZ GIT_BLAKE2B_RAWSZ
 #define GIT_MAX_HEXSZ GIT_BLAKE2B_HEXSZ

@@ -89,6 +89,7 @@ test_expect_success 'blame with showEmail config true' '
 test_expect_success 'set up abbrev tests' '
 	test_commit abbrev &&
 	sha1=$(git rev-parse --verify HEAD) &&
+	oidlen=$(printf "%s" $ZERO_OID | wc -c) &&
 	check_abbrev () {
 		expect=$1; shift
 		echo $sha1 | cut -c 1-$expect >expect &&
@@ -105,17 +106,17 @@ test_expect_success 'blame --abbrev=<n> works' '
 '
 
 test_expect_success 'blame -l aligns regular and boundary commits' '
-	check_abbrev 40 -l HEAD &&
-	check_abbrev 39 -l ^HEAD
+	check_abbrev $oidlen         -l HEAD &&
+	check_abbrev $((oidlen - 1)) -l ^HEAD
 '
 
-test_expect_success 'blame --abbrev=40 behaves like -l' '
-	check_abbrev 40 --abbrev=40 HEAD &&
-	check_abbrev 39 --abbrev=40 ^HEAD
+test_expect_success 'blame --abbrev with full length behaves like -l' '
+	check_abbrev $oidlen         --abbrev=$oidlen HEAD &&
+	check_abbrev $((oidlen - 1)) --abbrev=$oidlen ^HEAD
 '
 
-test_expect_success '--no-abbrev works like --abbrev=40' '
-	check_abbrev 40 --no-abbrev
+test_expect_success '--no-abbrev works like --abbrev with full length' '
+	check_abbrev $oidlen --no-abbrev
 '
 
 test_done

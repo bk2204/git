@@ -1187,3 +1187,9 @@ test_translate () {
 		fi
 	fi
 }
+
+# Insert a slash into an object ID so it can be used to reference a location
+# under ".git/objects".  For example, "deadbeef..." becomes "de/adbeef..".
+test_oid_to_path () {
+	echo "$1" | sed -e 's!^..!&/!'
+}

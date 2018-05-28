@@ -210,3 +210,48 @@ static inline void put_be64(void *ptr, uint64_t value)
 }
 
 #endif
+
+static inline uint16_t get_le16(const void *ptr)
+{
+	const unsigned char *p = ptr;
+	return	(uint16_t)p[0] << 0 |
+		(uint16_t)p[1] << 8;
+}
+
+static inline uint32_t get_le32(const void *ptr)
+{
+	const unsigned char *p = ptr;
+	return	(uint32_t)p[0] <<  0 |
+		(uint32_t)p[1] <<  8 |
+		(uint32_t)p[2] << 16 |
+		(uint32_t)p[3] << 24;
+}
+
+static inline uint64_t get_le64(const void *ptr)
+{
+	const unsigned char *p = ptr;
+	return	(uint64_t)get_be32(&p[0]) <<  0 |
+		(uint64_t)get_be32(&p[4]) << 32;
+}
+
+static inline void put_le32(void *ptr, uint32_t value)
+{
+	unsigned char *p = ptr;
+	p[0] = value >>  0;
+	p[1] = value >>  8;
+	p[2] = value >> 16;
+	p[3] = value >> 24;
+}
+
+static inline void put_le64(void *ptr, uint64_t value)
+{
+	unsigned char *p = ptr;
+	p[0] = value >>  0;
+	p[1] = value >>  8;
+	p[2] = value >> 16;
+	p[3] = value >> 24;
+	p[4] = value >> 32;
+	p[5] = value >> 40;
+	p[6] = value >> 48;
+	p[7] = value >> 56;
+}

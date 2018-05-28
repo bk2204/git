@@ -1147,3 +1147,43 @@ depacketize () {
 		}
 	'
 }
+
+test_translate_f_ () {
+	local file="$TEST_DIRECTORY/translate/$2" &&
+	perl -e '
+		$delim = "\t";
+		($hoidlen, $file, $arg) = @ARGV;
+		open($fh, "<", $file) or die "open: $!";
+		while (<$fh>) {
+			# Allow specifying other delimiters.
+			$delim = $1 if /^#!\sdelimiter\s(.)/;
+			next if /^#/;
+			@fields = split /$delim/, $_, 3;
+			if ($fields[0] eq $arg) {
+				print($hoidlen == 40 ? $fields[1] : $fields[2]);
+				last;
+			}
+		}
+	' "$1" "$file" "$3"
+}
+
+# Without -f, print the first argument if we are using SHA-1 and the second if
+# we're using NewHash.
+# With -f FILE ARG, read the (by default) tab-delimited file from
+# t/translate/FILE, finding the first field matching ARG and printing either the
+# second or third field depending on the hash in use.
+test_translate () {
+	local hoidlen=$(printf "%s" "$EMPTY_BLOB" | wc -c) &&
+	if [ "$1" = "-f" ]
+	then
+		shift &&
+		test_translate_f_ "$hoidlen" "$@"
+	else
+		if [ "$hoidlen" -eq 40 ]
+		then
+			printf "%s" "$1"
+		else
+			printf "%s" "$2"
+		fi
+	fi
+}

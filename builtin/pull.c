@@ -742,7 +742,7 @@ static int get_rebase_fork_point(struct object_id *fork_point, const char *repo,
 	cp.no_stderr = 1;
 	cp.git_cmd = 1;
 
-	ret = capture_command(&cp, &sb, GIT_SHA1_HEXSZ);
+	ret = capture_command(&cp, &sb, the_hash_algo->rawsz);
 	if (ret)
 		goto cleanup;
 

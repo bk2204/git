@@ -2978,7 +2978,7 @@ static int do_merge(struct commit *commit, const char *arg, int arg_len,
 		goto leave_merge;
 	}
 
-	write_message(oid_to_hex(&merge_commit->object.oid), GIT_SHA1_HEXSZ,
+	write_message(oid_to_hex(&merge_commit->object.oid), the_hash_algo->hexsz,
 		      git_path_merge_head(), 0);
 	write_message("no-ff", 5, git_path_merge_mode(), 0);
 
@@ -3773,7 +3773,7 @@ static const char *label_oid(struct object_id *oid, const char *label,
 		char *p;
 
 		strbuf_reset(&state->buf);
-		strbuf_grow(&state->buf, GIT_SHA1_HEXSZ);
+		strbuf_grow(&state->buf, GIT_MAX_HEXSZ);
 		label = p = state->buf.buf;
 
 		find_unique_abbrev_r(p, oid, default_abbrev);
@@ -3786,7 +3786,7 @@ static const char *label_oid(struct object_id *oid, const char *label,
 			size_t i = strlen(p) + 1;
 
 			oid_to_hex_r(p, oid);
-			for (; i < GIT_SHA1_HEXSZ; i++) {
+			for (; i < the_hash_algo->hexsz; i++) {
 				char save = p[i];
 				p[i] = '\0';
 				if (!hashmap_get_from_hash(&state->labels,

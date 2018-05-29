@@ -329,15 +329,16 @@ static void print_path(const char *path)
 static void *generate_fake_oid(const void *old, size_t *len)
 {
 	static uint32_t counter = 1; /* avoid null sha1 */
-	unsigned char *out = xcalloc(GIT_SHA1_RAWSZ, 1);
-	put_be32(out + GIT_SHA1_RAWSZ - 4, counter++);
+	const unsigned rawsz = the_hash_algo->rawsz;
+	unsigned char *out = xcalloc(rawsz, 1);
+	put_be32(out + rawsz - 4, counter++);
 	return out;
 }
 
 static const unsigned char *anonymize_sha1(const struct object_id *oid)
 {
 	static struct hashmap sha1s;
-	size_t len = GIT_SHA1_RAWSZ;
+	size_t len = the_hash_algo->rawsz;
 	return anonymize_mem(&sha1s, generate_fake_oid, oid, &len);
 }
 

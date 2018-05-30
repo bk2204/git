@@ -1003,8 +1003,10 @@ int verify_repository_format(const struct repository_format *format,
  * and die if it is a version we don't understand. Generally one would
  * set_git_dir() before calling this, and use it only for "are we in a valid
  * repo?".
+ *
+ * If successful and fmt is not NULL, fill fmt with data.
  */
-extern void check_repository_format(void);
+extern void check_repository_format(struct repository_format *fmt);
 
 #define MTIME_CHANGED	0x0001
 #define CTIME_CHANGED	0x0002

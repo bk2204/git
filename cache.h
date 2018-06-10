@@ -1366,6 +1366,9 @@ extern int set_disambiguate_hint_config(const char *var, const char *value);
 extern int get_sha1_hex(const char *hex, unsigned char *sha1);
 extern int get_oid_hex(const char *hex, struct object_id *sha1);
 
+/* Like get_oid_hex, but for an arbitrary hash algorithm. */
+int get_oid_hex_algop(const char *hex, struct object_id *oid, const struct git_hash_algo *algop);
+
 /*
  * Read `len` pairs of hexadecimal digits from `hex` and write the
  * values to `binary` as `len` bytes. Return 0 on success, or -1 if
@@ -1400,6 +1403,10 @@ char *oid_to_hex(const struct object_id *oid);						/* same static buffer */
  * unmodified.
  */
 extern int parse_oid_hex(const char *hex, struct object_id *oid, const char **end);
+
+/* Like parse_oid_hex, but for an arbitrary hash algorithm. */
+int parse_oid_hex_algop(const char *hex, struct object_id *oid, const char **end,
+			const struct git_hash_algo *algo);
 
 /*
  * This reads short-hand syntax that not only evaluates to a commit

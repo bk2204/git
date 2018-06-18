@@ -205,12 +205,24 @@ static void annotate_refs_with_symref_info(struct ref *ref)
 
 static void process_capabilities(struct packet_reader *reader, int *len)
 {
+	const char *feat_val;
+	int feat_len;
+	int hash_algo;
 	const char *line = reader->line;
 	int nul_location = strlen(line);
 	if (nul_location == *len)
 		return;
 	server_capabilities_v1 = xstrdup(line + nul_location + 1);
 	*len = nul_location;
+
+	feat_val = server_feature_value("object-format", &feat_len);
+	if (feat_val) {
+		char *hash_name = xstrndup(feat_val, feat_len);
+		hash_algo = hash_algo_by_name(hash_name);
+		if (hash_algo != GIT_HASH_UNKNOWN)
+			reader->hash_algo = &hash_algos[hash_algo];
+		free(hash_name);
+	}
 }
 
 static int process_dummy_ref(const struct packet_reader *reader)
@@ -219,7 +231,7 @@ static int process_dummy_ref(const struct packet_reader *reader)
 	struct object_id oid;
 	const char *name;
 
-	if (parse_oid_hex(line, &oid, &name))
+	if (parse_oid_hex_algop(line, &oid, &name, reader->hash_algo))
 		return 0;
 	if (*name != ' ')
 		return 0;
@@ -243,7 +255,7 @@ static int process_ref(const struct packet_reader *reader, int len,
 	struct object_id old_oid;
 	const char *name;
 
-	if (parse_oid_hex(line, &old_oid, &name))
+	if (parse_oid_hex_algop(line, &old_oid, &name, reader->hash_algo))
 		return 0;
 	if (*name != ' ')
 		return 0;
@@ -255,7 +267,7 @@ static int process_ref(const struct packet_reader *reader, int len,
 		die(_("protocol error: unexpected capabilities^{}"));
 	} else if (check_ref(name, flags)) {
 		struct ref *ref = alloc_ref(name);
-		oidcpy(&ref->old_oid, &old_oid);
+		memcpy(ref->old_oid.hash, old_oid.hash, reader->hash_algo->rawsz);
 		**list = ref;
 		*list = &ref->next;
 	}
@@ -273,7 +285,7 @@ static int process_shallow(const struct packet_reader *reader, int len,
 	if (!skip_prefix(line, "shallow ", &arg))
 		return 0;
 
-	if (get_oid_hex(arg, &old_oid))
+	if (get_oid_hex_algop(arg, &old_oid, reader->hash_algo))
 		die(_("protocol error: expected shallow sha-1, got '%s'"), arg);
 	if (!shallow_points)
 		die(_("repository on the other end cannot be shallow"));

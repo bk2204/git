@@ -989,6 +989,8 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 		die(_("Server does not support --shallow-exclude"));
 	if (!server_supports("deepen-relative") && args->deepen_relative)
 		die(_("Server does not support --deepen"));
+	if (!server_supports_hash(the_hash_algo->name, NULL))
+		die(_("Server does not support this repository's object format"));
 
 	if (!args->no_dependents) {
 		mark_complete_and_common_ref(&negotiator, args, &ref);

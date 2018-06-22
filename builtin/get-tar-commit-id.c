@@ -24,6 +24,7 @@ int cmd_get_tar_commit_id(int argc, const char **argv, const char *prefix)
 	ssize_t n;
 	char *hdrprefix;
 	int ret;
+	int i;
 
 	if (argc != 1)
 		usage(builtin_get_tar_commit_id_usage);
@@ -36,14 +37,18 @@ int cmd_get_tar_commit_id(int argc, const char **argv, const char *prefix)
 	if (header->typeflag[0] != 'g')
 		return 1;
 
-	hdrprefix = xstrfmt("%zu comment=", the_hash_algo->hexsz + strlen(" comment=") + 2 + 1);
-	ret = skip_prefix(content, hdrprefix, &comment);
-	free(hdrprefix);
-	if (!ret)
-		return 1;
+	for (i = 1; i < GIT_HASH_NALGOS; i++) {
+		const struct git_hash_algo *algo = &hash_algos[i];
+		hdrprefix = xstrfmt("%zu comment=", algo->hexsz + strlen(" comment=") + 2 + 1);
+		ret = skip_prefix(content, hdrprefix, &comment);
+		free(hdrprefix);
+		if (!ret)
+			continue;
 
-	if (write_in_full(1, comment, the_hash_algo->hexsz + 1) < 0)
-		die_errno("git get-tar-commit-id: write error");
+		if (write_in_full(1, comment, algo->hexsz + 1) < 0)
+			die_errno("git get-tar-commit-id: write error");
+		return 0;
+	}
 
-	return 0;
+	return 1;
 }

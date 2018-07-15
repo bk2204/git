@@ -7,6 +7,12 @@ test_description='Test merging of notes trees'
 
 . ./test-lib.sh
 
+if ! test_have_prereq SHA1
+then
+       skip_all='not using SHA-1 for objects'
+       test_done
+fi
+
 test_expect_success setup '
 	test_commit 1st &&
 	test_commit 2nd &&

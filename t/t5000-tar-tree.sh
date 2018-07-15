@@ -362,7 +362,7 @@ test_lazy_prereq TAR_HUGE '
 	test_cmp expect actual
 '
 
-test_expect_success LONG_IS_64BIT 'set up repository with huge blob' '
+test_expect_success SHA1,LONG_IS_64BIT 'set up repository with huge blob' '
 	obj_d=19 &&
 	obj_f=f9c8273ec45a8938e6999cb59b3ff66739902a &&
 	obj=${obj_d}${obj_f} &&
@@ -375,7 +375,7 @@ test_expect_success LONG_IS_64BIT 'set up repository with huge blob' '
 
 # We expect git to die with SIGPIPE here (otherwise we
 # would generate the whole 64GB).
-test_expect_success LONG_IS_64BIT 'generate tar with huge size' '
+test_expect_success SHA1,LONG_IS_64BIT 'generate tar with huge size' '
 	{
 		git archive HEAD
 		echo $? >exit-code
@@ -384,7 +384,7 @@ test_expect_success LONG_IS_64BIT 'generate tar with huge size' '
 	test_cmp expect exit-code
 '
 
-test_expect_success TAR_HUGE,LONG_IS_64BIT 'system tar can read our huge size' '
+test_expect_success SHA1,TAR_HUGE,LONG_IS_64BIT 'system tar can read our huge size' '
 	echo 68719476737 >expect &&
 	tar_info huge.tar | cut -d" " -f1 >actual &&
 	test_cmp expect actual

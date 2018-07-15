@@ -15,8 +15,9 @@ compare_ws_file () {
 	pfx=$1
 	exp=$2.expect
 	act=$pfx.actual.$3
-	tr '\015\000abcdef0123456789' QN00000000000000000 <"$2" >"$exp" &&
+	tr '\015\000abcdef0123456789' QN00000000000000000 <"$2" >"$exp+" &&
 	tr '\015\000abcdef0123456789' QN00000000000000000 <"$3" >"$act" &&
+	sed -e "s/0000+/$ZERO_OID/" "$exp+" >"$exp" &&
 	test_cmp "$exp" "$act" &&
 	rm "$exp" "$act"
 }

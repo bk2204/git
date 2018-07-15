@@ -50,6 +50,11 @@ unsigned int memihash(const void *buf, size_t len)
 	return hash;
 }
 
+unsigned int oidhash(const struct object_id *oid)
+{
+	return sha1hash(oid->hash);
+}
+
 /*
  * Incoporate another chunk of data into a memihash
  * computation.

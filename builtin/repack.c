@@ -311,8 +311,8 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 
 	out = xfdopen(cmd.out, "r");
 	while (strbuf_getline_lf(&line, out) != EOF) {
-		if (line.len != 40)
-			die("repack: Expecting 40 character sha1 lines only from pack-objects.");
+		if (line.len != the_hash_algo->hexsz)
+			die("repack: Expecting full hex object ID lines only from pack-objects.");
 		string_list_append(&names, line.buf);
 	}
 	fclose(out);
@@ -433,12 +433,12 @@ int cmd_repack(int argc, const char **argv, const char *prefix)
 		int opts = 0;
 		string_list_sort(&names);
 		for_each_string_list_item(item, &existing_packs) {
-			char *sha1;
+			char *hash;
 			size_t len = strlen(item->string);
-			if (len < 40)
+			if (len < the_hash_algo->hexsz)
 				continue;
-			sha1 = item->string + len - 40;
-			if (!string_list_has_string(&names, sha1))
+			hash = item->string + len - the_hash_algo->hexsz;
+			if (!string_list_has_string(&names, hash))
 				remove_redundant_pack(packdir, item->string);
 		}
 		if (!quiet && isatty(2))

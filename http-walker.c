@@ -434,7 +434,7 @@ static int http_fetch_pack(struct walker *walker, struct alt_base *repo, unsigne
 
 	if (walker->get_verbosely) {
 		fprintf(stderr, "Getting pack %s\n",
-			sha1_to_hex(target->sha1));
+			sha1_to_hex(target->hash));
 		fprintf(stderr, " which contains %s\n",
 			sha1_to_hex(sha1));
 	}
@@ -543,11 +543,11 @@ static int fetch_object(struct walker *walker, unsigned char *sha1)
 	} else if (req->zret != Z_STREAM_END) {
 		walker->corrupt_object_found++;
 		ret = error("File %s (%s) corrupt", hex, req->url);
-	} else if (hashcmp(obj_req->oid.hash, req->real_sha1)) {
+	} else if (oidcmp(&obj_req->oid, &req->real_oid)) {
 		ret = error("File %s has bad hash", hex);
 	} else if (req->rename < 0) {
 		struct strbuf buf = STRBUF_INIT;
-		sha1_file_name(the_repository, &buf, req->sha1);
+		sha1_file_name(the_repository, &buf, req->oid.hash);
 		ret = error("unable to write sha1 filename %s", buf.buf);
 		strbuf_release(&buf);
 	}

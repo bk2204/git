@@ -211,7 +211,7 @@ struct packed_git *parse_pack_index(unsigned char *sha1, const char *idx_path)
 	struct packed_git *p = alloc_packed_git(alloc);
 
 	memcpy(p->pack_name, path, alloc); /* includes NUL */
-	hashcpy(p->sha1, sha1);
+	hashcpy(p->hash, sha1);
 	if (check_packed_git_idx(idx_path, p)) {
 		free(p);
 		return NULL;
@@ -678,8 +678,8 @@ struct packed_git *add_packed_git(const char *path, size_t path_len, int local)
 	p->pack_local = local;
 	p->mtime = st.st_mtime;
 	if (path_len < the_hash_algo->hexsz ||
-	    get_sha1_hex(path + path_len - the_hash_algo->hexsz, p->sha1))
-		hashclr(p->sha1);
+	    get_sha1_hex(path + path_len - the_hash_algo->hexsz, p->hash))
+		hashclr(p->hash);
 	return p;
 }
 
@@ -1014,13 +1014,14 @@ int unpack_object_header(struct packed_git *p,
 void mark_bad_packed_object(struct packed_git *p, const unsigned char *sha1)
 {
 	unsigned i;
+	const unsigned hashsz = the_hash_algo->rawsz;
 	for (i = 0; i < p->num_bad_objects; i++)
-		if (!hashcmp(sha1, p->bad_object_sha1 + GIT_SHA1_RAWSZ * i))
+		if (!hashcmp(sha1, p->bad_object_sha1 + hashsz * i))
 			return;
 	p->bad_object_sha1 = xrealloc(p->bad_object_sha1,
 				      st_mult(GIT_MAX_RAWSZ,
 					      st_add(p->num_bad_objects, 1)));
-	hashcpy(p->bad_object_sha1 + GIT_SHA1_RAWSZ * p->num_bad_objects, sha1);
+	hashcpy(p->bad_object_sha1 + hashsz * p->num_bad_objects, sha1);
 	p->num_bad_objects++;
 }
 

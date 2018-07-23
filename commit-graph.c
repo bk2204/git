@@ -45,7 +45,14 @@ char *get_commit_graph_filename(const char *obj_dir)
 
 static uint8_t oid_version(void)
 {
-	return 1;
+	switch (hash_algo_by_ptr(the_hash_algo)) {
+		case GIT_HASH_SHA1:
+			return 1;
+		case GIT_HASH_SHA256:
+			return 2;
+		default:
+			BUG("unknown hash algorithm");
+	}
 }
 
 static struct commit_graph *alloc_commit_graph(void)

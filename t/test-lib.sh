@@ -227,18 +227,21 @@ esac
 
 # Convenience
 #
-# A regexp to match 5, 35 and 40 hexdigits
+# A regexp to match 4, 5, 35, 40, and 64 hexdigits
+_x04='[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
 _x05='[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
 _x35="$_x05$_x05$_x05$_x05$_x05$_x05$_x05"
 _x40="$_x35$_x05"
+_x64="$_x40$_x05$_x05$_x05$_x05$_x04"
 
 # Zero SHA-1
 _z40=0000000000000000000000000000000000000000
+_z64=0000000000000000000000000000000000000000000000000000000000000000
 
-OID_REGEX="$_x40"
-ZERO_OID=$_z40
-EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
-EMPTY_BLOB=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+OID_REGEX="$_x64"
+ZERO_OID=$_z64
+EMPTY_TREE=6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321
+EMPTY_BLOB=473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813
 
 # Line feed
 LF='

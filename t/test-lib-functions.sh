@@ -1189,9 +1189,7 @@ test_set_hash () {
 
 # Detect the hash algorithm in use.
 test_detect_hash () {
-	# Currently we only support SHA-1, but in the future this function will
-	# actually detect the algorithm in use.
-	test_hash_algo='sha1'
+	test_hash_algo='sha256'
 }
 
 # Load common hash metadata and common placeholder object IDs for use with

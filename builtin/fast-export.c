@@ -989,7 +989,7 @@ static void handle_deletes(void)
 			continue;
 
 		printf("reset %s\nfrom %s\n\n",
-				refspec->dst, sha1_to_hex(null_sha1));
+				refspec->dst, oid_to_hex(&null_oid));
 	}
 }
 

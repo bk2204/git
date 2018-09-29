@@ -17,7 +17,8 @@ test_expect_success setup '
 	git checkout HEAD^0 &&
 	test_commit B fileB two &&
 	git tag -d A B &&
-	git reflog expire --expire=now --all
+	git reflog expire --expire=now --all &&
+	test_oid_init
 '
 
 test_expect_success 'loose objects borrowed from alternate are not missing' '
@@ -267,7 +268,7 @@ hex2oct() {
 	perl -ne 'printf "\\%03o", hex for /../g'
 }
 
-test_expect_success SHA1 'tree entry with type mismatch' '
+test_expect_success 'tree entry with type mismatch' '
 	test_when_finished "remove_object \$blob" &&
 	test_when_finished "remove_object \$tree" &&
 	test_when_finished "remove_object \$commit" &&
@@ -396,10 +397,10 @@ test_expect_success 'rev-list --verify-objects' '
 	test_must_be_empty out
 '
 
-test_expect_success SHA1 'rev-list --verify-objects with bad sha1' '
+test_expect_success 'rev-list --verify-objects with bad sha1' '
 	sha=$(echo blob | git hash-object -w --stdin) &&
-	old=$(echo $sha | sed "s+^..+&/+") &&
-	new=$(dirname $old)/ffffffffffffffffffffffffffffffffffffff &&
+	old=$(test_oid_to_path $sha) &&
+	new=$(dirname $old)/$(test_oid ff_2) &&
 	sha="$(dirname $new)$(basename $new)" &&
 	mv .git/objects/$old .git/objects/$new &&
 	test_when_finished "remove_object $sha" &&
@@ -414,7 +415,7 @@ test_expect_success SHA1 'rev-list --verify-objects with bad sha1' '
 
 	test_might_fail git rev-list --verify-objects refs/heads/bogus >/dev/null 2>out &&
 	cat out &&
-	test_i18ngrep -q "error: hash mismatch 63ffffffffffffffffffffffffffffffffffffff" out
+	test_i18ngrep -q "error: hash mismatch $(dirname $new)$(test_oid ff_2)" out
 '
 
 test_expect_success 'force fsck to ignore double author' '
@@ -578,7 +579,7 @@ test_expect_success 'fsck notices ref pointing to missing tag' '
 	test_must_fail git -C missing fsck
 '
 
-test_expect_success SHA1 'fsck --connectivity-only' '
+test_expect_success 'fsck --connectivity-only' '
 	rm -rf connectivity-only &&
 	git init connectivity-only &&
 	(
@@ -597,7 +598,7 @@ test_expect_success SHA1 'fsck --connectivity-only' '
 		# its type. That lets us see that --connectivity-only is
 		# not actually looking at the contents, but leaves it
 		# free to examine the type if it chooses.
-		empty=.git/objects/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391 &&
+		empty=.git/objects/$(test_oid_to_path $EMPTY_BLOB) &&
 		blob=$(echo unrelated | git hash-object -w --stdin) &&
 		mv -f $(sha1_file $blob) $empty &&
 

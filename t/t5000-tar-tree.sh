@@ -94,6 +94,13 @@ check_tar() {
 	'
 }
 
+test_expect_success 'setup' '
+	test_oid_cache <<-EOF
+	obj sha1:19f9c8273ec45a8938e6999cb59b3ff66739902a
+	obj sha256:3c666f798798601571f5cec0adb57ce4aba8546875e7693177e0535f34d2c49b
+	EOF
+'
+
 test_expect_success \
     'populate workdir' \
     'mkdir a &&
@@ -368,12 +375,11 @@ test_lazy_prereq TAR_HUGE '
 	test_cmp expect actual
 '
 
-test_expect_success SHA1,LONG_IS_64BIT 'set up repository with huge blob' '
-	obj_d=19 &&
-	obj_f=f9c8273ec45a8938e6999cb59b3ff66739902a &&
-	obj=${obj_d}${obj_f} &&
-	mkdir -p .git/objects/$obj_d &&
-	cp "$TEST_DIRECTORY"/t5000/$obj .git/objects/$obj_d/$obj_f &&
+test_expect_success LONG_IS_64BIT 'set up repository with huge blob' '
+	obj=$(test_oid obj) &&
+	path=$(test_oid_to_path $obj) &&
+	mkdir -p .git/objects/$(dirname $path) &&
+	cp "$TEST_DIRECTORY"/t5000/huge-object .git/objects/$path &&
 	rm -f .git/index &&
 	git update-index --add --cacheinfo 100644,$obj,huge &&
 	git commit -m huge
@@ -381,7 +387,7 @@ test_expect_success SHA1,LONG_IS_64BIT 'set up repository with huge blob' '
 
 # We expect git to die with SIGPIPE here (otherwise we
 # would generate the whole 64GB).
-test_expect_success SHA1,LONG_IS_64BIT 'generate tar with huge size' '
+test_expect_success LONG_IS_64BIT 'generate tar with huge size' '
 	{
 		git archive HEAD
 		echo $? >exit-code
@@ -390,7 +396,7 @@ test_expect_success SHA1,LONG_IS_64BIT 'generate tar with huge size' '
 	test_cmp expect exit-code
 '
 
-test_expect_success SHA1,TAR_HUGE,LONG_IS_64BIT 'system tar can read our huge size' '
+test_expect_success TAR_HUGE,LONG_IS_64BIT 'system tar can read our huge size' '
 	echo 68719476737 >expect &&
 	tar_info huge.tar | cut -d" " -f1 >actual &&
 	test_cmp expect actual

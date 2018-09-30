@@ -4,12 +4,6 @@ test_description='split index mode tests'
 
 . ./test-lib.sh
 
-if ! test_have_prereq SHA1
-then
-       skip_all='not using SHA-1 for objects'
-       test_done
-fi
-
 # We need total control of index splitting here
 sane_unset GIT_TEST_SPLIT_INDEX
 
@@ -26,6 +20,22 @@ create_non_racy_file () {
 	test-tool chmtime =-5 "$1"
 }
 
+test_expect_success 'setup' '
+	test_oid_cache <<-EOF
+	own_v3 sha1:8299b0bcd1ac364e5f1d7768efb62fa2da79a339
+	own_v3 sha256:1b2425e5cddc991d47add6e3acf777ebcc4b64dab8d3389da6850e5df76e967f
+
+	base_v3 sha1:39d890139ee5356c7ef572216cebcd27aa41f9df
+	base_v3 sha256:de94a2515c2684cccc133f51a6a09acf4af121c0bc51145227e19a3abe43b8f3
+
+	own_v4 sha1:432ef4b63f32193984f339431fd50ca796493569
+	own_v4 sha256:6738ac6319c25b694afa7bcc313deb182d1a59b68bf7a47b4296de83478c0420
+
+	base_v4 sha1:508851a7f0dfa8691e9f69c7f055865389012491
+	base_v4 sha256:3177d4adfdd4b6904f7e921d91d715a471c0dde7cf6a4bba574927f02b699508
+	EOF
+'
+
 test_expect_success 'enable split index' '
 	git config splitIndex.maxPercentChange 100 &&
 	git update-index --split-index &&
@@ -35,11 +45,11 @@ test_expect_success 'enable split index' '
 	# NEEDSWORK: Stop hard-coding checksums.
 	if test "$indexversion" = "4"
 	then
-		own=432ef4b63f32193984f339431fd50ca796493569
-		base=508851a7f0dfa8691e9f69c7f055865389012491
+		own=$(test_oid own_v4)
+		base=$(test_oid base_v4)
 	else
-		own=8299b0bcd1ac364e5f1d7768efb62fa2da79a339
-		base=39d890139ee5356c7ef572216cebcd27aa41f9df
+		own=$(test_oid own_v3)
+		base=$(test_oid base_v3)
 	fi &&
 
 	cat >expect <<-EOF &&
@@ -105,17 +115,18 @@ test_expect_success 'enable split index again, "one" now belongs to base index"'
 
 test_expect_success 'modify original file, base index untouched' '
 	echo modified | create_non_racy_file one &&
+	file1_blob=$(git hash-object one) &&
 	git update-index one &&
 	git ls-files --stage >ls-files.actual &&
 	cat >ls-files.expect <<-EOF &&
-	100644 2e0996000b7e9019eabcad29391bf0f5c7702f0b 0	one
+	100644 $file1_blob 0	one
 	EOF
 	test_cmp ls-files.expect ls-files.actual &&
 
 	test-tool dump-split-index .git/index | sed "/^own/d" >actual &&
 	q_to_tab >expect <<-EOF &&
 	$BASE
-	100644 2e0996000b7e9019eabcad29391bf0f5c7702f0b 0Q
+	100644 $file1_blob 0Q
 	replacements: 0
 	deletions:
 	EOF
@@ -127,7 +138,7 @@ test_expect_success 'add another file, which stays index' '
 	git update-index --add two &&
 	git ls-files --stage >ls-files.actual &&
 	cat >ls-files.expect <<-EOF &&
-	100644 2e0996000b7e9019eabcad29391bf0f5c7702f0b 0	one
+	100644 $file1_blob 0	one
 	100644 $EMPTY_BLOB 0	two
 	EOF
 	test_cmp ls-files.expect ls-files.actual &&
@@ -135,7 +146,7 @@ test_expect_success 'add another file, which stays index' '
 	test-tool dump-split-index .git/index | sed "/^own/d" >actual &&
 	q_to_tab >expect <<-EOF &&
 	$BASE
-	100644 2e0996000b7e9019eabcad29391bf0f5c7702f0b 0Q
+	100644 $file1_blob 0Q
 	100644 $EMPTY_BLOB 0	two
 	replacements: 0
 	deletions:
@@ -147,14 +158,14 @@ test_expect_success 'remove file not in base index' '
 	git update-index --force-remove two &&
 	git ls-files --stage >ls-files.actual &&
 	cat >ls-files.expect <<-EOF &&
-	100644 2e0996000b7e9019eabcad29391bf0f5c7702f0b 0	one
+	100644 $file1_blob 0	one
 	EOF
 	test_cmp ls-files.expect ls-files.actual &&
 
 	test-tool dump-split-index .git/index | sed "/^own/d" >actual &&
 	q_to_tab >expect <<-EOF &&
 	$BASE
-	100644 2e0996000b7e9019eabcad29391bf0f5c7702f0b 0Q
+	100644 $file1_blob 0Q
 	replacements: 0
 	deletions:
 	EOF
@@ -243,9 +254,9 @@ test_expect_success 'set core.splitIndex config variable to true' '
 	git update-index --add three &&
 	git ls-files --stage >ls-files.actual &&
 	cat >ls-files.expect <<-EOF &&
-	100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0	one
-	100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0	three
-	100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0	two
+	100644 $EMPTY_BLOB 0	one
+	100644 $EMPTY_BLOB 0	three
+	100644 $EMPTY_BLOB 0	two
 	EOF
 	test_cmp ls-files.expect ls-files.actual &&
 	BASE=$(test-tool dump-split-index .git/index | grep "^base") &&
@@ -263,8 +274,8 @@ test_expect_success 'set core.splitIndex config variable to false' '
 	git update-index --force-remove three &&
 	git ls-files --stage >ls-files.actual &&
 	cat >ls-files.expect <<-EOF &&
-	100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0	one
-	100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0	two
+	100644 $EMPTY_BLOB 0	one
+	100644 $EMPTY_BLOB 0	two
 	EOF
 	test_cmp ls-files.expect ls-files.actual &&
 	test-tool dump-split-index .git/index | sed "/^own/d" >actual &&
@@ -291,7 +302,7 @@ test_expect_success 'set core.splitIndex config variable back to true' '
 	test-tool dump-split-index .git/index | sed "/^own/d" >actual &&
 	cat >expect <<-EOF &&
 	$BASE
-	100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0	four
+	100644 $EMPTY_BLOB 0	four
 	replacements:
 	deletions:
 	EOF
@@ -315,7 +326,7 @@ test_expect_success 'check behavior with splitIndex.maxPercentChange unset' '
 	test-tool dump-split-index .git/index | sed "/^own/d" >actual &&
 	cat >expect <<-EOF &&
 	$BASE
-	100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 0	six
+	100644 $EMPTY_BLOB 0	six
 	replacements:
 	deletions:
 	EOF

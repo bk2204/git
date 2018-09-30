@@ -469,23 +469,25 @@ test_expect_success 'removing with --stdin --ignore-missing' '
 	test_cmp after-removal-expect actual
 '
 
-test_expect_success SHA1 'list notes with "git notes list"' '
-	cat >expect <<-EOF &&
-		c9c6af7f78bc47490dbf3e822cf2f3c24d4b9061 7a4ca6ee52a974a66cbaa78e33214535dff1d691
-		c18dc024e14f08d18d14eea0d747ff692d66d6a3 d07d62e5208f22eb5695e7eb47667dc8b9860290
+test_expect_success 'list notes with "git notes list"' '
+	commit_2=$(git rev-parse 2nd) &&
+	commit_3=$(git rev-parse 3rd) &&
+	sort -t" " -k2 >expect <<-EOF &&
+		$(git rev-parse refs/notes/commits:$commit_2) $commit_2
+		$(git rev-parse refs/notes/commits:$commit_3) $commit_3
 	EOF
 	git notes list >actual &&
 	test_cmp expect actual
 '
 
-test_expect_success SHA1 'list notes with "git notes"' '
+test_expect_success 'list notes with "git notes"' '
 	git notes >actual &&
 	test_cmp expect actual
 '
 
-test_expect_success SHA1 'list specific note with "git notes list <object>"' '
+test_expect_success 'list specific note with "git notes list <object>"' '
 	cat >expect <<-EOF &&
-		c18dc024e14f08d18d14eea0d747ff692d66d6a3
+		$(git rev-parse refs/notes/commits:$commit_3)
 	EOF
 	git notes list HEAD^^ >actual &&
 	test_cmp expect actual
@@ -508,11 +510,12 @@ test_expect_success 'append to existing note with "git notes append"' '
 	test_cmp expect actual
 '
 
-test_expect_success SHA1 '"git notes list" does not expand to "git notes list HEAD"' '
-	cat >expect_list <<-EOF &&
-		c9c6af7f78bc47490dbf3e822cf2f3c24d4b9061 7a4ca6ee52a974a66cbaa78e33214535dff1d691
-		4b6ad22357cc8a1296720574b8d2fbc22fab0671 7f9ad8836c775acb134c0a055fc55fb4cd1ba361
-		c18dc024e14f08d18d14eea0d747ff692d66d6a3 d07d62e5208f22eb5695e7eb47667dc8b9860290
+test_expect_success '"git notes list" does not expand to "git notes list HEAD"' '
+	commit_5=$(git rev-parse 5th) &&
+	sort -t" " -k2 >expect_list <<-EOF &&
+		$(git rev-parse refs/notes/commits:$commit_2) $commit_2
+		$(git rev-parse refs/notes/commits:$commit_3) $commit_3
+		$(git rev-parse refs/notes/commits:$commit_5) $commit_5
 	EOF
 	git notes list >actual &&
 	test_cmp expect_list actual

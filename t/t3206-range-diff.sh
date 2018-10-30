@@ -294,9 +294,9 @@ test_expect_success 'changed message' '
 '
 
 test_expect_success 'dual-coloring' '
-	sed -e "s|^:||" >expect <<-\EOF &&
-	:<YELLOW>1:  a4b3333 = 1:  f686024 s/5/A/<RESET>
-	:<RED>2:  f51d370 <RESET><YELLOW>!<RESET><GREEN> 2:  4ab067d<RESET><YELLOW> s/4/A/<RESET>
+	sed -e "s|^:||" >expect <<-EOF &&
+	:<YELLOW>1:  $(test_oid c1) = 1:  $(test_oid m1) s/5/A/<RESET>
+	:<RED>2:  $(test_oid c2) <RESET><YELLOW>!<RESET><GREEN> 2:  $(test_oid m2)<RESET><YELLOW> s/4/A/<RESET>
 	:    <REVERSE><CYAN>@@ -2,6 +2,8 @@<RESET>
 	:     <RESET>
 	:         s/4/A/<RESET>
@@ -306,7 +306,7 @@ test_expect_success 'dual-coloring' '
 	:      diff --git a/file b/file<RESET>
 	:      --- a/file<RESET>
 	:      +++ b/file<RESET>
-	:<RED>3:  0559556 <RESET><YELLOW>!<RESET><GREEN> 3:  b9cb956<RESET><YELLOW> s/11/B/<RESET>
+	:<RED>3:  $(test_oid c3) <RESET><YELLOW>!<RESET><GREEN> 3:  $(test_oid m3)<RESET><YELLOW> s/11/B/<RESET>
 	:    <REVERSE><CYAN>@@ -10,7 +10,7 @@<RESET>
 	:      9<RESET>
 	:      10<RESET>
@@ -316,7 +316,7 @@ test_expect_success 'dual-coloring' '
 	:      12<RESET>
 	:      13<RESET>
 	:      14<RESET>
-	:<RED>4:  d966c5c <RESET><YELLOW>!<RESET><GREEN> 4:  8add5f1<RESET><YELLOW> s/12/B/<RESET>
+	:<RED>4:  $(test_oid c4) <RESET><YELLOW>!<RESET><GREEN> 4:  $(test_oid m4)<RESET><YELLOW> s/12/B/<RESET>
 	:    <REVERSE><CYAN>@@ -8,7 +8,7 @@<RESET>
 	:    <CYAN> @@<RESET>
 	:      9<RESET>

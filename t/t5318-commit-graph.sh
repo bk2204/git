@@ -9,11 +9,7 @@ test_expect_success 'setup full repo' '
 	git init &&
 	git config core.commitGraph true &&
 	objdir=".git/objects" &&
-	test_oid_init &&
-	test_oid_cache <<-EOF
-	oidval sha1:1
-	oidval sha256:2
-	EOF
+	test_oid_init
 '
 
 test_expect_success 'verify graph with no graph file' '
@@ -69,7 +65,7 @@ graph_read_expect() {
 		NUM_CHUNKS=$((3 + $(echo "$2" | wc -w)))
 	fi
 	cat >expect <<- EOF
-	header: 43475048 1 $(test_oid oidval) $NUM_CHUNKS 0
+	header: 43475048 1 1 $NUM_CHUNKS 0
 	num_commits: $1
 	chunks: oid_fanout oid_lookup commit_metadata$OPTIONAL
 	EOF

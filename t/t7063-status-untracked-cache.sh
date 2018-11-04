@@ -51,7 +51,17 @@ test_expect_success 'setup' '
 	touch one two three done/one dtwo/two dthree/three &&
 	git add one two done/one &&
 	: >.git/info/exclude &&
-	git update-index --untracked-cache
+	git update-index --untracked-cache &&
+	test_oid_cache <<-EOF
+	root sha1:e6fcc8f2ee31bae321d66afd183fcb7237afae6e
+	root sha256:b90c672088c015b9c83876e919da311bad4cd39639fb139f988af6a11493b974
+
+	exclude sha1:1946f0437f90c5005533cbe1736a6451ca301714
+	exclude sha256:fe4aaa1bbbbce4cb8f73426748a14c5ad6026b26f90505a0bf2494b165a5b76c
+
+	done sha1:1946f0437f90c5005533cbe1736a6451ca301714
+	done sha256:7f079501d79f665b3acc50f5e0e9e94509084d5032ac20113a37dd5029b757cc
+	EOF
 '
 
 test_expect_success 'untracked cache is empty' '
@@ -203,14 +213,14 @@ EOF
 
 '
 
-test_expect_success SHA1 'verify untracked cache dump' '
+test_expect_success 'verify untracked cache dump' '
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect <<EOF &&
 info/exclude $EMPTY_BLOB
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
+/ $(test_oid root) recurse valid
 .gitignore
 dthree/
 dtwo/
@@ -247,14 +257,14 @@ EOF
 	test_cmp ../trace.expect ../trace
 '
 
-test_expect_success SHA1 'verify untracked cache dump' '
+test_expect_success 'verify untracked cache dump' '
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect <<EOF &&
-info/exclude 13263c0978fb9fad16b2d580fb800b6d811c3ff0
+info/exclude $(test_oid exclude)
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
+/ $(test_oid root) recurse valid
 .gitignore
 dtwo/
 /done/ $ZERO_OID recurse valid
@@ -269,11 +279,11 @@ test_expect_success 'move two from tracked to untracked' '
 	git rm --cached two &&
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect <<EOF &&
-info/exclude 13263c0978fb9fad16b2d580fb800b6d811c3ff0
+info/exclude $(test_oid exclude)
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse
+/ $(test_oid root) recurse
 /done/ $ZERO_OID recurse valid
 /dthree/ $ZERO_OID recurse check_only valid
 /dtwo/ $ZERO_OID recurse check_only valid
@@ -303,14 +313,14 @@ EOF
 	test_cmp ../trace.expect ../trace
 '
 
-test_expect_success SHA1 'verify untracked cache dump' '
+test_expect_success 'verify untracked cache dump' '
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect <<EOF &&
-info/exclude 13263c0978fb9fad16b2d580fb800b6d811c3ff0
+info/exclude $(test_oid exclude)
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
+/ $(test_oid root) recurse valid
 .gitignore
 dtwo/
 two
@@ -326,11 +336,11 @@ test_expect_success 'move two from untracked to tracked' '
 	git add two &&
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect <<EOF &&
-info/exclude 13263c0978fb9fad16b2d580fb800b6d811c3ff0
+info/exclude $(test_oid exclude)
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse
+/ $(test_oid root) recurse
 /done/ $ZERO_OID recurse valid
 /dthree/ $ZERO_OID recurse check_only valid
 /dtwo/ $ZERO_OID recurse check_only valid
@@ -360,14 +370,14 @@ EOF
 	test_cmp ../trace.expect ../trace
 '
 
-test_expect_success SHA1 'verify untracked cache dump' '
+test_expect_success 'verify untracked cache dump' '
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect <<EOF &&
-info/exclude 13263c0978fb9fad16b2d580fb800b6d811c3ff0
+info/exclude $(test_oid exclude)
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
+/ $(test_oid root) recurse valid
 .gitignore
 dtwo/
 /done/ $ZERO_OID recurse valid
@@ -404,14 +414,14 @@ EOF
 	test_cmp ../trace.expect ../trace
 '
 
-test_expect_success SHA1 'untracked cache correct after commit' '
+test_expect_success 'untracked cache correct after commit' '
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect <<EOF &&
-info/exclude 13263c0978fb9fad16b2d580fb800b6d811c3ff0
+info/exclude $(test_oid exclude)
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
+/ $(test_oid root) recurse valid
 .gitignore
 dtwo/
 /done/ $ZERO_OID recurse valid
@@ -463,17 +473,17 @@ EOF
 	test_cmp ../trace.expect ../trace
 '
 
-test_expect_success SHA1 'untracked cache correct after status' '
+test_expect_success 'untracked cache correct after status' '
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect <<EOF &&
-info/exclude 13263c0978fb9fad16b2d580fb800b6d811c3ff0
+info/exclude $(test_oid exclude)
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
+/ $(test_oid root) recurse valid
 .gitignore
 dtwo/
-/done/ 1946f0437f90c5005533cbe1736a6451ca301714 recurse valid
+/done/ $(test_oid done) recurse valid
 five
 /dthree/ $ZERO_OID recurse check_only valid
 /dtwo/ $ZERO_OID recurse check_only valid
@@ -531,17 +541,17 @@ EOF
 	test_cmp ../trace.expect ../trace
 '
 
-test_expect_success SHA1 'verify untracked cache dump (sparse/subdirs)' '
+test_expect_success 'verify untracked cache dump (sparse/subdirs)' '
 	test-tool dump-untracked-cache >../actual &&
 	cat >../expect-from-test-dump <<EOF &&
-info/exclude 13263c0978fb9fad16b2d580fb800b6d811c3ff0
+info/exclude $(test_oid exclude)
 core.excludesfile $ZERO_OID
 exclude_per_dir .gitignore
 flags 00000006
-/ e6fcc8f2ee31bae321d66afd183fcb7237afae6e recurse valid
+/ $(test_oid root) recurse valid
 .gitignore
 dtwo/
-/done/ 1946f0437f90c5005533cbe1736a6451ca301714 recurse valid
+/done/ $(test_oid done) recurse valid
 five
 sub/
 /done/sub/ $ZERO_OID recurse check_only valid
@@ -609,7 +619,7 @@ test_expect_success 'git status does not change anything' '
 	test_cmp ../expect-no-uc ../actual
 '
 
-test_expect_success SHA1 'setting core.untrackedCache to true and using git status creates the cache' '
+test_expect_success 'setting core.untrackedCache to true and using git status creates the cache' '
 	git config core.untrackedCache true &&
 	test-tool dump-untracked-cache >../actual &&
 	test_cmp ../expect-no-uc ../actual &&

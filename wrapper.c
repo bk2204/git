@@ -467,6 +467,18 @@ int xmkstemp(char *filename_template)
 	return fd;
 }
 
+/*
+ * Like strncmp, but only return zero if s is NUL-terminated and exactly len
+ * characters long.  If it is not, consider it greater than t.
+ */
+int xstrncmpz(const char *s, const char *t, size_t len)
+{
+	int res = strncmp(s, t, len);
+	if (res)
+		return res;
+	return s[len] == '\0' ? 0 : 1;
+}
+
 /* Adapted from libiberty's mkstemp.c. */
 
 #undef TMP_MAX

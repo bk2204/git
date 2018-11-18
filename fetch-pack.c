@@ -1124,6 +1124,7 @@ static int send_fetch_request(struct fetch_negotiator *negotiator, int fd_out,
 			      int *haves_to_send, int *in_vain)
 {
 	int ret = 0;
+	const char *hash_name;
 	struct strbuf req_buf = STRBUF_INIT;
 
 	if (server_supports_v2("fetch", 1))
@@ -1137,6 +1138,17 @@ static int send_fetch_request(struct fetch_negotiator *negotiator, int fd_out,
 			packet_write_fmt(fd_out, "server-option=%s",
 					 args->server_options->items[i].string);
 	}
+
+	if (server_feature_v2("object-format", &hash_name)) {
+		int hash_algo = hash_algo_by_name(hash_name);
+		if (hash_algo_by_ptr(the_hash_algo) != hash_algo)
+			die(_("mismatched algorithms: client %s; server %s"),
+			    the_hash_algo->name, hash_name);
+		packet_write_fmt(fd_out, "object-format=%s", the_hash_algo->name);
+	}
+	else if (hash_algo_by_ptr(the_hash_algo) != GIT_HASH_SHA1)
+		die(_("the server does not support algorithm '%s'"),
+		    the_hash_algo->name);
 
 	packet_buf_delim(&req_buf);
 	if (args->use_thin_pack)

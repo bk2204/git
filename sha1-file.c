@@ -40,18 +40,33 @@
 #define EMPTY_TREE_SHA1_BIN_LITERAL \
 	 "\x4b\x82\x5d\xc6\x42\xcb\x6e\xb9\xa0\x60" \
 	 "\xe5\x4b\xf8\xd6\x92\x88\xfb\xee\x49\x04"
+#define EMPTY_TREE_SHA256_BIN_LITERAL \
+	"\x6e\xf1\x9b\x41\x22\x5c\x53\x69\xf1\xc1" \
+	"\x04\xd4\x5d\x8d\x85\xef\xa9\xb0\x57\xb5" \
+	"\x3b\x14\xb4\xb9\xb9\x39\xdd\x74\xde\xcc" \
+	"\x53\x21"
 
 #define EMPTY_BLOB_SHA1_BIN_LITERAL \
 	"\xe6\x9d\xe2\x9b\xb2\xd1\xd6\x43\x4b\x8b" \
 	"\x29\xae\x77\x5a\xd8\xc2\xe4\x8c\x53\x91"
+#define EMPTY_BLOB_SHA256_BIN_LITERAL \
+	"\x47\x3a\x0f\x4c\x3b\xe8\xa9\x36\x81\xa2" \
+	"\x67\xe3\xb1\xe9\xa7\xdc\xda\x11\x85\x43" \
+	"\x6f\xe1\x41\xf7\x74\x91\x20\xa3\x03\x72" \
+	"\x18\x13"
 
-const unsigned char null_sha1[GIT_MAX_RAWSZ];
 const struct object_id null_oid;
 static const struct object_id empty_tree_oid = {
 	EMPTY_TREE_SHA1_BIN_LITERAL
 };
 static const struct object_id empty_blob_oid = {
 	EMPTY_BLOB_SHA1_BIN_LITERAL
+};
+static const struct object_id empty_tree_oid_sha256 = {
+	EMPTY_TREE_SHA256_BIN_LITERAL
+};
+static const struct object_id empty_blob_oid_sha256 = {
+	EMPTY_BLOB_SHA256_BIN_LITERAL
 };
 
 static void git_hash_sha1_init(git_hash_ctx *ctx)
@@ -67,6 +82,22 @@ static void git_hash_sha1_update(git_hash_ctx *ctx, const void *data, size_t len
 static void git_hash_sha1_final(unsigned char *hash, git_hash_ctx *ctx)
 {
 	git_SHA1_Final(hash, &ctx->sha1);
+}
+
+
+static void git_hash_sha256_init(git_hash_ctx *ctx)
+{
+	git_SHA256_Init(&ctx->sha256);
+}
+
+static void git_hash_sha256_update(git_hash_ctx *ctx, const void *data, size_t len)
+{
+	git_SHA256_Update(&ctx->sha256, data, len);
+}
+
+static void git_hash_sha256_final(unsigned char *hash, git_hash_ctx *ctx)
+{
+	git_SHA256_Final(hash, &ctx->sha256);
 }
 
 static void git_hash_unknown_init(git_hash_ctx *ctx)
@@ -90,6 +121,7 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		0x00000000,
 		0,
 		0,
+		0,
 		git_hash_unknown_init,
 		git_hash_unknown_update,
 		git_hash_unknown_final,
@@ -97,17 +129,31 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		NULL,
 	},
 	{
-		"sha-1",
+		"sha1",
 		/* "sha1", big-endian */
 		0x73686131,
 		GIT_SHA1_RAWSZ,
 		GIT_SHA1_HEXSZ,
+		GIT_SHA1_BLKSZ,
 		git_hash_sha1_init,
 		git_hash_sha1_update,
 		git_hash_sha1_final,
 		&empty_tree_oid,
 		&empty_blob_oid,
 	},
+	{
+		"sha256",
+		/* "s256", big-endian */
+		0x73323536,
+		GIT_SHA256_RAWSZ,
+		GIT_SHA256_HEXSZ,
+		GIT_SHA256_BLKSZ,
+		git_hash_sha256_init,
+		git_hash_sha256_update,
+		git_hash_sha256_final,
+		&empty_tree_oid_sha256,
+		&empty_blob_oid_sha256,
+	}
 };
 
 const char *empty_tree_oid_hex(void)
@@ -121,6 +167,27 @@ const char *empty_blob_oid_hex(void)
 	static char buf[GIT_MAX_HEXSZ + 1];
 	return oid_to_hex_r(buf, the_hash_algo->empty_blob);
 }
+
+int hash_algo_by_name(const char *name)
+{
+	int i;
+	if (!name)
+		return GIT_HASH_UNKNOWN;
+	for (i = 1; i < GIT_HASH_NALGOS; i++)
+		if (!strcmp(name, hash_algos[i].name))
+			return i;
+	return GIT_HASH_UNKNOWN;
+}
+
+int hash_algo_by_id(uint32_t format_id)
+{
+	int i;
+	for (i = 1; i < GIT_HASH_NALGOS; i++)
+		if (format_id == hash_algos[i].format_id)
+			return i;
+	return GIT_HASH_UNKNOWN;
+}
+
 
 /*
  * This is meant to hold a *small* number of objects that you would
@@ -890,14 +957,14 @@ int git_open_cloexec(const char *name, int flags)
  * Note that it may point to static storage and is only valid until another
  * call to sha1_file_name(), etc.
  */
-static int stat_sha1_file(struct repository *r, const unsigned char *sha1,
-			  struct stat *st, const char **path)
+static int stat_oid_file(struct repository *r, const struct object_id *oid,
+			 struct stat *st, const char **path)
 {
 	struct alternate_object_database *alt;
 	static struct strbuf buf = STRBUF_INIT;
 
 	strbuf_reset(&buf);
-	sha1_file_name(r, &buf, sha1);
+	sha1_file_name(r, &buf, oid->hash);
 	*path = buf.buf;
 
 	if (!lstat(*path, st))
@@ -906,7 +973,7 @@ static int stat_sha1_file(struct repository *r, const unsigned char *sha1,
 	prepare_alt_odb(r);
 	errno = ENOENT;
 	for (alt = r->objects->alt_odb_list; alt; alt = alt->next) {
-		*path = alt_sha1_path(alt, sha1);
+		*path = alt_sha1_path(alt, oid->hash);
 		if (!lstat(*path, st))
 			return 0;
 	}
@@ -1053,7 +1120,7 @@ static int unpack_sha1_header_to_strbuf(git_zstream *stream, unsigned char *map,
 	return -1;
 }
 
-static void *unpack_sha1_rest(git_zstream *stream, void *buffer, unsigned long size, const unsigned char *sha1)
+static void *unpack_oid_rest(git_zstream *stream, void *buffer, unsigned long size, const struct object_id *oid)
 {
 	int bytes = strlen(buffer) + 1;
 	unsigned char *buf = xmallocz(size);
@@ -1090,10 +1157,10 @@ static void *unpack_sha1_rest(git_zstream *stream, void *buffer, unsigned long s
 	}
 
 	if (status < 0)
-		error(_("corrupt loose object '%s'"), sha1_to_hex(sha1));
+		error(_("corrupt loose object '%s'"), oid_to_hex(oid));
 	else if (stream->avail_in)
 		error(_("garbage at end of loose object '%s'"),
-		      sha1_to_hex(sha1));
+		      oid_to_hex(oid));
 	free(buf);
 	return NULL;
 }
@@ -1172,9 +1239,9 @@ int parse_sha1_header(const char *hdr, unsigned long *sizep)
 	return parse_sha1_header_extended(hdr, &oi, 0);
 }
 
-static int sha1_loose_object_info(struct repository *r,
-				  const unsigned char *sha1,
-				  struct object_info *oi, int flags)
+static int oid_loose_object_info(struct repository *r,
+				 const struct object_id *oid,
+				 struct object_info *oi, int flags)
 {
 	int status = 0;
 	unsigned long mapsize;
@@ -1198,14 +1265,14 @@ static int sha1_loose_object_info(struct repository *r,
 	if (!oi->typep && !oi->type_name && !oi->sizep && !oi->contentp) {
 		const char *path;
 		struct stat st;
-		if (stat_sha1_file(r, sha1, &st, &path) < 0)
+		if (stat_oid_file(r, oid, &st, &path) < 0)
 			return -1;
 		if (oi->disk_sizep)
 			*oi->disk_sizep = st.st_size;
 		return 0;
 	}
 
-	map = map_sha1_file(r, sha1, &mapsize);
+	map = map_sha1_file(r, oid->hash, &mapsize);
 	if (!map)
 		return -1;
 
@@ -1217,22 +1284,22 @@ static int sha1_loose_object_info(struct repository *r,
 	if ((flags & OBJECT_INFO_ALLOW_UNKNOWN_TYPE)) {
 		if (unpack_sha1_header_to_strbuf(&stream, map, mapsize, hdr, sizeof(hdr), &hdrbuf) < 0)
 			status = error(_("unable to unpack %s header with --allow-unknown-type"),
-				       sha1_to_hex(sha1));
+				       oid_to_hex(oid));
 	} else if (unpack_sha1_header(&stream, map, mapsize, hdr, sizeof(hdr)) < 0)
 		status = error(_("unable to unpack %s header"),
-			       sha1_to_hex(sha1));
+			       oid_to_hex(oid));
 	if (status < 0)
 		; /* Do nothing */
 	else if (hdrbuf.len) {
 		if ((status = parse_sha1_header_extended(hdrbuf.buf, oi, flags)) < 0)
 			status = error(_("unable to parse %s header with --allow-unknown-type"),
-				       sha1_to_hex(sha1));
+				       oid_to_hex(oid));
 	} else if ((status = parse_sha1_header_extended(hdr, oi, flags)) < 0)
-		status = error(_("unable to parse %s header"), sha1_to_hex(sha1));
+		status = error(_("unable to parse %s header"), oid_to_hex(oid));
 
 	if (status >= 0 && oi->contentp) {
-		*oi->contentp = unpack_sha1_rest(&stream, hdr,
-						 *oi->sizep, sha1);
+		*oi->contentp = unpack_oid_rest(&stream, hdr,
+						*oi->sizep, oid);
 		if (!*oi->contentp) {
 			git_inflate_end(&stream);
 			status = -1;
@@ -1298,7 +1365,7 @@ int oid_object_info_extended(struct repository *r, const struct object_id *oid,
 			return -1;
 
 		/* Most likely it's a loose object. */
-		if (!sha1_loose_object_info(r, real->hash, oi, flags))
+		if (!oid_loose_object_info(r, real, oi, flags))
 			return 0;
 
 		/* Not a loose object; someone else may have just packed it. */
@@ -1426,7 +1493,7 @@ void *read_object_file_extended(const struct object_id *oid,
 		die(_("replacement %s not found for %s"),
 		    oid_to_hex(repl), oid_to_hex(oid));
 
-	if (!stat_sha1_file(the_repository, repl->hash, &st, &path))
+	if (!stat_oid_file(the_repository, repl, &st, &path))
 		die(_("loose object %s (stored in %s) is corrupt"),
 		    oid_to_hex(repl), path);
 
@@ -2173,14 +2240,14 @@ int for_each_loose_object(each_loose_object_fn cb, void *data,
 	return foreach_alt_odb(loose_from_alt_odb, &alt);
 }
 
-static int check_stream_sha1(git_zstream *stream,
-			     const char *hdr,
-			     unsigned long size,
-			     const char *path,
-			     const unsigned char *expected_sha1)
+static int check_stream_oid(git_zstream *stream,
+			    const char *hdr,
+			    unsigned long size,
+			    const char *path,
+			    const struct object_id *expected_oid)
 {
 	git_hash_ctx c;
-	unsigned char real_sha1[GIT_MAX_RAWSZ];
+	struct object_id real_oid;
 	unsigned char buf[4096];
 	unsigned long total_read;
 	int status = Z_OK;
@@ -2212,19 +2279,19 @@ static int check_stream_sha1(git_zstream *stream,
 	git_inflate_end(stream);
 
 	if (status != Z_STREAM_END) {
-		error(_("corrupt loose object '%s'"), sha1_to_hex(expected_sha1));
+		error(_("corrupt loose object '%s'"), oid_to_hex(expected_oid));
 		return -1;
 	}
 	if (stream->avail_in) {
 		error(_("garbage at end of loose object '%s'"),
-		      sha1_to_hex(expected_sha1));
+		      oid_to_hex(expected_oid));
 		return -1;
 	}
 
-	the_hash_algo->final_fn(real_sha1, &c);
-	if (!hasheq(expected_sha1, real_sha1)) {
+	the_hash_algo->final_fn(real_oid.hash, &c);
+	if (!oideq(expected_oid, &real_oid)) {
 		error(_("sha1 mismatch for %s (expected %s)"), path,
-		      sha1_to_hex(expected_sha1));
+		      oid_to_hex(expected_oid));
 		return -1;
 	}
 
@@ -2264,10 +2331,10 @@ int read_loose_object(const char *path,
 	}
 
 	if (*type == OBJ_BLOB && *size > big_file_threshold) {
-		if (check_stream_sha1(&stream, hdr, *size, path, expected_oid->hash) < 0)
+		if (check_stream_oid(&stream, hdr, *size, path, expected_oid) < 0)
 			goto out;
 	} else {
-		*contents = unpack_sha1_rest(&stream, hdr, *size, expected_oid->hash);
+		*contents = unpack_oid_rest(&stream, hdr, *size, expected_oid);
 		if (!*contents) {
 			error(_("unable to unpack contents of %s"), path);
 			git_inflate_end(&stream);

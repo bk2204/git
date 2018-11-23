@@ -224,9 +224,9 @@ struct http_object_request {
 	CURLcode curl_result;
 	char errorstr[CURL_ERROR_SIZE];
 	long http_code;
-	unsigned char sha1[20];
-	unsigned char real_sha1[20];
-	git_SHA_CTX c;
+	struct object_id oid;
+	struct object_id real_oid;
+	git_hash_ctx c;
 	git_zstream stream;
 	int zret;
 	int rename;

@@ -292,7 +292,7 @@ void resolve_tree_islands(int progress, struct packing_data *to_pack)
 			if (S_ISGITLINK(entry.mode))
 				continue;
 
-			obj = lookup_object(the_repository, entry.oid->hash);
+			obj = lookup_object(the_repository, entry.oid.hash);
 			if (!obj)
 				continue;
 

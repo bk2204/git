@@ -1242,12 +1242,12 @@ test_expect_success 'clone active submodule without submodule url set' '
 		git submodule update &&
 		git submodule status >actual_raw &&
 
-		cut -c 1,43- actual_raw >actual &&
+		cut -d" " -f3- actual_raw >actual &&
 		cat >expect <<-\EOF &&
-		 sub0 (test2)
-		 sub1 (test2)
-		 sub2 (test2)
-		 sub3 (test2)
+		sub0 (test2)
+		sub1 (test2)
+		sub2 (test2)
+		sub3 (test2)
 		EOF
 		test_cmp expect actual
 	)

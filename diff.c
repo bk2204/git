@@ -4282,18 +4282,18 @@ static void run_diff_cmd(const char *pgm,
 		fprintf(o->file, "* Unmerged path %s\n", name);
 }
 
-static void diff_fill_oid_info(struct diff_filespec *one, struct index_state *istate)
+static void diff_fill_oid_info(struct diff_filespec *one, struct diff_options *o)
 {
 	if (DIFF_FILE_VALID(one)) {
 		if (!one->oid_valid) {
 			struct stat st;
-			if (one->is_stdin) {
+			if (one->is_stdin || one->should_dereference) {
 				oidclr(&one->oid);
 				return;
 			}
 			if (lstat(one->path, &st) < 0)
 				die_errno("stat '%s'", one->path);
-			if (index_path(istate, &one->oid, one->path, &st, 0))
+			if (index_path(o->repo->index, &one->oid, one->path, &st, 0))
 				die("cannot hash %s", one->path);
 		}
 	}
@@ -4341,8 +4341,8 @@ static void run_diff(struct diff_filepair *p, struct diff_options *o)
 		return;
 	}
 
-	diff_fill_oid_info(one, o->repo->index);
-	diff_fill_oid_info(two, o->repo->index);
+	diff_fill_oid_info(one, o);
+	diff_fill_oid_info(two, o);
 
 	if (!pgm &&
 	    DIFF_FILE_VALID(one) && DIFF_FILE_VALID(two) &&
@@ -4389,8 +4389,8 @@ static void run_diffstat(struct diff_filepair *p, struct diff_options *o,
 	if (o->prefix_length)
 		strip_prefix(o->prefix_length, &name, &other);
 
-	diff_fill_oid_info(p->one, o->repo->index);
-	diff_fill_oid_info(p->two, o->repo->index);
+	diff_fill_oid_info(p->one, o);
+	diff_fill_oid_info(p->two, o);
 
 	builtin_diffstat(name, other, p->one, p->two,
 			 diffstat, o, p);
@@ -4414,8 +4414,8 @@ static void run_checkdiff(struct diff_filepair *p, struct diff_options *o)
 	if (o->prefix_length)
 		strip_prefix(o->prefix_length, &name, &other);
 
-	diff_fill_oid_info(p->one, o->repo->index);
-	diff_fill_oid_info(p->two, o->repo->index);
+	diff_fill_oid_info(p->one, o);
+	diff_fill_oid_info(p->two, o);
 
 	builtin_checkdiff(name, other, attr_path, p->one, p->two, o);
 }
@@ -5159,6 +5159,8 @@ int diff_opt_parse(struct diff_options *options,
 		options->flags.funccontext = 1;
 	else if (!strcmp(arg, "--no-function-context"))
 		options->flags.funccontext = 0;
+	else if (!strcmp(arg, "--dereference"))
+		options->flags.dereference = 1;
 	else if ((argcount = parse_long_opt("output", av, &optarg))) {
 		char *path = prefix_filename(prefix, optarg);
 		options->file = xfopen(path, "w");
@@ -5720,8 +5722,8 @@ static int diff_get_patch_id(struct diff_options *options, struct object_id *oid
 		if (DIFF_PAIR_UNMERGED(p))
 			continue;
 
-		diff_fill_oid_info(p->one, options->repo->index);
-		diff_fill_oid_info(p->two, options->repo->index);
+		diff_fill_oid_info(p->one, options);
+		diff_fill_oid_info(p->two, options);
 
 		len1 = remove_space(p->one->path, strlen(p->one->path));
 		len2 = remove_space(p->two->path, strlen(p->two->path));

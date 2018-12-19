@@ -97,6 +97,7 @@ struct diff_flags {
 	unsigned stat_with_summary:1;
 	unsigned suppress_diff_headers:1;
 	unsigned dual_color_diffed_diffs:1;
+	unsigned dereference:1;
 };
 
 static inline void diff_flags_or(struct diff_flags *a,

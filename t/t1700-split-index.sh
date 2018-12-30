@@ -23,10 +23,10 @@ create_non_racy_file () {
 test_expect_success 'setup' '
 	test_oid_cache <<-EOF
 	own_v3 sha1:8299b0bcd1ac364e5f1d7768efb62fa2da79a339
-	own_v3 sha256:1b2425e5cddc991d47add6e3acf777ebcc4b64dab8d3389da6850e5df76e967f
+	own_v3 sha256:38a6d2925e3eceec33ad7b34cbff4e0086caa0daf28f31e51f5bd94b4a7af86b
 
 	base_v3 sha1:39d890139ee5356c7ef572216cebcd27aa41f9df
-	base_v3 sha256:de94a2515c2684cccc133f51a6a09acf4af121c0bc51145227e19a3abe43b8f3
+	base_v3 sha256:c9baeadf905112bf6c17aefbd7d02267afd70ded613c30cafed2d40cb506e1ed
 
 	own_v4 sha1:432ef4b63f32193984f339431fd50ca796493569
 	own_v4 sha256:6738ac6319c25b694afa7bcc313deb182d1a59b68bf7a47b4296de83478c0420

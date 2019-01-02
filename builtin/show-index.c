@@ -4,7 +4,8 @@
 #include "parse-options.h"
 
 static const char *const show_index_usage[] = {
-	"git show-index [--hash=HASH]"
+	"git show-index [--hash=HASH]",
+	NULL
 };
 
 int cmd_show_index(int argc, const char **argv, const char *prefix)

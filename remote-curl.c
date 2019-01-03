@@ -268,7 +268,9 @@ static struct ref *parse_info_refs(struct discovery *heads)
 
 	options.hash_algo = detect_hash_algo(heads);
 	if (!options.hash_algo)
-		die("could not determine hash algorithm");
+		die("%sinfo/refs not valid: could not determine hash algorithm; "
+		    "is this a git repository?",
+		    url.buf);
 
 	data = heads->buf;
 	start = NULL;

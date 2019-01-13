@@ -4,13 +4,24 @@ test_description='test git-serve and server commands'
 
 . ./test-lib.sh
 
+write_command () {
+	echo "command=$1"
+
+	if [ "$(test_oid algo)" != sha1 ]
+	then
+		echo "object-format=$(test_oid algo)"
+	fi
+}
+
 test_expect_success 'test capability advertisement' '
+	test_oid_init &&
 	cat >expect <<-EOF &&
 	version 2
 	agent=git/$(git version | cut -d" " -f3)
 	ls-refs
 	fetch=shallow
 	server-option
+	object-format=$(test_oid algo)
 	0000
 	EOF
 
@@ -44,6 +55,7 @@ test_expect_success 'request invalid capability' '
 test_expect_success 'request with no command' '
 	test-tool pkt-line pack >in <<-EOF &&
 	agent=git/test
+	object-format=$(test_oid algo)
 	0000
 	EOF
 	test_must_fail git serve --stateless-rpc 2>err <in &&
@@ -52,7 +64,7 @@ test_expect_success 'request with no command' '
 
 test_expect_success 'request invalid command' '
 	test-tool pkt-line pack >in <<-EOF &&
-	command=foo
+	$(write_command foo)
 	agent=git/test
 	0000
 	EOF
@@ -72,7 +84,7 @@ test_expect_success 'setup some refs and tags' '
 
 test_expect_success 'basics of ls-refs' '
 	test-tool pkt-line pack >in <<-EOF &&
-	command=ls-refs
+	$(write_command ls-refs)
 	0000
 	EOF
 
@@ -94,7 +106,7 @@ test_expect_success 'basics of ls-refs' '
 
 test_expect_success 'basic ref-prefixes' '
 	test-tool pkt-line pack >in <<-EOF &&
-	command=ls-refs
+	$(write_command ls-refs)
 	0001
 	ref-prefix refs/heads/master
 	ref-prefix refs/tags/one
@@ -114,7 +126,7 @@ test_expect_success 'basic ref-prefixes' '
 
 test_expect_success 'refs/heads prefix' '
 	test-tool pkt-line pack >in <<-EOF &&
-	command=ls-refs
+	$(write_command ls-refs)
 	0001
 	ref-prefix refs/heads/
 	0000
@@ -134,7 +146,7 @@ test_expect_success 'refs/heads prefix' '
 
 test_expect_success 'peel parameter' '
 	test-tool pkt-line pack >in <<-EOF &&
-	command=ls-refs
+	$(write_command ls-refs)
 	0001
 	peel
 	ref-prefix refs/tags/
@@ -155,7 +167,7 @@ test_expect_success 'peel parameter' '
 
 test_expect_success 'symrefs parameter' '
 	test-tool pkt-line pack >in <<-EOF &&
-	command=ls-refs
+	$(write_command ls-refs)
 	0001
 	symrefs
 	ref-prefix refs/heads/
@@ -176,7 +188,7 @@ test_expect_success 'symrefs parameter' '
 
 test_expect_success 'sending server-options' '
 	test-tool pkt-line pack >in <<-EOF &&
-	command=ls-refs
+	$(write_command ls-refs)
 	server-option=hello
 	server-option=world
 	0001
@@ -198,7 +210,7 @@ test_expect_success 'unexpected lines are not allowed in fetch request' '
 	git init server &&
 
 	test-tool pkt-line pack >in <<-EOF &&
-	command=fetch
+	$(write_command fetch)
 	0001
 	this-is-not-a-command
 	0000

@@ -244,10 +244,11 @@ static struct ref *parse_git_refs(struct discovery *heads, int for_push)
 static const struct git_hash_algo *detect_hash_algo(struct discovery *heads)
 {
 	const char *p = memchr(heads->buf, '\t', heads->len);
+	int algo;
 	if (!p)
 		return NULL;
 
-	int algo = hash_algo_by_length((p - heads->buf) / 2);
+	algo = hash_algo_by_length((p - heads->buf) / 2);
 	if (algo == GIT_HASH_UNKNOWN)
 		return NULL;
 	return &hash_algos[algo];

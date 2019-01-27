@@ -1315,7 +1315,7 @@ static int try_to_commit(struct strbuf *msg, const char *author,
 		return -1;
 
 	if (flags & AMEND_MSG) {
-		const char *exclude_gpgsig[] = { "gpgsig", NULL };
+		const char *exclude_gpgsig[] = { "gpgsig", "gpgsig-sha256", NULL };
 		const char *out_enc = get_commit_output_encoding();
 		const char *message = logmsg_reencode(current_head, NULL,
 						      out_enc);

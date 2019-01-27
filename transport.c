@@ -140,6 +140,9 @@ static struct ref *get_refs_from_bundle(struct transport *transport,
 	data->fd = read_bundle_header(transport->url, &data->header);
 	if (data->fd < 0)
 		die(_("could not read bundle '%s'"), transport->url);
+
+	transport->hash_algo = data->header.hash_algo;
+
 	for (i = 0; i < data->header.references.nr; i++) {
 		struct ref_list_entry *e = data->header.references.list + i;
 		struct ref *ref = alloc_ref(e->name);
@@ -154,8 +157,10 @@ static int fetch_refs_from_bundle(struct transport *transport,
 			       int nr_heads, struct ref **to_fetch)
 {
 	struct bundle_transport_data *data = transport->data;
-	return unbundle(&data->header, data->fd,
-			transport->progress ? BUNDLE_VERBOSE : 0);
+	int ret = unbundle(&data->header, data->fd,
+			   transport->progress ? BUNDLE_VERBOSE : 0);
+	transport->hash_algo = data->header.hash_algo;
+	return ret;
 }
 
 static int close_bundle(struct transport *transport)

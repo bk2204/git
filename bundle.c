@@ -25,12 +25,10 @@ static void add_to_ref_list(const struct object_id *oid, const char *name,
 
 static const struct git_hash_algo *detect_hash_algo(struct strbuf *buf)
 {
-	char *p = strchr(buf->buf, ' ');
+	size_t len = strcspn(buf->buf, " \n");
 	int algo;
 
-	if (!p)
-		return NULL;
-	algo = hash_algo_by_length((p - buf->buf) / 2);
+	algo = hash_algo_by_length(len / 2);
 	if (algo == GIT_HASH_UNKNOWN)
 		return NULL;
 	return &hash_algos[algo];

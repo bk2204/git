@@ -59,6 +59,7 @@ test_rev_parse () {
 ROOT=$(pwd)
 
 test_expect_success 'setup' '
+	test_oid_init &&
 	mkdir -p sub/dir work &&
 	cp -R .git repo.git
 '
@@ -128,6 +129,18 @@ test_expect_success 'rev-parse --is-shallow-repository in shallow repo' '
 test_expect_success 'rev-parse --is-shallow-repository in non-shallow repo' '
 	echo false >expect &&
 	git rev-parse --is-shallow-repository >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'rev-parse --object-format in repo' '
+	echo "$(test_oid algo)" >expect &&
+	git rev-parse --object-format >actual &&
+	test_cmp expect actual &&
+	git rev-parse --object-format=storage >actual &&
+	test_cmp expect actual &&
+	git rev-parse --object-format=input >actual &&
+	test_cmp expect actual &&
+	git rev-parse --object-format=output >actual &&
 	test_cmp expect actual
 '
 

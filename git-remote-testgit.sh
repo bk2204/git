@@ -49,9 +49,11 @@ do
 		test -n "$GIT_REMOTE_TESTGIT_SIGNED_TAGS" && echo "signed-tags"
 		test -n "$GIT_REMOTE_TESTGIT_NO_PRIVATE_UPDATE" && echo "no-private-update"
 		echo 'option'
+		echo 'object-format'
 		echo
 		;;
 	list)
+		echo ":object-format $(git rev-parse --object-format=storage)"
 		git for-each-ref --format='? %(refname)' 'refs/heads/'
 		head=$(git symbolic-ref HEAD)
 		echo "@$head HEAD"
@@ -133,6 +135,10 @@ do
 		case $opt in
 		force)
 			test $val = "true" && force="true" || force=
+			echo "ok"
+			;;
+		object-format)
+			test $val = "true" && object_format="true" || object_format=
 			echo "ok"
 			;;
 		*)

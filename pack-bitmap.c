@@ -18,7 +18,7 @@
  * commit.
  */
 struct stored_bitmap {
-	unsigned char sha1[20];
+	struct object_id oid;
 	struct ewah_bitmap *root;
 	struct stored_bitmap *xor;
 	int flags;
@@ -138,7 +138,7 @@ static int load_bitmap_header(struct bitmap_index *index)
 {
 	struct bitmap_disk_header *header = (void *)index->map;
 
-	if (index->map_size < sizeof(*header) + 20)
+	if (index->map_size < sizeof(*header) + the_hash_algo->rawsz)
 		return error("Corrupted bitmap index (missing header data)");
 
 	if (memcmp(header->magic, BITMAP_IDX_SIGNATURE, sizeof(BITMAP_IDX_SIGNATURE)) != 0)
@@ -157,19 +157,19 @@ static int load_bitmap_header(struct bitmap_index *index)
 				"(Git requires BITMAP_OPT_FULL_DAG)");
 
 		if (flags & BITMAP_OPT_HASH_CACHE) {
-			unsigned char *end = index->map + index->map_size - 20;
+			unsigned char *end = index->map + index->map_size - the_hash_algo->rawsz;
 			index->hashes = ((uint32_t *)end) - index->pack->num_objects;
 		}
 	}
 
 	index->entry_count = ntohl(header->entry_count);
-	index->map_pos += sizeof(*header);
+	index->map_pos += sizeof(*header) - GIT_MAX_RAWSZ + the_hash_algo->rawsz;
 	return 0;
 }
 
 static struct stored_bitmap *store_bitmap(struct bitmap_index *index,
 					  struct ewah_bitmap *root,
-					  const unsigned char *sha1,
+					  const unsigned char *hash,
 					  struct stored_bitmap *xor_with,
 					  int flags)
 {
@@ -181,15 +181,15 @@ static struct stored_bitmap *store_bitmap(struct bitmap_index *index,
 	stored->root = root;
 	stored->xor = xor_with;
 	stored->flags = flags;
-	hashcpy(stored->sha1, sha1);
+	oidread(&stored->oid, hash);
 
-	hash_pos = kh_put_sha1(index->bitmaps, stored->sha1, &ret);
+	hash_pos = kh_put_sha1(index->bitmaps, stored->oid.hash, &ret);
 
 	/* a 0 return code means the insertion succeeded with no changes,
 	 * because the SHA1 already existed on the map. this is bad, there
 	 * shouldn't be duplicated commits in the index */
 	if (ret == 0) {
-		error("Duplicate entry in bitmap index: %s", sha1_to_hex(sha1));
+		error("Duplicate entry in bitmap index: %s", hash_to_hex(hash));
 		return NULL;
 	}
 
@@ -805,7 +805,7 @@ int reuse_partial_packfile_from_bitmap(struct bitmap_index *bitmap_git,
 
 		fprintf(stderr, "Failed to reuse at %d (%016llx)\n",
 			reuse_objects, result->words[i]);
-		fprintf(stderr, " %s\n", sha1_to_hex(sha1));
+		fprintf(stderr, " %s\n", hash_to_hex(sha1));
 	}
 #endif
 
@@ -1080,7 +1080,7 @@ int rebuild_existing_bitmaps(struct bitmap_index *bitmap_git,
 					    lookup_stored_bitmap(stored),
 					    rebuild)) {
 				hash_pos = kh_put_sha1(reused_bitmaps,
-						       stored->sha1,
+						       stored->oid.hash,
 						       &hash_ret);
 				kh_value(reused_bitmaps, hash_pos) =
 					bitmap_to_ewah(rebuild);

@@ -4,6 +4,7 @@
 #include "thread-utils.h"
 
 #include "argv-array.h"
+#include "string-list.h"
 
 struct child_process {
 	const char **argv;
@@ -68,6 +69,20 @@ int run_command(struct child_process *);
  * overwritten by further calls to find_hook and run_hook_*.
  */
 extern const char *find_hook(const char *name);
+/*
+ * Returns the paths to all hook files, or NULL if all hooks are missing or
+ * disabled.
+ * Returns 1 if there are hooks; 0 otherwise. If hooks is not NULL, stores the
+ * names of the hooks into them in the order they should be executed.
+ */
+int find_hooks(const char *name, struct string_list *hooks);
+/*
+ * Invokes the handler function once for each hook. Returns 0 if all hooks were
+ * successful, or the exit status of the first failing hook.
+ */
+int for_each_hook(const char *name,
+		  int (*handler)(const char *name, const char *path, void *),
+		  void *data);
 LAST_ARG_MUST_BE_NULL
 extern int run_hook_le(const char *const *env, const char *name, ...);
 extern int run_hook_ve(const char *const *env, const char *name, va_list args);

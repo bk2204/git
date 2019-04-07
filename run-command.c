@@ -1308,58 +1308,163 @@ int async_with_fork(void)
 #endif
 }
 
+/*
+ * Return 1 if a hook exists at path (which may be modified) using access(2)
+ * with check (which should be F_OK or X_OK), 0 otherwise. If strip is true,
+ * additionally consider the same filename but with STRIP_EXTENSION added.
+ * If check is X_OK, warn if the hook exists but is not executable.
+ */
+static int has_hook(struct strbuf *path, int strip, int check)
+{
+	if (access(path->buf, check) < 0) {
+		int err = errno;
+
+		if (strip) {
+#ifdef STRIP_EXTENSION
+			strbuf_addstr(path, STRIP_EXTENSION);
+			if (access(path->buf, check) >= 0)
+				return 1;
+			if (errno == EACCES)
+				err = errno;
+#endif
+		}
+
+		if (err == EACCES && advice_ignored_hook) {
+			static struct string_list advise_given = STRING_LIST_INIT_DUP;
+
+			if (!string_list_lookup(&advise_given, path->buf)) {
+				string_list_insert(&advise_given, path->buf);
+				advise(_("The '%s' hook was ignored because "
+					 "it's not set as executable.\n"
+					 "You can disable this warning with "
+					 "`git config advice.ignoredHook false`."),
+				       path->buf);
+			}
+		}
+		return 0;
+	}
+	return 1;
+}
+
 const char *find_hook(const char *name)
 {
 	static struct strbuf path = STRBUF_INIT;
 
 	strbuf_reset(&path);
 	strbuf_git_path(&path, "hooks/%s", name);
-	if (access(path.buf, X_OK) < 0) {
-		int err = errno;
-
-#ifdef STRIP_EXTENSION
-		strbuf_addstr(&path, STRIP_EXTENSION);
-		if (access(path.buf, X_OK) >= 0)
-			return path.buf;
-		if (errno == EACCES)
-			err = errno;
-#endif
-
-		if (err == EACCES && advice_ignored_hook) {
-			static struct string_list advise_given = STRING_LIST_INIT_DUP;
-
-			if (!string_list_lookup(&advise_given, name)) {
-				string_list_insert(&advise_given, name);
-				advise(_("The '%s' hook was ignored because "
-					 "it's not set as executable.\n"
-					 "You can disable this warning with "
-					 "`git config advice.ignoredHook false`."),
-				       path.buf);
-			}
-		}
-		return NULL;
+	if (has_hook(&path, 1, X_OK)) {
+		return path.buf;
 	}
-	return path.buf;
+	return NULL;
 }
 
-int run_hook_ve(const char *const *env, const char *name, va_list args)
+int find_hooks(const char *name, struct string_list *list)
 {
-	struct child_process hook = CHILD_PROCESS_INIT;
-	const char *p;
+	struct strbuf path = STRBUF_INIT;
+	DIR *d;
+	struct dirent *de;
 
-	p = find_hook(name);
-	if (!p)
+	/*
+	 * We look for a single hook. If present, return it, and skip the
+	 * individual directories.
+	 */
+	strbuf_git_path(&path, "hooks/%s", name);
+	if (has_hook(&path, 1, X_OK)) {
+		if (list)
+			string_list_append(list, path.buf);
+		return 1;
+	}
+
+	if (has_hook(&path, 1, F_OK))
 		return 0;
 
-	argv_array_push(&hook.args, p);
-	while ((p = va_arg(args, const char *)))
-		argv_array_push(&hook.args, p);
-	hook.env = env;
+	strbuf_reset(&path);
+	strbuf_git_path(&path, "hooks/%s.d", name);
+	d = opendir(path.buf);
+	if (!d) {
+		if (list)
+			string_list_clear(list, 0);
+		return 0;
+	}
+	while ((de = readdir(d))) {
+		if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
+			continue;
+		strbuf_reset(&path);
+		strbuf_git_path(&path, "hooks/%s.d/%s", name, de->d_name);
+		if (has_hook(&path, 0, X_OK)) {
+			if (list)
+				string_list_append(list, path.buf);
+			else
+				return 1;
+		}
+	}
+	closedir(d);
+	strbuf_reset(&path);
+	if (!list->nr) {
+		return 0;
+	}
+
+	string_list_sort(list);
+	return 1;
+}
+
+int for_each_hook(const char *name,
+		  int (*handler)(const char *name, const char *path, void *),
+		  void *data)
+{
+	struct string_list paths = STRING_LIST_INIT_DUP;
+	int i, ret = 0;
+
+	find_hooks(name, &paths);
+	for (i = 0; i < paths.nr; i++) {
+		const char *p = paths.items[i].string;
+
+		ret = handler(name, p, data);
+		if (ret)
+			break;
+	}
+
+	string_list_clear(&paths, 0);
+	return ret;
+}
+
+struct hook_data {
+	const char *const *env;
+	struct string_list *args;
+};
+
+static int do_run_hook_ve(const char *name, const char *path, void *cb)
+{
+	struct hook_data *data = cb;
+	struct child_process hook = CHILD_PROCESS_INIT;
+	struct string_list_item *arg;
+
+	argv_array_push(&hook.args, path);
+	for_each_string_list_item(arg, data->args) {
+		argv_array_push(&hook.args, arg->string);
+	}
+
+	hook.env = data->env;
 	hook.no_stdin = 1;
 	hook.stdout_to_stderr = 1;
 	hook.trace2_hook_name = name;
 
 	return run_command(&hook);
+}
+
+int run_hook_ve(const char *const *env, const char *name, va_list args)
+{
+	struct string_list arglist = STRING_LIST_INIT_DUP;
+	struct hook_data data = {env, &arglist};
+	const char *p;
+	int ret = 0;
+
+	while ((p = va_arg(args, const char *)))
+		string_list_append(&arglist, p);
+
+	ret = for_each_hook(name, do_run_hook_ve, &data);
+	string_list_clear(&arglist, 0);
+	return ret;
 }
 
 int run_hook_le(const char *const *env, const char *name, ...)

@@ -3,6 +3,7 @@
 test_description='pre-commit hook'
 
 . ./test-lib.sh
+. "$TEST_DIRECTORY/lib-hooks.sh"
 
 test_expect_success 'with no hook' '
 
@@ -135,5 +136,19 @@ test_expect_success 'check the author in hook' '
 		--allow-empty -m "by new.author via command line" &&
 	git show -s
 '
+
+commit_command () {
+	echo "$1" >>file &&
+	git add file &&
+	git commit -m "$1"
+}
+
+commit_no_verify_command () {
+	echo "$1" >>file &&
+	git add file &&
+	git commit --no-verify -m "$1"
+}
+
+test_multiple_hooks pre-commit commit_command commit_no_verify_command
 
 test_done

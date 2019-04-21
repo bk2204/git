@@ -669,6 +669,8 @@ static void prepare_push_cert_sha1(struct child_process *proc)
 	}
 }
 
+typedef int (*feed_fn)(void *, const char **, size_t *);
+
 struct receive_hook_feed_state {
 	struct command *cmd;
 	int skip_broken;
@@ -676,34 +678,36 @@ struct receive_hook_feed_state {
 	const struct string_list *push_options;
 };
 
-typedef int (*feed_fn)(void *, const char **, size_t *);
-static int run_and_feed_hook(const char *hook_name, feed_fn feed,
-			     struct receive_hook_feed_state *feed_state)
+struct receive_hook_data {
+	feed_fn fn;
+	struct receive_hook_feed_state *state;
+};
+
+static int do_run_and_feed_hook(const char *name, const char *path, void *cbp)
 {
-	struct child_process proc = CHILD_PROCESS_INIT;
+	struct receive_hook_data *data = cbp;
+	struct child_process proc;
 	struct async muxer;
 	const char *argv[2];
-	int code;
+	int code = 0;
 
-	argv[0] = find_hook(hook_name);
-	if (!argv[0])
-		return 0;
-
+	argv[0] = path;
 	argv[1] = NULL;
 
+	child_process_init(&proc);
 	proc.argv = argv;
 	proc.in = -1;
 	proc.stdout_to_stderr = 1;
-	proc.trace2_hook_name = hook_name;
+	proc.trace2_hook_name = name;
 
-	if (feed_state->push_options) {
+	if (data->state->push_options) {
 		int i;
-		for (i = 0; i < feed_state->push_options->nr; i++)
+		for (i = 0; i < data->state->push_options->nr; i++)
 			argv_array_pushf(&proc.env_array,
 				"GIT_PUSH_OPTION_%d=%s", i,
-				feed_state->push_options->items[i].string);
+				data->state->push_options->items[i].string);
 		argv_array_pushf(&proc.env_array, "GIT_PUSH_OPTION_COUNT=%d",
-				 feed_state->push_options->nr);
+				 data->state->push_options->nr);
 	} else
 		argv_array_pushf(&proc.env_array, "GIT_PUSH_OPTION_COUNT");
 
@@ -734,7 +738,7 @@ static int run_and_feed_hook(const char *hook_name, feed_fn feed,
 	while (1) {
 		const char *buf;
 		size_t n;
-		if (feed(feed_state, &buf, &n))
+		if (data->fn(data->state, &buf, &n))
 			break;
 		if (write_in_full(proc.in, buf, n) < 0)
 			break;
@@ -746,6 +750,13 @@ static int run_and_feed_hook(const char *hook_name, feed_fn feed,
 	sigchain_pop(SIGPIPE);
 
 	return finish_command(&proc);
+}
+
+static int run_and_feed_hook(const char *hook_name, feed_fn feed,
+			     struct receive_hook_feed_state *feed_state)
+{
+	struct receive_hook_data data = { feed, feed_state };
+	return for_each_hook(hook_name, do_run_and_feed_hook, &data);
 }
 
 static int feed_receive_hook(void *state_, const char **bufp, size_t *sizep)
@@ -790,16 +801,14 @@ static int run_receive_hook(struct command *commands,
 	return status;
 }
 
-static int run_update_hook(struct command *cmd)
+static int do_run_update_hook(const char *name, const char *path, void *data)
 {
-	const char *argv[5];
+	struct command *cmd = data;
 	struct child_process proc = CHILD_PROCESS_INIT;
+	const char *argv[5];
 	int code;
 
-	argv[0] = find_hook("update");
-	if (!argv[0])
-		return 0;
-
+	argv[0] = path;
 	argv[1] = cmd->ref_name;
 	argv[2] = oid_to_hex(&cmd->old_oid);
 	argv[3] = oid_to_hex(&cmd->new_oid);
@@ -817,6 +826,11 @@ static int run_update_hook(struct command *cmd)
 	if (use_sideband)
 		copy_to_sideband(proc.err, -1, NULL);
 	return finish_command(&proc);
+}
+
+static int run_update_hook(struct command *cmd)
+{
+	return for_each_hook("update", do_run_update_hook, cmd);
 }
 
 static int is_ref_checked_out(const char *ref)
@@ -1011,7 +1025,7 @@ static const char *update_worktree(unsigned char *sha1)
 
 	argv_array_pushf(&env, "GIT_DIR=%s", absolute_path(get_git_dir()));
 
-	if (!find_hook(push_to_checkout_hook))
+	if (!find_hooks(push_to_checkout_hook, NULL))
 		retval = push_to_deploy(sha1, &env, work_tree);
 	else
 		retval = push_to_checkout(sha1, &env, work_tree);
@@ -1170,25 +1184,23 @@ static const char *update(struct command *cmd, struct shallow_info *si)
 	}
 }
 
-static void run_update_post_hook(struct command *commands)
+static int do_run_update_post_hook(const char *name, const char *path, void *data)
 {
+	struct command *commands = data;
 	struct command *cmd;
 	struct child_process proc = CHILD_PROCESS_INIT;
-	const char *hook;
 
-	hook = find_hook("post-update");
-	if (!hook)
-		return;
+	child_process_init(&proc);
 
 	for (cmd = commands; cmd; cmd = cmd->next) {
 		if (cmd->error_string || cmd->did_not_exist)
 			continue;
 		if (!proc.args.argc)
-			argv_array_push(&proc.args, hook);
+			argv_array_push(&proc.args, path);
 		argv_array_push(&proc.args, cmd->ref_name);
 	}
 	if (!proc.args.argc)
-		return;
+		return 0;
 
 	proc.no_stdin = 1;
 	proc.stdout_to_stderr = 1;
@@ -1198,8 +1210,14 @@ static void run_update_post_hook(struct command *commands)
 	if (!start_command(&proc)) {
 		if (use_sideband)
 			copy_to_sideband(proc.err, -1, NULL);
-		finish_command(&proc);
+		return finish_command(&proc);
 	}
+	return -1;
+}
+
+static void run_update_post_hook(struct command *commands)
+{
+	for_each_hook("post-update", do_run_update_post_hook, commands);
 }
 
 static void check_aliased_update_internal(struct command *cmd,

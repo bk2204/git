@@ -15,6 +15,7 @@ This test checks the following functionality:
 '
 
 . ./test-lib.sh
+. "$TEST_DIRECTORY/lib-hooks.sh"
 
 D=$(pwd)
 
@@ -1711,5 +1712,34 @@ test_expect_success 'updateInstead with push-to-checkout hook' '
 		test $(git -C .. rev-parse HEAD) = $(git rev-parse HEAD)
 	)
 '
+
+test_expect_success 'setup' '
+	mk_test_with_hooks hooktest heads/master
+'
+
+cmd_receive () {
+	git reset --hard &&
+	echo "$1" >>../file &&
+	git -C .. add file &&
+	git -C .. commit -m "$1" &&
+	git -C .. push hooktest refs/heads/master:refs/heads/master
+}
+
+cd hooktest
+test_multiple_hooks pre-receive cmd_receive
+test_multiple_hooks --ignore-exit-status post-receive cmd_receive
+test_multiple_hooks update cmd_receive
+test_multiple_hooks --ignore-exit-status post-update cmd_receive
+cd ..
+
+test_expect_success 'setup' '
+	rm -fr hooktest &&
+	git init hooktest &&
+	git -C hooktest config receive.denyCurrentBranch updateInstead
+'
+
+cd hooktest
+test_multiple_hooks push-to-checkout cmd_receive
+cd ..
 
 test_done

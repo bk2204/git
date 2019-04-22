@@ -1084,36 +1084,58 @@ int update_head_with_reflog(const struct commit *old_head,
 	return ret;
 }
 
-static int run_rewrite_hook(const struct object_id *oldoid,
-			    const struct object_id *newoid)
+struct rewrite_hook_data {
+	const struct object_id *oldoid;
+	const struct object_id *newoid;
+};
+
+static int do_run_rewrite_hook(const char *name, const char *path, void *p)
 {
+	struct rewrite_hook_data *data = p;
 	struct child_process proc = CHILD_PROCESS_INIT;
+	struct strbuf sb = STRBUF_INIT;
 	const char *argv[3];
 	int code;
-	struct strbuf sb = STRBUF_INIT;
 
-	argv[0] = find_hook("post-rewrite");
-	if (!argv[0])
-		return 0;
-
+	argv[0] = path;
 	argv[1] = "amend";
 	argv[2] = NULL;
 
 	proc.argv = argv;
 	proc.in = -1;
 	proc.stdout_to_stderr = 1;
-	proc.trace2_hook_name = "post-rewrite";
+	proc.trace2_hook_name = name;
 
 	code = start_command(&proc);
 	if (code)
 		return code;
-	strbuf_addf(&sb, "%s %s\n", oid_to_hex(oldoid), oid_to_hex(newoid));
+	strbuf_addf(&sb, "%s %s\n", oid_to_hex(data->oldoid), oid_to_hex(data->newoid));
 	sigchain_push(SIGPIPE, SIG_IGN);
 	write_in_full(proc.in, sb.buf, sb.len);
 	close(proc.in);
 	strbuf_release(&sb);
 	sigchain_pop(SIGPIPE);
 	return finish_command(&proc);
+}
+
+static int run_rewrite_hook(const struct object_id *oldoid,
+			    const struct object_id *newoid)
+{
+	struct rewrite_hook_data data = { oldoid, newoid };
+	return for_each_hook("post-rewrite", do_run_rewrite_hook, &data);
+}
+
+static int interactive_rewrite_hook_handler(const char *name, const char *path, void *data)
+{
+	struct child_process child = CHILD_PROCESS_INIT;
+
+	child.in = open(rebase_path_rewritten_list(),
+		O_RDONLY);
+	child.stdout_to_stderr = 1;
+	child.trace2_hook_name = "post-rewrite";
+	argv_array_push(&child.args, path);
+	argv_array_push(&child.args, "rebase");
+	return run_command(&child);
 }
 
 void commit_post_rewrite(struct repository *r,
@@ -1368,7 +1390,7 @@ static int try_to_commit(struct repository *r,
 		goto out;
 	}
 
-	if (find_hook("prepare-commit-msg")) {
+	if (find_hooks("prepare-commit-msg", NULL)) {
 		res = run_prepare_commit_msg_hook(r, msg, hook_commit);
 		if (res)
 			goto out;
@@ -3763,8 +3785,6 @@ cleanup_head_ref:
 		if (!stat(rebase_path_rewritten_list(), &st) &&
 				st.st_size > 0) {
 			struct child_process child = CHILD_PROCESS_INIT;
-			const char *post_rewrite_hook =
-				find_hook("post-rewrite");
 
 			child.in = open(rebase_path_rewritten_list(), O_RDONLY);
 			child.git_cmd = 1;
@@ -3774,18 +3794,9 @@ cleanup_head_ref:
 			/* we don't care if this copying failed */
 			run_command(&child);
 
-			if (post_rewrite_hook) {
-				struct child_process hook = CHILD_PROCESS_INIT;
-
-				hook.in = open(rebase_path_rewritten_list(),
-					O_RDONLY);
-				hook.stdout_to_stderr = 1;
-				hook.trace2_hook_name = "post-rewrite";
-				argv_array_push(&hook.args, post_rewrite_hook);
-				argv_array_push(&hook.args, "rebase");
-				/* we don't care if this hook failed */
-				run_command(&hook);
-			}
+			/* we don't care if this hook failed */
+			for_each_hook("post-rewrite",
+				      interactive_rewrite_hook_handler, NULL);
 		}
 		apply_autostash(opts);
 

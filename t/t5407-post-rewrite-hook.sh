@@ -5,6 +5,7 @@
 
 test_description='Test the post-rewrite hook.'
 . ./test-lib.sh
+. "$TEST_DIRECTORY/lib-hooks.sh"
 
 test_expect_success 'setup' '
 	test_commit A foo A &&
@@ -262,5 +263,19 @@ test_expect_success 'git rebase -i (exec)' '
 	EOF
 	verify_hook_input
 '
+
+cmd_rebase () {
+	git reset --hard D &&
+	FAKE_LINES="1 fixup 2" git rebase -i B
+}
+
+cmd_amend () {
+	git reset --hard D &&
+	echo "D new message" > newmsg &&
+	git commit -Fnewmsg --amend
+}
+
+test_multiple_hooks --ignore-exit-status post-rewrite cmd_rebase
+test_multiple_hooks --ignore-exit-status post-rewrite cmd_amend
 
 test_done

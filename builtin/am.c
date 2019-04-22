@@ -436,19 +436,13 @@ static int run_applypatch_msg_hook(struct am_state *state)
 	return ret;
 }
 
-/**
- * Runs post-rewrite hook. Returns it exit code.
- */
-static int run_post_rewrite_hook(const struct am_state *state)
+static int do_run_post_rewrite_hook(const char *name, const char *path, void *p)
 {
+	const struct am_state *state = p;
 	struct child_process cp = CHILD_PROCESS_INIT;
-	const char *hook = find_hook("post-rewrite");
 	int ret;
 
-	if (!hook)
-		return 0;
-
-	argv_array_push(&cp.args, hook);
+	argv_array_push(&cp.args, path);
 	argv_array_push(&cp.args, "rebase");
 
 	cp.in = xopen(am_path(state, "rewritten"), O_RDONLY);
@@ -459,6 +453,14 @@ static int run_post_rewrite_hook(const struct am_state *state)
 
 	close(cp.in);
 	return ret;
+}
+
+/**
+ * Runs post-rewrite hook. Returns it exit code.
+ */
+static int run_post_rewrite_hook(const struct am_state *state)
+{
+	return for_each_hook("post-rewrite", do_run_post_rewrite_hook, (void *)state);
 }
 
 /**

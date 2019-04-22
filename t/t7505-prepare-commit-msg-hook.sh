@@ -3,6 +3,7 @@
 test_description='prepare-commit-msg hook'
 
 . ./test-lib.sh
+. "$TEST_DIRECTORY/lib-hooks.sh"
 
 test_expect_success 'set up commits for rebasing' '
 	test_commit root &&
@@ -316,5 +317,13 @@ test_expect_success C_LOCALE_OUTPUT 'with failing hook (cherry-pick)' '
 	test_must_fail git cherry-pick rebase-1 2>actual &&
 	test $(grep -c prepare-commit-msg actual) = 1
 '
+
+cherry_pick_command () {
+	git checkout -f master &&
+	git checkout -B other b &&
+	git cherry-pick rebase-1
+}
+
+test_multiple_hooks prepare-commit-msg cherry_pick_command
 
 test_done

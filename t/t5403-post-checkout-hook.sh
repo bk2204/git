@@ -5,6 +5,7 @@
 
 test_description='Test the post-checkout hook.'
 . ./test-lib.sh
+. "$TEST_DIRECTORY/lib-hooks.sh"
 
 test_expect_success setup '
 	mkdir -p .git/hooks &&
@@ -72,5 +73,12 @@ test_expect_success 'post-checkout hook is triggered by clone' '
 	git clone --template=templates . clone3 &&
 	test -f clone3/.git/post-checkout.args
 '
+
+cmd_rebase () {
+	git checkout -B hook-test rebase-on-me^ &&
+	git rebase rebase-on-me
+}
+
+test_multiple_hooks post-checkout cmd_rebase
 
 test_done

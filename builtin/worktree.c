@@ -262,6 +262,32 @@ done:
 	free_worktrees(worktrees);
 }
 
+struct hook_data {
+	struct commit *commit;
+	const char *dir;
+};
+
+static int run_post_checkout_hook(const char *name, const char *path, void *p)
+{
+	struct hook_data *data = p;
+	struct commit *commit = data->commit;
+	const char *env[] = { "GIT_DIR", "GIT_WORK_TREE", NULL };
+	struct child_process cp = CHILD_PROCESS_INIT;
+
+	cp.git_cmd = 0;
+	cp.no_stdin = 1;
+	cp.stdout_to_stderr = 1;
+	cp.dir = data->dir;
+	cp.env = env;
+	cp.argv = NULL;
+	cp.trace2_hook_name = "post-checkout";
+	argv_array_pushl(&cp.args, absolute_path(path),
+			 oid_to_hex(&null_oid),
+			 oid_to_hex(&commit->object.oid),
+			 "1", NULL);
+	return run_command(&cp);
+}
+
 static int add_worktree(const char *path, const char *refname,
 			const struct add_opts *opts)
 {
@@ -395,22 +421,8 @@ done:
 	 * is_junk is cleared, but do return appropriate code when hook fails.
 	 */
 	if (!ret && opts->checkout) {
-		const char *hook = find_hook("post-checkout");
-		if (hook) {
-			const char *env[] = { "GIT_DIR", "GIT_WORK_TREE", NULL };
-			cp.git_cmd = 0;
-			cp.no_stdin = 1;
-			cp.stdout_to_stderr = 1;
-			cp.dir = path;
-			cp.env = env;
-			cp.argv = NULL;
-			cp.trace2_hook_name = "post-checkout";
-			argv_array_pushl(&cp.args, absolute_path(hook),
-					 oid_to_hex(&null_oid),
-					 oid_to_hex(&commit->object.oid),
-					 "1", NULL);
-			ret = run_command(&cp);
-		}
+		struct hook_data data = { commit, path };
+		ret = for_each_hook("post-checkout", run_post_checkout_hook, &data);
 	}
 
 	argv_array_clear(&child_env);

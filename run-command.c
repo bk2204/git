@@ -1346,18 +1346,6 @@ static int has_hook(struct strbuf *path, int strip, int check)
 	return 1;
 }
 
-const char *find_hook(const char *name)
-{
-	static struct strbuf path = STRBUF_INIT;
-
-	strbuf_reset(&path);
-	strbuf_git_path(&path, "hooks/%s", name);
-	if (has_hook(&path, 1, X_OK)) {
-		return path.buf;
-	}
-	return NULL;
-}
-
 int find_hooks(const char *name, struct string_list *list)
 {
 	struct strbuf path = STRBUF_INIT;

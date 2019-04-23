@@ -1042,20 +1042,23 @@ static void die_with_unpushed_submodules(struct string_list *needs_pushing)
 	die(_("Aborting."));
 }
 
-static int run_pre_push_hook(struct transport *transport,
-			     struct ref *remote_refs)
+struct pre_push_hook_data {
+	struct transport *transport;
+	struct ref *remote_refs;
+};
+
+static int do_run_pre_push_hook(const char *name, const char *path, void *p)
 {
+	struct pre_push_hook_data *data = p;
+	struct child_process proc = CHILD_PROCESS_INIT;
 	int ret = 0, x;
 	struct ref *r;
-	struct child_process proc = CHILD_PROCESS_INIT;
 	struct strbuf buf;
 	const char *argv[4];
 
-	if (!(argv[0] = find_hook("pre-push")))
-		return 0;
-
-	argv[1] = transport->remote->name;
-	argv[2] = transport->url;
+	argv[0] = path;
+	argv[1] = data->transport->remote->name;
+	argv[2] = data->transport->url;
 	argv[3] = NULL;
 
 	proc.argv = argv;
@@ -1071,7 +1074,7 @@ static int run_pre_push_hook(struct transport *transport,
 
 	strbuf_init(&buf, 256);
 
-	for (r = remote_refs; r; r = r->next) {
+	for (r = data->remote_refs; r; r = r->next) {
 		if (!r->peer_ref) continue;
 		if (r->status == REF_STATUS_REJECT_NONFASTFORWARD) continue;
 		if (r->status == REF_STATUS_REJECT_STALE) continue;
@@ -1101,8 +1104,14 @@ static int run_pre_push_hook(struct transport *transport,
 	x = finish_command(&proc);
 	if (!ret)
 		ret = x;
-
 	return ret;
+}
+
+static int run_pre_push_hook(struct transport *transport,
+			     struct ref *remote_refs)
+{
+	struct pre_push_hook_data data = { transport, remote_refs };
+	return for_each_hook("pre-push", do_run_pre_push_hook, &data);
 }
 
 int transport_push(struct repository *r,

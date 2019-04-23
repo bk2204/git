@@ -2,6 +2,7 @@
 
 test_description='check pre-push hooks'
 . ./test-lib.sh
+. "$TEST_DIRECTORY/lib-hooks.sh"
 
 # Setup hook that always succeeds
 HOOKDIR="$(git rev-parse --git-dir)/hooks"
@@ -124,5 +125,23 @@ test_expect_success 'sigpipe does not cause pre-push hook failure' '
 	echo "exit 0" | write_script "$HOOK" &&
 	git push parent1 "refs/heads/b/*:refs/heads/b/*"
 '
+
+push_command () {
+	test_commit "$1" &&
+	git push hooks refs/heads/master:refs/heads/master
+}
+
+push_no_verify_command () {
+	test_commit "$1" &&
+	git push --no-verify hooks refs/heads/master:refs/heads/master
+}
+
+test_expect_success 'setup' '
+	git checkout master &&
+	git init --bare hooktest &&
+	git remote add hooks hooktest
+'
+
+test_multiple_hooks pre-push push_command push_no_verify_command
 
 test_done

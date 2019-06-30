@@ -221,6 +221,9 @@ int hash_object_file_literally(const void *buf, unsigned long len,
 			       const char *type, struct object_id *oid,
 			       unsigned flags);
 
+int hash_object_file_literally_algop(const void *buf, unsigned long len,
+				     const char *type, struct object_id *oid,
+				     unsigned flags, const struct git_hash_algo *algo);
 /*
  * Add an object file to the in-memory object store, without writing it
  * to disk.

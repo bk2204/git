@@ -1958,17 +1958,29 @@ int hash_object_file_literally(const void *buf, unsigned long len,
 			       const char *type, struct object_id *oid,
 			       unsigned flags)
 {
+	return hash_object_file_literally_algop(buf, len, type, oid, flags,
+						the_hash_algo);
+}
+
+int hash_object_file_literally_algop(const void *buf, unsigned long len,
+				     const char *type, struct object_id *oid,
+				     unsigned flags,
+				     const struct git_hash_algo *algo)
+{
 	char *header;
 	int hdrlen, status = 0;
 
 	/* type string, SP, %lu of the length plus NUL must fit this */
 	hdrlen = strlen(type) + MAX_HEADER_LEN;
 	header = xmalloc(hdrlen);
-	write_object_file_prepare(the_hash_algo, buf, len, type, oid, header,
-				  &hdrlen);
+	write_object_file_prepare(algo, buf, len, type, oid, header, &hdrlen);
 
 	if (!(flags & HASH_WRITE_OBJECT))
 		goto cleanup;
+	if (algo->format_id != the_hash_algo->format_id) {
+		status = -1;
+		goto cleanup;
+	}
 	if (freshen_packed_object(oid) || freshen_loose_object(oid))
 		goto cleanup;
 	status = write_loose_object(oid, header, hdrlen, buf, len, 0);

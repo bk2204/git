@@ -8,10 +8,20 @@ test_expect_success 'setup (import history)' '
 	git reset --hard
 '
 
+process_output () {
+	x07="$_x05[0-9a-f][0-9a-f]"
+	sed -e "s/commit $OID_REGEX/commit $ZERO_OID/" \
+	    -e "s/commit $_x40$/commit $ZERO_OID/" \
+	    -e "s/Merge: $x07 $x07$/Merge: 0000000 0000000/" \
+	    "$1"
+}
+
 canned_test_1 () {
 	test_expect_$1 "$2" "
-		git log $2 >actual &&
-		test_cmp \"\$TEST_DIRECTORY\"/t4211/expect.$3 actual
+		git log $2 >result &&
+		process_output result >actual &&
+		process_output \"\$TEST_DIRECTORY\"/t4211/expect.$3 >expected &&
+		test_cmp expected actual
 	"
 }
 

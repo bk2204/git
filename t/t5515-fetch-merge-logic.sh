@@ -12,6 +12,12 @@ GIT_TEST_PROTOCOL_VERSION=
 
 . ./test-lib.sh
 
+if ! test_have_prereq SHA1
+then
+       skip_all='not using SHA-1 for objects'
+       test_done
+fi
+
 LF='
 '
 

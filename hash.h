@@ -205,7 +205,7 @@ static inline int hashcmp(const unsigned char *sha1, const unsigned char *sha2)
 
 static inline int oidcmp(const struct object_id *oid1, const struct object_id *oid2)
 {
-	return hashcmp(oid1->hash, oid2->hash);
+	return memcmp(oid1->hash, oid2->hash, GIT_MAX_RAWSZ);
 }
 
 static inline int hasheq(const unsigned char *sha1, const unsigned char *sha2)
@@ -221,7 +221,7 @@ static inline int hasheq(const unsigned char *sha1, const unsigned char *sha2)
 
 static inline int oideq(const struct object_id *oid1, const struct object_id *oid2)
 {
-	return hasheq(oid1->hash, oid2->hash);
+	return !memcmp(oid1->hash, oid2->hash, GIT_MAX_RAWSZ);
 }
 
 static inline int is_null_oid(const struct object_id *oid)
@@ -258,7 +258,9 @@ static inline void oidclr(struct object_id *oid)
 
 static inline void oidread(struct object_id *oid, const unsigned char *hash)
 {
-	memcpy(oid->hash, hash, the_hash_algo->rawsz);
+	size_t rawsz = the_hash_algo->rawsz;
+	memcpy(oid->hash, hash, rawsz);
+	memset(oid->hash + rawsz, 0, GIT_MAX_RAWSZ - rawsz);
 }
 
 static inline int is_empty_blob_sha1(const unsigned char *sha1)
@@ -279,6 +281,11 @@ static inline int is_empty_tree_sha1(const unsigned char *sha1)
 static inline int is_empty_tree_oid(const struct object_id *oid)
 {
 	return oideq(oid, the_hash_algo->empty_tree);
+}
+
+static inline void oid_pad_buffer(struct object_id *oid, const struct git_hash_algo *algop)
+{
+	memset(oid->hash + algop->rawsz, 0, GIT_MAX_RAWSZ - algop->rawsz);
 }
 
 const char *empty_tree_oid_hex(void);

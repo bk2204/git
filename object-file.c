@@ -2352,6 +2352,7 @@ int for_each_file_in_obj_subdir(unsigned int subdir_nr,
 		if (namelen == the_hash_algo->hexsz - 2 &&
 		    !hex_to_bytes(oid.hash + 1, de->d_name,
 				  the_hash_algo->rawsz - 1)) {
+			oid_pad_buffer(&oid, the_hash_algo);
 			if (obj_cb) {
 				r = obj_cb(&oid, path->buf, data);
 				if (r)

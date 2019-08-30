@@ -237,6 +237,7 @@ static inline void hashcpy(unsigned char *sha_dst, const unsigned char *sha_src)
 static inline void oidcpy(struct object_id *dst, const struct object_id *src)
 {
 	memcpy(dst->hash, src->hash, GIT_MAX_RAWSZ);
+	dst->algo = src->algo;
 }
 
 static inline struct object_id *oiddup(const struct object_id *src)
@@ -254,6 +255,7 @@ static inline void hashclr(unsigned char *hash)
 static inline void oidclr(struct object_id *oid)
 {
 	memset(oid->hash, 0, GIT_MAX_RAWSZ);
+	oid->algo = hash_algo_by_ptr(the_hash_algo);
 }
 
 static inline void oidread(struct object_id *oid, const unsigned char *hash)
@@ -261,6 +263,7 @@ static inline void oidread(struct object_id *oid, const unsigned char *hash)
 	size_t rawsz = the_hash_algo->rawsz;
 	memcpy(oid->hash, hash, rawsz);
 	memset(oid->hash + rawsz, 0, GIT_MAX_RAWSZ - rawsz);
+	oid->algo = hash_algo_by_ptr(the_hash_algo);
 }
 
 static inline int is_empty_blob_sha1(const unsigned char *sha1)
@@ -286,6 +289,7 @@ static inline int is_empty_tree_oid(const struct object_id *oid)
 static inline void oid_pad_buffer(struct object_id *oid, const struct git_hash_algo *algop)
 {
 	memset(oid->hash + algop->rawsz, 0, GIT_MAX_RAWSZ - algop->rawsz);
+	oid->algo = hash_algo_by_ptr(algop);
 }
 
 const char *empty_tree_oid_hex(void);

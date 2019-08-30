@@ -55,7 +55,6 @@
 	"\x6f\xe1\x41\xf7\x74\x91\x20\xa3\x03\x72" \
 	"\x18\x13"
 
-const struct object_id null_oid;
 static const struct object_id empty_tree_oid = {
 	EMPTY_TREE_SHA1_BIN_LITERAL,
 	GIT_HASH_SHA1,
@@ -64,6 +63,9 @@ static const struct object_id empty_blob_oid = {
 	EMPTY_BLOB_SHA1_BIN_LITERAL,
 	GIT_HASH_SHA1,
 };
+const struct object_id null_oid_sha1 = {
+	{0}, GIT_HASH_SHA1,
+};
 static const struct object_id empty_tree_oid_sha256 = {
 	EMPTY_TREE_SHA256_BIN_LITERAL,
 	GIT_HASH_SHA256,
@@ -71,6 +73,9 @@ static const struct object_id empty_tree_oid_sha256 = {
 static const struct object_id empty_blob_oid_sha256 = {
 	EMPTY_BLOB_SHA256_BIN_LITERAL,
 	GIT_HASH_SHA256,
+};
+static const struct object_id null_oid_sha256 = {
+	{0}, GIT_HASH_SHA256,
 };
 
 static void git_hash_sha1_init(git_hash_ctx *ctx)
@@ -172,6 +177,7 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		git_hash_unknown_final_oid,
 		NULL,
 		NULL,
+		NULL,
 	},
 	{
 		"sha1",
@@ -187,6 +193,7 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		git_hash_sha1_final_oid,
 		&empty_tree_oid,
 		&empty_blob_oid,
+		&null_oid_sha1,
 	},
 	{
 		"sha256",
@@ -202,8 +209,14 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		git_hash_sha256_final_oid,
 		&empty_tree_oid_sha256,
 		&empty_blob_oid_sha256,
+		&null_oid_sha256,
 	}
 };
+
+const struct object_id *null_oid(void)
+{
+	return the_hash_algo->null_oid;
+}
 
 const char *empty_tree_oid_hex(void)
 {

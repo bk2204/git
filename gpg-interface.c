@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "commit.h"
 #include "config.h"
 #include "run-command.h"
 #include "strbuf.h"
@@ -363,13 +364,16 @@ size_t parse_signed_buffer(const char *buf, size_t size)
 
 int parse_signature(const char *buf, size_t size, struct strbuf *payload, struct strbuf *signature)
 {
-	size_t match = parse_signed_buffer(buf, size);
-	if (match != size) {
-		strbuf_add(payload, buf, match);
-		strbuf_add(signature, buf + match, size - match);
-		return 1;
+	if (hash_algo_by_ptr(the_hash_algo) == GIT_HASH_SHA1) {
+		size_t match = parse_signed_buffer(buf, size);
+		if (match != size) {
+			strbuf_add(payload, buf, match);
+			strbuf_add(signature, buf + match, size - match);
+			return 1;
+		}
+		return 0;
 	}
-	return 0;
+	return parse_buffer_signed_by_header(buf, size, payload, signature);
 }
 
 void set_signing_key(const char *key)

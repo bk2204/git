@@ -425,7 +425,13 @@ test_expect_success \
 # creating annotated tags:
 
 get_tag_msg () {
-	git cat-file tag "$1" | sed -e "/BEGIN PGP/q"
+	if [ "$(test_oid algo)" = sha1 ]
+	then
+		git cat-file tag "$1" | sed -e "/BEGIN PGP/q"
+	else
+
+		git cat-file tag "$1" | sed -e '/^gpgsig-sha256/{s/^gpgsig-sha256 //;h;d};/^ /d;${p;x;/^$/d}'
+	fi
 }
 
 # run test_tick before committing always gives the time in that timezone

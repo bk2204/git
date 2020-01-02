@@ -144,6 +144,20 @@ static int verify_tag(char *buffer, unsigned long size)
 			(uintmax_t) (tagger_line - buffer));
 	tagger_line += 6;
 
+	if (hash_algo_by_ptr(the_hash_algo) == GIT_HASH_SHA256 &&
+		!memcmp(tagger_line, "gpgsig-sha256 ", 14)) {
+		char *p = strpbrk(tagger_line + 1, "\n");
+		if (!p)
+			return error("char%"PRIuMAX": could not find end of line",
+				(uintmax_t) (tagger_line - buffer));
+		tagger_line = p + 1;
+		while (*tagger_line == ' ' && (p = strpbrk(tagger_line, "\n")))
+			tagger_line = p + 1;
+		if (!p)
+			return error("char%"PRIuMAX": could not find end of line",
+				(uintmax_t) (tagger_line - buffer));
+	}
+
 	/* Verify the blank line separating the header from the body */
 	if (*tagger_line != '\n')
 		return error("char%"PRIuMAX": trailing garbage in tag header",

@@ -79,6 +79,23 @@ test_expect_success GPG 'verify and show signatures' '
 	)
 '
 
+test_expect_success GPG 'signature has expected format' '
+	for tag in initial second merge fourth-signed sixth-signed seventh-signed
+	do
+		if [ "$(test_oid algo)"	= sha1 ]
+		then
+			git cat-file tag seventh-signed >output &&
+			! grep gpgsig output &&
+			grep "^-----BEGIN PGP SIGNATURE-----" output
+		else
+			git cat-file tag seventh-signed >output &&
+			grep gpgsig-sha256 output &&
+			! grep "^-----BEGIN PGP SIGNATURE-----" output
+		fi &&
+		echo $tag OK || exit 1
+	done
+'
+
 test_expect_success GPGSM 'verify and show signatures x509' '
 	git verify-tag ninth-signed-x509 2>actual &&
 	grep "Good signature from" actual &&

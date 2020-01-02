@@ -192,7 +192,9 @@ test_expect_success GPG 'push signed tag' '
 	test_must_fail compare_refs local signed-tag server signed-tag
 '
 
-test_expect_success GPG 'push signed tag with signed-tags capability' '
+# SHA-256 signatures are stored in the header and can't be round-tripped through
+# fast-export.
+test_expect_success GPG,SHA1 'push signed tag with signed-tags capability' '
 	(cd local &&
 	git checkout master &&
 	git tag -s -m signed-tag signed-tag-2 &&

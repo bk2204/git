@@ -128,7 +128,9 @@ static int verify_tag(const char *name, const char *ref,
 
 static int do_sign(struct strbuf *buffer)
 {
-	return sign_buffer(buffer, buffer, get_signing_key());
+	if (hash_algo_by_ptr(the_hash_algo) == GIT_HASH_SHA1)
+		return sign_buffer(buffer, buffer, get_signing_key());
+	return sign_with_header(buffer, get_signing_key());
 }
 
 static const char tag_template[] =

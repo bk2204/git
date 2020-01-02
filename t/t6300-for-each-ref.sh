@@ -54,6 +54,17 @@ test_atom() {
 	"
 }
 
+test_atom_hash () {
+	local val
+	if [ "$(test_oid algo)" = sha1 ]
+	then
+		val="$3"
+	else
+		val="$4"
+	fi
+	test_atom "$1" "$2" "$val"
+}
+
 hexlen=$(test_oid hexsz)
 disklen=$(test_oid disklen)
 
@@ -625,30 +636,35 @@ sig='-----BEGIN PGP SIGNATURE-----
 PREREQ=GPG
 test_atom refs/tags/signed-empty subject ''
 test_atom refs/tags/signed-empty contents:subject ''
-test_atom refs/tags/signed-empty body "$sig"
+test_atom_hash refs/tags/signed-empty body "$sig" ''
 test_atom refs/tags/signed-empty contents:body ''
 test_atom refs/tags/signed-empty contents:signature "$sig"
-test_atom refs/tags/signed-empty contents "$sig"
+test_atom_hash refs/tags/signed-empty contents "$sig" ''
 
 test_atom refs/tags/signed-short subject 'subject line'
 test_atom refs/tags/signed-short contents:subject 'subject line'
-test_atom refs/tags/signed-short body "$sig"
+test_atom_hash refs/tags/signed-short body "$sig" ''
 test_atom refs/tags/signed-short contents:body ''
 test_atom refs/tags/signed-short contents:signature "$sig"
-test_atom refs/tags/signed-short contents "subject line
-$sig"
+test_atom_hash refs/tags/signed-short contents "subject line
+$sig" 'subject line
+'
 
 test_atom refs/tags/signed-long subject 'subject line'
 test_atom refs/tags/signed-long contents:subject 'subject line'
-test_atom refs/tags/signed-long body "body contents
-$sig"
+test_atom_hash refs/tags/signed-long body "body contents
+$sig" 'body contents
+'
 test_atom refs/tags/signed-long contents:body 'body contents
 '
 test_atom refs/tags/signed-long contents:signature "$sig"
-test_atom refs/tags/signed-long contents "subject line
+test_atom_hash refs/tags/signed-long contents "subject line
 
 body contents
-$sig"
+$sig" 'subject line
+
+body contents
+'
 
 sort >expected <<EOF
 $(git rev-parse refs/tags/bogo) <committer@example.com> refs/tags/bogo

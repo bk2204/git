@@ -499,7 +499,9 @@ static int show_one_mergetag(struct commit *commit,
 	struct strbuf verify_message;
 	struct signature_check sigc = { 0 };
 	int status, nth;
-	size_t payload_size, gpg_message_offset;
+	size_t gpg_message_offset;
+	struct strbuf payload = STRBUF_INIT;
+	struct strbuf signature = STRBUF_INIT;
 
 	hash_object_file(the_hash_algo, extra->value, extra->len,
 			 type_name(OBJ_TAG), &oid);
@@ -523,13 +525,11 @@ static int show_one_mergetag(struct commit *commit,
 			    "parent #%d, tagged '%s'\n", nth + 1, tag->tag);
 	gpg_message_offset = verify_message.len;
 
-	payload_size = parse_signature(extra->value, extra->len);
 	status = -1;
-	if (extra->len > payload_size) {
+	if (parse_signature(extra->value, extra->len, &payload, &signature)) {
 		/* could have a good signature */
-		if (!check_signature(extra->value, payload_size,
-				     extra->value + payload_size,
-				     extra->len - payload_size, &sigc)) {
+		if (!check_signature(payload.buf, payload.len,
+				     signature.buf, signature.len, &sigc)) {
 			strbuf_addstr(&verify_message, sigc.gpg_output);
 			signature_check_clear(&sigc);
 			status = 0; /* good */
@@ -540,6 +540,8 @@ static int show_one_mergetag(struct commit *commit,
 
 	show_sig_lines(opt, status, verify_message.buf);
 	strbuf_release(&verify_message);
+	strbuf_release(&payload);
+	strbuf_release(&signature);
 	return 0;
 }
 

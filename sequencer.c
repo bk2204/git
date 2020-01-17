@@ -5200,7 +5200,7 @@ int complete_action(struct repository *r, struct replay_opts *opts, unsigned fla
 {
 	const char *shortonto, *todo_file = rebase_path_todo();
 	struct todo_list new_todo = TODO_LIST_INIT;
-	struct strbuf *buf = &todo_list->buf;
+	struct strbuf *buf = &todo_list->buf, buf2 = STRBUF_INIT;
 	struct object_id oid = onto->object.oid;
 	int res;
 
@@ -5250,6 +5250,18 @@ int complete_action(struct repository *r, struct replay_opts *opts, unsigned fla
 		todo_list_release(&new_todo);
 
 		return -1;
+	}
+
+	/* Expand the commit IDs */
+	todo_list_to_strbuf(r, &new_todo, &buf2, -1, 0);
+	strbuf_swap(&new_todo.buf, &buf2);
+	strbuf_release(&buf2);
+	new_todo.total_nr -= new_todo.nr;
+	if (todo_list_parse_insn_buffer(r, new_todo.buf.buf, &new_todo) < 0) {
+		fprintf(stderr, _(edit_todo_list_advice));
+		checkout_onto(r, opts, onto_name, &onto->object.oid, orig_head);
+		todo_list_release(&new_todo);
+		return error(_("invalid todo list after expanding IDs"));
 	}
 
 	if (opts->allow_ff && skip_unnecessary_picks(r, &new_todo, &oid)) {

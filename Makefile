@@ -862,6 +862,7 @@ LIB_OBJS += copy.o
 LIB_OBJS += credential.o
 LIB_OBJS += csum-file.o
 LIB_OBJS += ctype.o
+LIB_OBJS += data-buffer.o
 LIB_OBJS += date.o
 LIB_OBJS += decorate.o
 LIB_OBJS += delta-islands.o

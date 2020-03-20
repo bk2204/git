@@ -442,6 +442,26 @@ ssize_t read_packetized_to_strbuf(int fd_in, struct strbuf *sb_out)
 	return sb_out->len - orig_len;
 }
 
+off_t read_packetized_to_data_buffer(int fd_in, struct data_buffer *db_out)
+{
+	off_t total = 0;
+	int packet_len;
+	char data[LARGE_PACKET_DATA_MAX + 1];
+
+	for (;;) {
+		packet_len = packet_read(fd_in, NULL, NULL,
+			data, LARGE_PACKET_DATA_MAX+1,
+			PACKET_READ_GENTLE_ON_EOF);
+		if (packet_len <= 0)
+			break;
+		total += packet_len;
+		if (data_buffer_write(db_out, data, packet_len) < 0)
+			return -1;
+	}
+
+	return total;
+}
+
 int recv_sideband(const char *me, int in_stream, int out)
 {
 	char buf[LARGE_PACKET_MAX + 1];

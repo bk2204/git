@@ -671,6 +671,7 @@ static int filter_buffer_or_fd(int in, int out, void *data)
 
 	sigchain_push(SIGPIPE, SIG_IGN);
 
+
 	if (params->src) {
 		write_err = (write_in_full(child_process.in,
 					   params->src, params->size) < 0);
@@ -699,7 +700,7 @@ static int filter_buffer_or_fd(int in, int out, void *data)
 }
 
 static int apply_single_file_filter(const char *path, const char *src, size_t len, int fd,
-				    struct strbuf *dst, const char *cmd)
+				    struct data_buffer *dst, const char *cmd)
 {
 	/*
 	 * Create a pipeline to have the command filter the buffer's
@@ -708,9 +709,9 @@ static int apply_single_file_filter(const char *path, const char *src, size_t le
 	 * (child --> cmd) --> us
 	 */
 	int err = 0;
-	struct strbuf nbuf = STRBUF_INIT;
 	struct async async;
 	struct filter_params params;
+
 
 	memset(&async, 0, sizeof(async));
 	async.proc = filter_buffer_or_fd;
@@ -726,8 +727,11 @@ static int apply_single_file_filter(const char *path, const char *src, size_t le
 	if (start_async(&async))
 		return 0;	/* error was already reported */
 
-	if (strbuf_read(&nbuf, async.out, 0) < 0) {
+	if (data_buffer_read_from_fd(dst, async.out) < 0) {
 		err = error(_("read from external filter '%s' failed"), cmd);
+	}
+	if (data_buffer_seek(dst, 0, SEEK_SET) < 0) {
+		err = error(_("rewind of buffer from external filter '%s' failed"), cmd);
 	}
 	if (close(async.out)) {
 		err = error(_("read from external filter '%s' failed"), cmd);
@@ -736,10 +740,8 @@ static int apply_single_file_filter(const char *path, const char *src, size_t le
 		err = error(_("external filter '%s' failed"), cmd);
 	}
 
-	if (!err) {
-		strbuf_swap(dst, &nbuf);
-	}
-	strbuf_release(&nbuf);
+	if (err)
+		data_buffer_free(dst);
 	return !err;
 }
 
@@ -795,7 +797,7 @@ static void handle_filter_error(const struct strbuf *filter_status,
 }
 
 static int apply_multi_file_filter(const char *path, const char *src, size_t len,
-				   int fd, struct strbuf *dst, const char *cmd,
+				   int fd, struct data_buffer *dst, const char *cmd,
 				   const unsigned int wanted_capability,
 				   struct delayed_checkout *dco)
 {
@@ -803,7 +805,6 @@ static int apply_multi_file_filter(const char *path, const char *src, size_t len
 	int can_delay = 0;
 	struct cmd2process *entry;
 	struct child_process *process;
-	struct strbuf nbuf = STRBUF_INIT;
 	struct strbuf filter_status = STRBUF_INIT;
 	const char *filter_type;
 
@@ -887,7 +888,11 @@ static int apply_multi_file_filter(const char *path, const char *src, size_t len
 		if (err)
 			goto done;
 
-		err = read_packetized_to_strbuf(process->out, &nbuf) < 0;
+		err = read_packetized_to_data_buffer(process->out, dst) < 0;
+		if (err)
+			goto done;
+
+		err = data_buffer_seek(dst, 0, SEEK_SET);
 		if (err)
 			goto done;
 
@@ -901,11 +906,10 @@ static int apply_multi_file_filter(const char *path, const char *src, size_t len
 done:
 	sigchain_pop(SIGPIPE);
 
-	if (err)
+	if (err) {
 		handle_filter_error(&filter_status, entry, wanted_capability);
-	else
-		strbuf_swap(dst, &nbuf);
-	strbuf_release(&nbuf);
+		data_buffer_free(dst);
+	}
 	return !err;
 }
 
@@ -969,7 +973,7 @@ static struct convert_driver {
 } *user_convert, **user_convert_tail;
 
 static int apply_filter(const char *path, const char *src, size_t len,
-			int fd, struct strbuf *dst, struct convert_driver *drv,
+			int fd, struct data_buffer *dst, struct convert_driver *drv,
 			const unsigned int wanted_capability,
 			struct delayed_checkout *dco)
 {
@@ -1403,17 +1407,21 @@ int convert_to_git(const struct index_state *istate,
 {
 	int ret = 0;
 	struct conv_attrs ca;
+	struct data_buffer dbuf = DATA_BUFFER_INIT;
 
 	convert_attrs(istate, &ca, path);
 
-	ret |= apply_filter(path, src, len, -1, dst, ca.drv, CAP_CLEAN, NULL);
+	ret |= apply_filter(path, src, len, -1, dst ? &dbuf : NULL, ca.drv, CAP_CLEAN, NULL);
 	if (!ret && ca.drv && ca.drv->required)
 		die(_("%s: clean filter '%s' failed"), path, ca.drv->name);
 
 	if (ret && dst) {
+		if (data_buffer_to_strbuf(&dbuf, dst))
+			die(_("%s: failed to copy data to buffer"), path);
 		src = dst->buf;
 		len = dst->len;
 	}
+	data_buffer_free(&dbuf);
 
 	ret |= encode_to_git(path, src, len, dst, ca.working_tree_encoding, conv_flags);
 	if (ret && dst) {
@@ -1436,13 +1444,17 @@ void convert_to_git_filter_fd(const struct index_state *istate,
 			      int conv_flags)
 {
 	struct conv_attrs ca;
+	struct data_buffer dbuf = DATA_BUFFER_INIT;
 	convert_attrs(istate, &ca, path);
 
 	assert(ca.drv);
 	assert(ca.drv->clean || ca.drv->process);
 
-	if (!apply_filter(path, NULL, 0, fd, dst, ca.drv, CAP_CLEAN, NULL))
+	if (!apply_filter(path, NULL, 0, fd, dst ? &dbuf : NULL, ca.drv, CAP_CLEAN, NULL))
 		die(_("%s: clean filter '%s' failed"), path, ca.drv->name);
+
+	if (data_buffer_to_strbuf(&dbuf, dst))
+		die(_("%s: failed to copy data to buffer"), path);
 
 	encode_to_git(path, dst->buf, dst->len, dst, ca.working_tree_encoding, conv_flags);
 	crlf_to_git(istate, path, dst->buf, dst->len, dst, ca.crlf_action, conv_flags);
@@ -1451,18 +1463,19 @@ void convert_to_git_filter_fd(const struct index_state *istate,
 
 static int convert_to_working_tree_internal(const struct index_state *istate,
 					    const char *path, const char *src,
-					    size_t len, struct strbuf *dst,
+					    size_t len, struct data_buffer *dst,
 					    int normalizing, struct delayed_checkout *dco)
 {
 	int ret = 0, ret_filter = 0;
 	struct conv_attrs ca;
+	struct strbuf sbuf = STRBUF_INIT;
 
 	convert_attrs(istate, &ca, path);
 
-	ret |= ident_to_worktree(src, len, dst, ca.ident);
+	ret |= ident_to_worktree(src, len, &sbuf, ca.ident);
 	if (ret) {
-		src = dst->buf;
-		len = dst->len;
+		src = sbuf.buf;
+		len = sbuf.len;
 	}
 	/*
 	 * CRLF conversion can be skipped if normalizing, unless there
@@ -1470,23 +1483,29 @@ static int convert_to_working_tree_internal(const struct index_state *istate,
 	 * support smudge).  The filters might expect CRLFs.
 	 */
 	if ((ca.drv && (ca.drv->smudge || ca.drv->process)) || !normalizing) {
-		ret |= crlf_to_worktree(src, len, dst, ca.crlf_action);
+		ret |= crlf_to_worktree(src, len, &sbuf, ca.crlf_action);
 		if (ret) {
-			src = dst->buf;
-			len = dst->len;
+			src = sbuf.buf;
+			len = sbuf.len;
 		}
 	}
 
-	ret |= encode_to_worktree(path, src, len, dst, ca.working_tree_encoding);
+	ret |= encode_to_worktree(path, src, len, &sbuf, ca.working_tree_encoding);
 	if (ret) {
-		src = dst->buf;
-		len = dst->len;
+		src = sbuf.buf;
+		len = sbuf.len;
 	}
 
 	ret_filter = apply_filter(
 		path, src, len, -1, dst, ca.drv, CAP_SMUDGE, dco);
-	if (!ret_filter && ca.drv && ca.drv->required)
-		die(_("%s: smudge filter %s failed"), path, ca.drv->name);
+	if (!ret_filter) {
+		if (ca.drv && ca.drv->required)
+			die(_("%s: smudge filter %s failed"), path, ca.drv->name);
+		if (data_buffer_write(dst, src, len) < 0)
+			die(_("%s: smudge filter %s failed to write buffer"), path, ca.drv->name);
+		if (data_buffer_seek(dst, 0, SEEK_SET))
+			die(_("%s: smudge filter %s failed to rewind buffer"), path, ca.drv->name);
+	}
 
 	return ret | ret_filter;
 }
@@ -1496,21 +1515,37 @@ int async_convert_to_working_tree(const struct index_state *istate,
 				  size_t len, struct strbuf *dst,
 				  void *dco)
 {
-	return convert_to_working_tree_internal(istate, path, src, len, dst, 0, dco);
+	struct data_buffer dbuf = DATA_BUFFER_INIT;
+	int ret = convert_to_working_tree_internal(istate, path, src, len, &dbuf, 0, dco);
+	data_buffer_to_strbuf(&dbuf, dst);
+	return ret;
+}
+
+int convert_to_working_tree_buffer(const struct index_state *istate,
+				   const char *path, const char *src,
+				   size_t len, struct data_buffer *dst)
+{
+	return convert_to_working_tree_internal(istate, path, src, len, dst, 0, NULL);
 }
 
 int convert_to_working_tree(const struct index_state *istate,
 			    const char *path, const char *src,
 			    size_t len, struct strbuf *dst)
 {
-	return convert_to_working_tree_internal(istate, path, src, len, dst, 0, NULL);
+	struct data_buffer dbuf = DATA_BUFFER_INIT;
+	int ret = convert_to_working_tree_internal(istate, path, src, len, &dbuf, 0, NULL);
+	data_buffer_to_strbuf(&dbuf, dst);
+	return ret;
 }
 
 int renormalize_buffer(const struct index_state *istate, const char *path,
 		       const char *src, size_t len, struct strbuf *dst)
 {
-	int ret = convert_to_working_tree_internal(istate, path, src, len, dst, 1, NULL);
+	struct data_buffer dbuf = DATA_BUFFER_INIT;
+	int ret = convert_to_working_tree_internal(istate, path, src, len, &dbuf, 1, NULL);
 	if (ret) {
+		if (data_buffer_to_strbuf(&dbuf, dst) < 0)
+			return -1;
 		src = dst->buf;
 		len = dst->len;
 	}

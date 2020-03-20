@@ -9,6 +9,7 @@
 struct index_state;
 struct object_id;
 struct strbuf;
+struct data_buffer;
 
 #define CONV_EOL_RNDTRP_DIE   (1<<0) /* Die if CRLF to LF to CRLF is different */
 #define CONV_EOL_RNDTRP_WARN  (1<<1) /* Warn if CRLF to LF to CRLF is different */
@@ -72,6 +73,9 @@ int convert_to_git(const struct index_state *istate,
 int convert_to_working_tree(const struct index_state *istate,
 			    const char *path, const char *src,
 			    size_t len, struct strbuf *dst);
+int convert_to_working_tree_buffer(const struct index_state *istate,
+				   const char *path, const char *src,
+				   size_t len, struct data_buffer *dst);
 int async_convert_to_working_tree(const struct index_state *istate,
 				  const char *path, const char *src,
 				  size_t len, struct strbuf *dst,

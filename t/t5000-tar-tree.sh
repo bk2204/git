@@ -107,6 +107,10 @@ test_expect_success \
      echo simple textfile >a/a &&
      ten=0123456789 && hundred=$ten$ten$ten$ten$ten$ten$ten$ten$ten$ten &&
      echo long filename >a/four$hundred &&
+     for i in $(test_seq 1000)
+     do
+	     echo $hundred >>a/largefile || return 1
+     done &&
      mkdir a/bin &&
      test-tool genrandom "frotz" 500000 >a/bin/sh &&
      printf "A\$Format:%s\$O" "$SUBSTFORMAT" >a/substfile1 &&
@@ -132,6 +136,7 @@ test_expect_success 'add files to repository' '
 '
 
 test_expect_success 'setup export-subst' '
+	echo "largefile" export-subst >>.git/info/attributes &&
 	echo "substfile?" export-subst >>.git/info/attributes &&
 	git log --max-count=1 "--pretty=format:A${SUBSTFORMAT}O" HEAD \
 		>a/substfile1
@@ -166,6 +171,12 @@ check_tar with_olde-prefix olde-
 
 test_expect_success 'git archive on large files' '
     test_config core.bigfilethreshold 1 &&
+    git archive HEAD >b3.tar &&
+    test_cmp_bin b.tar b3.tar
+'
+
+test_expect_success 'git archive with some small and some large files' '
+    test_config core.bigfilethreshold 50 &&
     git archive HEAD >b3.tar &&
     test_cmp_bin b.tar b3.tar
 '

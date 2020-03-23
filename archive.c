@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "data-buffer.h"
 #include "config.h"
 #include "refs.h"
 #include "object-store.h"
@@ -70,29 +71,41 @@ static void format_subst(const struct commit *commit,
 	free(to_free);
 }
 
-void *object_file_to_archive(const struct archiver_args *args,
-			     const char *path, const struct object_id *oid,
-			     unsigned int mode, enum object_type *type,
-			     unsigned long *sizep)
+int object_file_to_archive(const struct archiver_args *args,
+			   const char *path, const struct object_id *oid,
+			   unsigned int mode, enum object_type *type,
+			   struct data_buffer *buf,
+			   unsigned long *sizep)
 {
-	void *buffer;
+	void *buffer = NULL;
 	const struct commit *commit = args->convert ? args->commit : NULL;
 
 	path += args->baselen;
 	buffer = read_object_file(oid, type, sizep);
 	if (buffer && S_ISREG(mode)) {
-		struct strbuf buf = STRBUF_INIT;
-		size_t size = 0;
+		if (commit) {
+			struct strbuf sbuf = STRBUF_INIT;
 
-		strbuf_attach(&buf, buffer, *sizep, *sizep + 1);
-		convert_to_working_tree(args->repo->index, path, buf.buf, buf.len, &buf);
-		if (commit)
-			format_subst(commit, buf.buf, buf.len, &buf);
-		buffer = strbuf_detach(&buf, &size);
-		*sizep = size;
+			strbuf_attach(&sbuf, buffer, *sizep, *sizep + 1);
+			convert_to_working_tree(args->repo->index, path,
+						sbuf.buf, sbuf.len, &sbuf);
+			format_subst(commit, sbuf.buf, sbuf.len, &sbuf);
+			*sizep = sbuf.len;
+			data_buffer_init_from_strbuf(buf, &sbuf);
+		} else {
+			convert_to_working_tree_buffer(args->repo->index, path,
+						       buffer, *sizep, buf);
+			*sizep = data_buffer_length(buf);
+			free(buffer);
+		}
+		return 0;
+	} else if (buffer) {
+		data_buffer_write(buf, buffer, *sizep);
+		free(buffer);
+		return 0;
+	} else {
+		return -1;
 	}
-
-	return buffer;
 }
 
 struct directory {

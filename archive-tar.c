@@ -3,6 +3,7 @@
  */
 #include "cache.h"
 #include "config.h"
+#include "data-buffer.h"
 #include "tar.h"
 #include "archive.h"
 #include "object-store.h"
@@ -90,6 +91,15 @@ static void finish_record(void)
 static void write_blocked(const void *data, unsigned long size)
 {
 	do_write_blocked(data, size);
+	finish_record();
+}
+
+static void write_blocked_buffer(struct data_buffer *buf)
+{
+	char data[BLOCKSIZE];
+	ssize_t nread;
+	while ((nread = data_buffer_read(buf, data, sizeof(data))))
+		do_write_blocked(data, nread);
 	finish_record();
 }
 
@@ -248,7 +258,7 @@ static int write_tar_entry(struct archiver_args *args,
 	struct strbuf ext_header = STRBUF_INIT;
 	unsigned int old_mode = mode;
 	unsigned long size, size_in_header;
-	void *buffer;
+	struct data_buffer buf = DATA_BUFFER_INIT, *buffer = &buf;
 	int err = 0;
 
 	memset(&header, 0, sizeof(header));
@@ -288,8 +298,7 @@ static int write_tar_entry(struct archiver_args *args,
 		buffer = NULL;
 	else if (S_ISLNK(mode) || S_ISREG(mode)) {
 		enum object_type type;
-		buffer = object_file_to_archive(args, path, oid, old_mode, &type, &size);
-		if (!buffer)
+		if (object_file_to_archive(args, path, oid, old_mode, &type, buffer, &size))
 			return error(_("cannot read %s"), oid_to_hex(oid));
 	} else {
 		buffer = NULL;
@@ -297,13 +306,15 @@ static int write_tar_entry(struct archiver_args *args,
 	}
 
 	if (S_ISLNK(mode)) {
+		struct strbuf sbuf = STRBUF_INIT;
+		data_buffer_to_strbuf(buffer, &sbuf);
 		if (size > sizeof(header.linkname)) {
 			xsnprintf(header.linkname, sizeof(header.linkname),
 				  "see %s.paxheader", oid_to_hex(oid));
 			strbuf_append_ext_header(&ext_header, "linkpath",
-			                         buffer, size);
+						 sbuf.buf, size);
 		} else
-			memcpy(header.linkname, buffer, size);
+			memcpy(header.linkname, sbuf.buf, size);
 	}
 
 	size_in_header = size;
@@ -322,11 +333,10 @@ static int write_tar_entry(struct archiver_args *args,
 	write_blocked(&header, sizeof(header));
 	if (S_ISREG(mode) && size > 0) {
 		if (buffer)
-			write_blocked(buffer, size);
+			write_blocked_buffer(buffer);
 		else
 			err = stream_blocked(args->repo, oid);
 	}
-	free(buffer);
 	return err;
 }
 

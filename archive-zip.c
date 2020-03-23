@@ -3,6 +3,7 @@
  */
 #include "cache.h"
 #include "config.h"
+#include "data-buffer.h"
 #include "archive.h"
 #include "streaming.h"
 #include "utf8.h"
@@ -192,37 +193,53 @@ static uint32_t clamp32(uintmax_t n)
 	return (n < max) ? n : max;
 }
 
-static void *zlib_deflate_raw(void *data, unsigned long size,
-			      int compression_level,
-			      unsigned long *compressed_size)
+#define STREAM_BUFFER_SIZE (1024 * 16)
+
+static int zlib_deflate_buffer(struct data_buffer *out,
+			       struct data_buffer *in,
+			       int compression_level,
+			       off_t *compressed_size)
 {
 	git_zstream stream;
-	unsigned long maxsize;
-	void *buffer;
-	int result;
+	unsigned char ibuf[STREAM_BUFFER_SIZE];
+	unsigned char obuf[STREAM_BUFFER_SIZE];
+	off_t olen = 0;
 
 	git_deflate_init_raw(&stream, compression_level);
-	maxsize = git_deflate_bound(&stream, size);
-	buffer = xmalloc(maxsize);
 
-	stream.next_in = data;
-	stream.avail_in = size;
-	stream.next_out = buffer;
-	stream.avail_out = maxsize;
+	for (;;) {
+		ssize_t readlen;
+		int zret = Z_OK;
+		readlen = data_buffer_read(in, ibuf, sizeof(ibuf));
+		if (readlen == -1)
+			goto out;
 
-	do {
-		result = git_deflate(&stream, Z_FINISH);
-	} while (result == Z_OK);
-
-	if (result != Z_STREAM_END) {
-		free(buffer);
-		return NULL;
+		stream.next_in = ibuf;
+		stream.avail_in = readlen;
+		while ((stream.avail_in || readlen == 0) &&
+		       (zret == Z_OK || zret == Z_BUF_ERROR)) {
+			stream.next_out = obuf;
+			stream.avail_out = sizeof(obuf);
+			zret = git_deflate(&stream, readlen ? 0 : Z_FINISH);
+			if (data_buffer_write(out, obuf, stream.next_out - obuf) < 0)
+				goto out;
+			olen += stream.next_out - obuf;
+		}
+		if (stream.avail_in)
+			goto out;
+		if (readlen == 0) {
+			if (zret != Z_STREAM_END)
+				goto out;
+			break;
+		}
 	}
-
+	*compressed_size = olen;
 	git_deflate_end(&stream);
-	*compressed_size = stream.total_out;
 
-	return buffer;
+	return 0;
+out:
+	git_deflate_end(&stream);
+	return -1;
 }
 
 static void write_zip_data_desc(unsigned long size,
@@ -280,7 +297,21 @@ static int entry_is_binary(struct index_state *istate, const char *path,
 	return buffer_is_binary(buffer, size);
 }
 
-#define STREAM_BUFFER_SIZE (1024 * 16)
+static int64_t crc32_buffer(uint32_t crc, struct data_buffer *buf)
+{
+	unsigned char data[STREAM_BUFFER_SIZE];
+	ssize_t nread;
+
+	data_buffer_seek(buf, 0, SEEK_SET);
+
+	while ((nread = data_buffer_read(buf, data, sizeof(data))) > 0)
+		crc = crc32(crc, data, nread);
+
+	if (nread < 0)
+		return -1;
+	return crc;
+}
+
 
 static int write_zip_entry(struct archiver_args *args,
 			   const struct object_id *oid,
@@ -294,12 +325,11 @@ static int write_zip_entry(struct archiver_args *args,
 	size_t header_extra_size = ZIP_EXTRA_MTIME_SIZE;
 	int need_zip64_extra = 0;
 	unsigned long attr2;
-	unsigned long compressed_size;
+	off_t compressed_size;
 	unsigned long crc;
 	enum zip_method method;
-	unsigned char *out;
-	void *deflated = NULL;
-	void *buffer;
+	struct data_buffer deflated = DATA_BUFFER_INIT;
+	struct data_buffer buf = DATA_BUFFER_INIT, *buffer = &buf;
 	struct git_istream *stream = NULL;
 	unsigned long flags = 0;
 	unsigned long size;
@@ -327,7 +357,6 @@ static int write_zip_entry(struct archiver_args *args,
 	if (S_ISDIR(mode) || S_ISGITLINK(mode)) {
 		method = ZIP_METHOD_STORE;
 		attr2 = 16;
-		out = NULL;
 		size = 0;
 		compressed_size = 0;
 		buffer = NULL;
@@ -351,18 +380,25 @@ static int write_zip_entry(struct archiver_args *args,
 				return error(_("cannot stream blob %s"),
 					     oid_to_hex(oid));
 			flags |= ZIP_STREAM;
-			out = buffer = NULL;
+			buffer = NULL;
 		} else {
-			buffer = object_file_to_archive(args, path, oid, mode,
-							&type, &size);
-			if (!buffer)
+			char buf[STREAM_BUFFER_SIZE];
+			ssize_t nread;
+			if (object_file_to_archive(args, path, oid, mode,
+						   &type, buffer, &size))
 				return error(_("cannot read %s"),
 					     oid_to_hex(oid));
-			crc = crc32(crc, buffer, size);
+			crc = crc32_buffer(crc, buffer);
+
+			data_buffer_seek(buffer, 0, SEEK_SET);
+			nread = data_buffer_read(buffer, buf, sizeof(buf));
+			if (nread < 0)
+				return error(_("cannot read buffer %s"),
+					     oid_to_hex(oid));
 			is_binary = entry_is_binary(args->repo->index,
 						    path_without_prefix,
-						    buffer, size);
-			out = buffer;
+						    buf, nread);
+			data_buffer_seek(buffer, 0, SEEK_SET);
 		}
 		compressed_size = (method == ZIP_METHOD_STORE) ? size : 0;
 	} else {
@@ -374,13 +410,14 @@ static int write_zip_entry(struct archiver_args *args,
 		max_creator_version = creator_version;
 
 	if (buffer && method == ZIP_METHOD_DEFLATE) {
-		out = deflated = zlib_deflate_raw(buffer, size,
-						  args->compression_level,
-						  &compressed_size);
-		if (!out || compressed_size >= size) {
-			out = buffer;
+		int ret = zlib_deflate_buffer(&deflated, buffer,
+					      args->compression_level,
+					      &compressed_size);
+		if (ret || compressed_size >= size) {
 			method = ZIP_METHOD_STORE;
 			compressed_size = size;
+		} else {
+			buffer = &deflated;
 		}
 	}
 
@@ -506,12 +543,22 @@ static int write_zip_entry(struct archiver_args *args,
 
 		write_zip_data_desc(size, compressed_size, crc);
 	} else if (compressed_size > 0) {
-		write_or_die(1, out, compressed_size);
+		unsigned char buf[STREAM_BUFFER_SIZE];
+		ssize_t readlen;
+
+		data_buffer_seek(buffer, 0, SEEK_SET);
+		for (;;) {
+			readlen = data_buffer_read(buffer, buf, sizeof(buf));
+			if (readlen <= 0)
+				break;
+			write_or_die(1, buf, readlen);
+		}
+		if (readlen)
+			return readlen;
 		zip_offset += compressed_size;
 	}
-
-	free(deflated);
-	free(buffer);
+	data_buffer_free(&buf);
+	data_buffer_free(&deflated);
 
 	if (compressed_size > 0xffffffff || size > 0xffffffff ||
 	    offset > 0xffffffff) {

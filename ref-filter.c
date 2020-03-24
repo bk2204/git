@@ -70,7 +70,7 @@ struct refname_atom {
 static struct expand_data {
 	struct object_id oid;
 	enum object_type type;
-	unsigned long size;
+	off_t size;
 	off_t disk_size;
 	struct object_id delta_base_oid;
 	void *content;

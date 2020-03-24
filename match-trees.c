@@ -53,7 +53,7 @@ static void *fill_tree_desc_strict(struct tree_desc *desc,
 {
 	void *buffer;
 	enum object_type type;
-	unsigned long size;
+	off_t size;
 
 	buffer = read_object_file(hash, &type, &size);
 	if (!buffer)
@@ -175,7 +175,7 @@ static int splice_tree(const struct object_id *oid1, const char *prefix,
 	char *subpath;
 	int toplen;
 	char *buf;
-	unsigned long sz;
+	off_t sz;
 	struct tree_desc desc;
 	unsigned char *rewrite_here;
 	const struct object_id *rewrite_with;

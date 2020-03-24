@@ -332,7 +332,7 @@ static int write_zip_entry(struct archiver_args *args,
 	struct data_buffer buf = DATA_BUFFER_INIT, *buffer = &buf;
 	struct git_istream *stream = NULL;
 	unsigned long flags = 0;
-	unsigned long size;
+	off_t size;
 	int is_binary = -1;
 	const char *path_without_prefix = path + args->baselen;
 	unsigned int creator_version = 0;

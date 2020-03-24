@@ -126,7 +126,7 @@ static int stream_blocked(struct repository *r, const struct object_id *oid)
 {
 	struct git_istream *st;
 	enum object_type type;
-	unsigned long sz;
+	off_t sz;
 	char buf[BLOCKSIZE];
 	ssize_t readlen;
 
@@ -257,7 +257,7 @@ static int write_tar_entry(struct archiver_args *args,
 	struct ustar_header header;
 	struct strbuf ext_header = STRBUF_INIT;
 	unsigned int old_mode = mode;
-	unsigned long size, size_in_header;
+	off_t size, size_in_header;
 	struct data_buffer buf = DATA_BUFFER_INIT, *buffer = &buf;
 	int err = 0;
 

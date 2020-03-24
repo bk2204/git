@@ -306,7 +306,7 @@ const void *repo_get_commit_buffer(struct repository *r,
 	const void *ret = get_cached_commit_buffer(r, commit, sizep);
 	if (!ret) {
 		enum object_type type;
-		unsigned long size;
+		off_t size;
 		ret = repo_read_object_file(r, &commit->object.oid, &type, &size);
 		if (!ret)
 			die("cannot read commit object %s",
@@ -485,7 +485,7 @@ int repo_parse_commit_internal(struct repository *r,
 {
 	enum object_type type;
 	void *buffer;
-	unsigned long size;
+	off_t size;
 	int ret;
 
 	if (!item)
@@ -1081,7 +1081,8 @@ static void handle_signed_tag(struct commit *parent, struct commit_extra_header 
 	struct merge_remote_desc *desc;
 	struct commit_extra_header *mergetag;
 	char *buf;
-	unsigned long size, len;
+	off_t size;
+	size_t len;
 	enum object_type type;
 
 	desc = merge_remote_util(parent);

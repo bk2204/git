@@ -1039,7 +1039,7 @@ int fsck_finish(struct fsck_options *options)
 	oidset_iter_init(&gitmodules_found, &iter);
 	while ((oid = oidset_iter_next(&iter))) {
 		enum object_type type;
-		unsigned long size;
+		off_t size;
 		char *buf;
 
 		if (oidset_contains(&gitmodules_done, oid))

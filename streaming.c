@@ -70,7 +70,7 @@ struct filtered_istream {
 
 struct git_istream {
 	const struct stream_vtbl *vtbl;
-	unsigned long size; /* inflated size of full object */
+	off_t size; /* inflated size of full object */
 	git_zstream z;
 	enum { z_unused, z_used, z_done, z_error } z_state;
 
@@ -114,7 +114,7 @@ static enum input_source istream_source(struct repository *r,
 					enum object_type *type,
 					struct object_info *oi)
 {
-	unsigned long size;
+	off_t size;
 	int status;
 
 	oi->typep = type;
@@ -138,7 +138,7 @@ static enum input_source istream_source(struct repository *r,
 struct git_istream *open_istream(struct repository *r,
 				 const struct object_id *oid,
 				 enum object_type *type,
-				 unsigned long *size,
+				 off_t *size,
 				 struct stream_filter *filter)
 {
 	struct git_istream *st;
@@ -443,6 +443,7 @@ static open_method_decl(pack_non_delta)
 {
 	struct pack_window *window;
 	enum object_type in_pack_type;
+	unsigned long size;
 
 	st->u.in_pack.pack = oi->u.packed.pack;
 	st->u.in_pack.pos = oi->u.packed.offset;
@@ -451,7 +452,8 @@ static open_method_decl(pack_non_delta)
 	in_pack_type = unpack_object_header(st->u.in_pack.pack,
 					    &window,
 					    &st->u.in_pack.pos,
-					    &st->size);
+					    &size);
+	st->size = size;
 	unuse_pack(&window);
 	switch (in_pack_type) {
 	default:
@@ -518,7 +520,7 @@ int stream_blob_to_fd(int fd, const struct object_id *oid, struct stream_filter 
 {
 	struct git_istream *st;
 	enum object_type type;
-	unsigned long sz;
+	off_t sz;
 	ssize_t kept = 0;
 	int result = -1;
 

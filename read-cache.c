@@ -228,7 +228,7 @@ static int ce_compare_link(const struct cache_entry *ce, size_t expected_size)
 {
 	int match = -1;
 	void *buffer;
-	unsigned long size;
+	off_t size;
 	enum object_type type;
 	struct strbuf sb = STRBUF_INIT;
 
@@ -3363,7 +3363,7 @@ void *read_blob_data_from_index(const struct index_state *istate,
 				const char *path, unsigned long *size)
 {
 	int pos, len;
-	unsigned long sz;
+	off_t sz;
 	enum object_type type;
 	void *data;
 

@@ -1018,17 +1018,19 @@ static void fill_origin_blob(struct diff_options *opt,
 {
 	if (!o->file.ptr) {
 		enum object_type type;
-		unsigned long file_size;
+		off_t file_size;
+		unsigned long file_size_long;
 
 		(*num_read_blob)++;
 		if (opt->flags.allow_textconv &&
 		    textconv_object(opt->repo, o->path, o->mode,
-				    &o->blob_oid, 1, &file->ptr, &file_size))
-			;
-		else
+				    &o->blob_oid, 1, &file->ptr, &file_size_long))
+			file->size = file_size_long;
+		else {
 			file->ptr = read_object_file(&o->blob_oid, &type,
 						     &file_size);
-		file->size = file_size;
+			file->size = file_size;
+		}
 
 		if (!file->ptr)
 			die("Cannot read blob %s for path %s",
@@ -2776,9 +2778,12 @@ void setup_scoreboard(struct blame_scoreboard *sb,
 		    textconv_object(sb->repo, path, o->mode, &o->blob_oid, 1, (char **) &sb->final_buf,
 				    &sb->final_buf_size))
 			;
-		else
+		else {
+			off_t bufsize = sb->final_buf_size;
 			sb->final_buf = read_object_file(&o->blob_oid, &type,
-							 &sb->final_buf_size);
+							 &bufsize);
+			sb->final_buf_size = bufsize;
+		}
 
 		if (!sb->final_buf)
 			die(_("cannot read blob %s for path %s"),

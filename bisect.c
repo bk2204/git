@@ -137,7 +137,7 @@ static void show_list(const char *debug, int counted, int nr,
 		struct commit *commit = p->item;
 		unsigned flags = commit->object.flags;
 		enum object_type type;
-		unsigned long size;
+		off_t size;
 		char *buf = read_object_file(&commit->object.oid, &type,
 					     &size);
 		const char *subject_start;

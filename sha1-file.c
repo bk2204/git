@@ -972,7 +972,7 @@ void *xmmap(void *start, size_t length,
  * the streaming interface and rehash it to do the same.
  */
 int check_object_signature(struct repository *r, const struct object_id *oid,
-			   void *map, unsigned long size, const char *type)
+			   void *map, off_t size, const char *type)
 {
 	struct object_id real_oid;
 	enum object_type obj_type;
@@ -1334,7 +1334,7 @@ static int parse_loose_header_extended(const char *hdr, struct object_info *oi,
 	return *hdr ? -1 : type;
 }
 
-int parse_loose_header(const char *hdr, unsigned long *sizep)
+int parse_loose_header(const char *hdr, off_t *sizep)
 {
 	struct object_info oi = OBJECT_INFO_INIT;
 
@@ -1352,7 +1352,7 @@ static int loose_object_info(struct repository *r,
 	git_zstream stream;
 	char hdr[MAX_HEADER_LEN];
 	struct strbuf hdrbuf = STRBUF_INIT;
-	unsigned long size_scratch;
+	off_t size_scratch;
 
 	if (oi->delta_base_oid)
 		oidclr(oi->delta_base_oid);
@@ -1555,7 +1555,7 @@ int oid_object_info_extended(struct repository *r, const struct object_id *oid,
 /* returns enum object_type or negative */
 int oid_object_info(struct repository *r,
 		    const struct object_id *oid,
-		    unsigned long *sizep)
+		    off_t *sizep)
 {
 	enum object_type type;
 	struct object_info oi = OBJECT_INFO_INIT;
@@ -1570,7 +1570,7 @@ int oid_object_info(struct repository *r,
 
 static void *read_object(struct repository *r,
 			 const struct object_id *oid, enum object_type *type,
-			 unsigned long *size)
+			 off_t *size)
 {
 	struct object_info oi = OBJECT_INFO_INIT;
 	void *content;
@@ -1609,7 +1609,7 @@ int pretend_object_file(void *buf, unsigned long len, enum object_type type,
 void *read_object_file_extended(struct repository *r,
 				const struct object_id *oid,
 				enum object_type *type,
-				unsigned long *size,
+				off_t *size,
 				int lookup_replace)
 {
 	void *data;
@@ -1653,7 +1653,7 @@ void *read_object_with_reference(struct repository *r,
 {
 	enum object_type type, required_type;
 	void *buffer;
-	unsigned long isize;
+	off_t isize;
 	struct object_id actual_oid;
 
 	required_type = type_from_string(required_type_name);
@@ -1959,7 +1959,7 @@ cleanup:
 int force_object_loose(const struct object_id *oid, time_t mtime)
 {
 	void *buf;
-	unsigned long len;
+	off_t len;
 	enum object_type type;
 	char hdr[MAX_HEADER_LEN];
 	int hdrlen;
@@ -2462,7 +2462,7 @@ static int check_stream_oid(git_zstream *stream,
 int read_loose_object(const char *path,
 		      const struct object_id *expected_oid,
 		      enum object_type *type,
-		      unsigned long *size,
+		      off_t *size,
 		      void **contents)
 {
 	int ret = -1;

@@ -218,7 +218,7 @@ int parse_tree_gently(struct tree *item, int quiet_on_missing)
 {
 	 enum object_type type;
 	 void *buffer;
-	 unsigned long size;
+	 off_t size;
 
 	if (item->object.parsed)
 		return 0;

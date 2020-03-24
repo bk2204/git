@@ -738,7 +738,7 @@ enum get_oid_result get_tree_entry_follow_symlinks(struct repository *r,
 			goto done;
 		} else if (S_ISLNK(*mode)) {
 			/* Follow a symlink */
-			unsigned long link_len;
+			off_t link_len;
 			size_t len;
 			char *contents, *contents_start;
 			struct dir_state *parent;

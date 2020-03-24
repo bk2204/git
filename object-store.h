@@ -186,11 +186,11 @@ void *map_loose_object(struct repository *r, const struct object_id *oid,
 void *read_object_file_extended(struct repository *r,
 				const struct object_id *oid,
 				enum object_type *type,
-				unsigned long *size, int lookup_replace);
+				off_t *size, int lookup_replace);
 static inline void *repo_read_object_file(struct repository *r,
 					  const struct object_id *oid,
 					  enum object_type *type,
-					  unsigned long *size)
+					  off_t *size)
 {
 	return read_object_file_extended(r, oid, type, size, 1);
 }
@@ -199,7 +199,7 @@ static inline void *repo_read_object_file(struct repository *r,
 #endif
 
 /* Read and unpack an object file into memory, write memory to an object file */
-int oid_object_info(struct repository *r, const struct object_id *, unsigned long *);
+int oid_object_info(struct repository *r, const struct object_id *, off_t *);
 
 int hash_object_file(const struct git_hash_algo *algo, const void *buf,
 		     unsigned long len, const char *type,
@@ -235,7 +235,7 @@ int force_object_loose(const struct object_id *oid, time_t mtime);
 int read_loose_object(const char *path,
 		      const struct object_id *expected_oid,
 		      enum object_type *type,
-		      unsigned long *size,
+		      off_t *size,
 		      void **contents);
 
 #ifndef NO_THE_REPOSITORY_COMPATIBILITY_MACROS
@@ -298,7 +298,7 @@ static inline void obj_read_unlock(void)
 struct object_info {
 	/* Request */
 	enum object_type *typep;
-	unsigned long *sizep;
+	off_t *sizep;
 	off_t *disk_sizep;
 	struct object_id *delta_base_oid;
 	struct strbuf *type_name;

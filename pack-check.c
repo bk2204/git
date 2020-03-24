@@ -102,7 +102,8 @@ static int verify_packfile(struct repository *r,
 		void *data;
 		struct object_id oid;
 		enum object_type type;
-		unsigned long size;
+		off_t size;
+		unsigned long sz;
 		off_t curpos;
 		int data_valid;
 
@@ -122,7 +123,8 @@ static int verify_packfile(struct repository *r,
 		}
 
 		curpos = entries[i].offset;
-		type = unpack_object_header(p, w_curs, &curpos, &size);
+		type = unpack_object_header(p, w_curs, &curpos, &sz);
+		size = sz;
 		unuse_pack(w_curs);
 
 		if (type == OBJ_BLOB && big_file_threshold <= size) {

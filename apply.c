@@ -3181,7 +3181,7 @@ static int apply_binary(struct apply_state *state,
 	if (has_object_file(&oid)) {
 		/* We already have the postimage */
 		enum object_type type;
-		unsigned long size;
+		off_t size;
 		char *result;
 
 		result = read_object_file(&oid, &type, &size);
@@ -3244,7 +3244,7 @@ static int read_blob_object(struct strbuf *buf, const struct object_id *oid, uns
 		strbuf_addf(buf, "Subproject commit %s\n", oid_to_hex(oid));
 	} else {
 		enum object_type type;
-		unsigned long sz;
+		off_t sz;
 		char *result;
 
 		result = read_object_file(oid, &type, &sz);

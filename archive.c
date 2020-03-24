@@ -75,7 +75,7 @@ int object_file_to_archive(const struct archiver_args *args,
 			   const char *path, const struct object_id *oid,
 			   unsigned int mode, enum object_type *type,
 			   struct data_buffer *buf,
-			   unsigned long *sizep)
+			   off_t *sizep)
 {
 	void *buffer = NULL;
 	const struct commit *commit = args->convert ? args->commit : NULL;

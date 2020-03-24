@@ -1165,7 +1165,7 @@ static void stream_blob(uintmax_t len, struct object_id *oidout, uintmax_t mark)
  */
 static void *gfi_unpack_entry(
 	struct object_entry *oe,
-	unsigned long *sizep)
+	off_t *sizep)
 {
 	enum object_type type;
 	struct packed_git *p = all_packs[oe->pack_id];
@@ -1211,7 +1211,7 @@ static void load_tree(struct tree_entry *root)
 	struct object_id *oid = &root->versions[1].oid;
 	struct object_entry *myoe;
 	struct tree_content *t;
-	unsigned long size;
+	off_t size;
 	char *buf;
 	const char *c;
 
@@ -2519,7 +2519,7 @@ static int parse_objectish(struct branch *b, const char *objectish)
 		if (!oideq(&b->oid, &oe->idx.oid)) {
 			oidcpy(&b->oid, &oe->idx.oid);
 			if (oe->pack_id != MAX_PACK_ID) {
-				unsigned long size;
+				off_t size;
 				char *buf = gfi_unpack_entry(oe, &size);
 				parse_from_commit(b, buf, size);
 				free(buf);
@@ -2858,7 +2858,7 @@ static void cat_blob_write(const char *buf, unsigned long size)
 static void cat_blob(struct object_entry *oe, struct object_id *oid)
 {
 	struct strbuf line = STRBUF_INIT;
-	unsigned long size;
+	off_t size;
 	enum object_type type = 0;
 	char *buf;
 
@@ -2942,7 +2942,7 @@ static void parse_cat_blob(const char *p)
 static struct object_entry *dereference(struct object_entry *oe,
 					struct object_id *oid)
 {
-	unsigned long size;
+	off_t size;
 	char *buf = NULL;
 	const unsigned hexsz = the_hash_algo->hexsz;
 

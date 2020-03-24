@@ -798,7 +798,7 @@ int combine_notes_concatenate(struct object_id *cur_oid,
 			      const struct object_id *new_oid)
 {
 	char *cur_msg = NULL, *new_msg = NULL, *buf;
-	unsigned long cur_len, new_len, buf_len;
+	off_t cur_len, new_len, buf_len;
 	enum object_type cur_type, new_type;
 	int ret;
 
@@ -859,7 +859,7 @@ static int string_list_add_note_lines(struct string_list *list,
 				      const struct object_id *oid)
 {
 	char *data;
-	unsigned long len;
+	off_t len;
 	enum object_type t;
 
 	if (is_null_oid(oid))
@@ -1247,7 +1247,8 @@ static void format_note(struct notes_tree *t, const struct object_id *object_oid
 	static const char utf8[] = "utf-8";
 	const struct object_id *oid;
 	char *msg, *msg_p;
-	unsigned long linelen, msglen;
+	size_t linelen;
+	off_t msglen;
 	enum object_type type;
 
 	if (!t)

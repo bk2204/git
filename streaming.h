@@ -9,7 +9,7 @@
 struct git_istream;
 
 struct git_istream *open_istream(struct repository *, const struct object_id *,
-				 enum object_type *, unsigned long *,
+				 enum object_type *, off_t *,
 				 struct stream_filter *);
 int close_istream(struct git_istream *);
 ssize_t read_istream(struct git_istream *, void *, size_t);

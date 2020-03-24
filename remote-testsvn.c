@@ -56,7 +56,7 @@ static char *read_ref_note(const struct object_id *oid)
 {
 	const struct object_id *note_oid;
 	char *msg = NULL;
-	unsigned long msglen;
+	off_t msglen;
 	enum object_type type;
 
 	init_notes(NULL, notes_ref, NULL, 0);
@@ -105,7 +105,7 @@ static int note2mark_cb(const struct object_id *object_oid,
 {
 	FILE *file = (FILE *)cb_data;
 	char *msg;
-	unsigned long msglen;
+	off_t msglen;
 	enum object_type type;
 	struct rev_note note;
 

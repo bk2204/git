@@ -1,5 +1,6 @@
 #ifndef GREP_H
 #define GREP_H
+#include "cache.h"
 #include "color.h"
 #ifdef USE_LIBPCRE1
 #include <pcre.h>
@@ -194,7 +195,7 @@ struct grep_source {
 	void *identifier;
 
 	char *buf;
-	unsigned long size;
+	off_t size;
 
 	char *path; /* for attribute lookups */
 	struct userdiff_driver *driver;

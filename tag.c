@@ -41,7 +41,7 @@ int gpg_verify_tag(const struct object_id *oid, const char *name_to_report,
 {
 	enum object_type type;
 	char *buf;
-	unsigned long size;
+	off_t size;
 	int ret;
 
 	type = oid_object_info(the_repository, oid, NULL);
@@ -209,7 +209,7 @@ int parse_tag(struct tag *item)
 {
 	enum object_type type;
 	void *data;
-	unsigned long size;
+	off_t size;
 	int ret;
 
 	if (item->object.parsed)

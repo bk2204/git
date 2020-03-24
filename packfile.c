@@ -1427,7 +1427,7 @@ static void detach_delta_base_cache_entry(struct delta_base_cache_entry *ent)
 }
 
 static void *cache_or_unpack_entry(struct repository *r, struct packed_git *p,
-				   off_t base_offset, unsigned long *base_size,
+				   off_t base_offset, off_t *base_size,
 				   enum object_type *type)
 {
 	struct delta_base_cache_entry *ent;
@@ -1642,7 +1642,7 @@ struct unpack_entry_stack_ent {
 static void *read_object(struct repository *r,
 			 const struct object_id *oid,
 			 enum object_type *type,
-			 unsigned long *size)
+			 off_t *size)
 {
 	struct object_info oi = OBJECT_INFO_INIT;
 	void *content;
@@ -1656,7 +1656,7 @@ static void *read_object(struct repository *r,
 }
 
 void *unpack_entry(struct repository *r, struct packed_git *p, off_t obj_offset,
-		   enum object_type *final_type, unsigned long *final_size)
+		   enum object_type *final_type, off_t *final_size)
 {
 	struct pack_window *w_curs = NULL;
 	off_t curpos = obj_offset;
@@ -1761,7 +1761,7 @@ void *unpack_entry(struct repository *r, struct packed_git *p, off_t obj_offset,
 		void *delta_data;
 		void *base = data;
 		void *external_base = NULL;
-		unsigned long delta_size, base_size = size;
+		off_t delta_size, base_size = size;
 		int i;
 
 		data = NULL;

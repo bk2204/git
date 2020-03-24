@@ -217,7 +217,7 @@ static int read_mailmap_blob(struct string_list *map,
 {
 	struct object_id oid;
 	char *buf;
-	unsigned long size;
+	off_t size;
 	enum object_type type;
 
 	if (!name)

@@ -786,7 +786,7 @@ static unsigned long get_size_by_pos(struct bitmap_index *bitmap_git,
 				     uint32_t pos)
 {
 	struct packed_git *pack = bitmap_git->pack;
-	unsigned long size;
+	off_t size;
 	struct object_info oi = OBJECT_INFO_INIT;
 
 	oi.sizep = &size;

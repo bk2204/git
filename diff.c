@@ -4012,8 +4012,10 @@ int diff_populate_filespec(struct repository *r,
 	}
 	else {
 		enum object_type type;
+		off_t size;
 		if (size_only || (flags & CHECK_BINARY)) {
-			type = oid_object_info(r, &s->oid, &s->size);
+			type = oid_object_info(r, &s->oid, &size);
+			s->size = size;
 			if (type < 0)
 				die("unable to read %s",
 				    oid_to_hex(&s->oid));
@@ -4024,9 +4026,10 @@ int diff_populate_filespec(struct repository *r,
 				return 0;
 			}
 		}
-		s->data = repo_read_object_file(r, &s->oid, &type, &s->size);
+		s->data = repo_read_object_file(r, &s->oid, &type, &size);
 		if (!s->data)
 			die("unable to read %s", oid_to_hex(&s->oid));
+		s->size = size;
 		s->should_free = 1;
 	}
 	return 0;

@@ -1631,7 +1631,7 @@ int git_config_from_blob_oid(config_fn_t fn,
 {
 	enum object_type type;
 	char *buf;
-	unsigned long size;
+	off_t size;
 	int ret;
 
 	buf = read_object_file(oid, &type, &size);

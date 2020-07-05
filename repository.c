@@ -91,6 +91,7 @@ void repo_set_gitdir(struct repository *repo,
 void repo_set_hash_algo(struct repository *repo, int hash_algo)
 {
 	repo->hash_algo = &hash_algos[hash_algo];
+	repo->compat_hash_algo = NULL;
 }
 
 /*

@@ -7,10 +7,8 @@
 # @@BUILD_DIR@@ and @@PROG@@.
 
 GIT_EXEC_PATH='@@BUILD_DIR@@'
-if test -n "$NO_SET_GIT_TEMPLATE_DIR"
+if test -z "$NO_SET_GIT_TEMPLATE_DIR"
 then
-	unset GIT_TEMPLATE_DIR
-else
 	GIT_TEMPLATE_DIR='@@BUILD_DIR@@/templates/blt'
 	export GIT_TEMPLATE_DIR
 fi

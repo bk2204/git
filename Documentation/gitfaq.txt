@@ -83,8 +83,8 @@ Windows would be the configuration `"C:\Program Files\Vim\gvim.exe" --nofork`,
 which quotes the filename with spaces and specifies the `--nofork` option to
 avoid backgrounding the process.
 
-Credentials
------------
+Credentials and Transfers
+-------------------------
 
 [[http-credentials]]
 How do I specify my credentials when pushing over HTTP?::
@@ -184,6 +184,49 @@ Host example_committer
 Then, you can adjust your push URL to use `git@example_author` or
 `git@example_committer` instead of `git@example.org` (e.g., `git remote set-url
 git@example_author:org1/project1.git`).
+
+[[sync-working-tree]]
+How do I sync a working tree across systems?::
+	First, decide whether you want to do this at all.  Git usually works better
+	when you push or pull your work using the typical `git push` and `git fetch`
+	commands and isn't designed to share a working tree across systems.  This is
+	potentially risky and in some cases can cause repository corruption or data
+	loss.
++
+Usually, doing so will cause `git status` to need to re-read every file in the
+working tree.  Additionally, Git's security model does not permit sharing a
+working tree across untrusted users, so it is only safe to sync a working tree
+if it will only be used by a single user across all machines.
++
+It is important not to use a cloud syncing service to sync any portion of a Git
+repository, since this can cause corruption, such as missing objects, changed
+or added files, broken refs, and a wide variety of other corruption.  These
+services tend to sync file by file and don't understand the structure of a Git
+repository.  This is especially bad if they sync the repository in the middle of
+it being updated, since that is very likely to cause incomplete or partial
+updates and therefore data loss.
++
+Therefore, it's better to push your work to either the other system or a central
+server using the normal push and pull mechanism.  However, this doesn't always
+preserve important data, like stashes, so some people prefer to share a working
+tree across systems.
++
+If you do this, the recommended approach is to use `rsync -a --delete-after`
+(ideally with an encrypted connection such as with `ssh`) on the root of
+repository.  You should ensure several things when you do this:
++
+* There are no additional worktrees enabled for your repository.
+* You are not using a separate Git directory outside of your repository root.
+* You are comfortable with the destination directory being an exact copy of the
+	source directory, _deleting any data that is already there_.
+* The repository is in a quiescent state for the duration of the transfer (that
+	is, no operations of any sort are taking place on it, including background
+	operations like `git gc` and operations invoked by your editor).
++
+Be aware that even with these recommendations, syncing in this way has some risk
+since it bypasses Git's normal integrity checking for repositories, so having
+backups is advised.  You may also with to do a `git fsck` to verify the
+integrity of your data on the destination system after syncing.
 
 Common Issues
 -------------

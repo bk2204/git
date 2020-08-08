@@ -553,7 +553,7 @@ static void output_refs(struct ref *refs)
 	if (options.object_format && options.hash_algo) {
 		printf(":object-format %s\n", options.hash_algo->name);
 		repo_set_hash_algo(the_repository,
-				hash_algo_by_ptr(options.hash_algo));
+				hash_algo_by_ptr(options.hash_algo), 0);
 	}
 	for (posn = refs; posn; posn = posn->next) {
 		if (posn->symref)

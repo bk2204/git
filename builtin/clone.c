@@ -1189,7 +1189,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		 * let's set ours to the same thing.
 		 */
 		initialize_repository_version(hash_algo, 1);
-		repo_set_hash_algo(the_repository, hash_algo);
+		repo_set_hash_algo(the_repository, hash_algo, 0);
 
 		mapped_refs = wanted_peer_refs(refs, &remote->fetch);
 		/*

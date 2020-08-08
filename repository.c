@@ -26,7 +26,7 @@ void initialize_the_repository(void)
 	the_repo.objects = raw_object_store_new();
 	the_repo.parsed_objects = parsed_object_pool_new();
 
-	repo_set_hash_algo(&the_repo, GIT_HASH_SHA1);
+	repo_set_hash_algo(&the_repo, GIT_HASH_SHA1, 0);
 }
 
 static void expand_base_dir(char **out, const char *in,
@@ -88,10 +88,10 @@ void repo_set_gitdir(struct repository *repo,
 			repo->gitdir, "index");
 }
 
-void repo_set_hash_algo(struct repository *repo, int hash_algo)
+void repo_set_hash_algo(struct repository *repo, int hash_algo, int compat_hash_algo)
 {
 	repo->hash_algo = &hash_algos[hash_algo];
-	repo->compat_hash_algo = NULL;
+	repo->compat_hash_algo = compat_hash_algo ? &hash_algos[compat_hash_algo] : NULL;
 }
 
 /*
@@ -172,7 +172,7 @@ int repo_init(struct repository *repo,
 	if (read_and_verify_repository_format(&format, repo->commondir))
 		goto error;
 
-	repo_set_hash_algo(repo, format.hash_algo);
+	repo_set_hash_algo(repo, format.hash_algo, 0);
 
 	/* take ownership of format.partial_clone */
 	repo->repository_format_partial_clone = format.partial_clone;

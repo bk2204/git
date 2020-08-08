@@ -1827,7 +1827,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 				hash_algo = hash_algo_by_name(arg);
 				if (hash_algo == GIT_HASH_UNKNOWN)
 					die(_("unknown hash algorithm '%s'"), arg);
-				repo_set_hash_algo(the_repository, hash_algo);
+				repo_set_hash_algo(the_repository, hash_algo, 0);
 			} else if (!strcmp(arg, "--rev-index")) {
 				rev_index = 1;
 			} else if (!strcmp(arg, "--no-rev-index")) {

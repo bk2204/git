@@ -124,7 +124,7 @@ int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 	ref = transport_get_remote_refs(transport, &transport_options);
 	if (ref) {
 		int hash_algo = hash_algo_by_ptr(transport_get_hash_algo(transport));
-		repo_set_hash_algo(the_repository, hash_algo);
+		repo_set_hash_algo(the_repository, hash_algo, 0);
 	}
 
 	if (!dest && !quiet)

@@ -1309,7 +1309,7 @@ const char *setup_git_directory_gently(int *nongit_ok)
 			setup_git_env(gitdir);
 		}
 		if (startup_info->have_repository)
-			repo_set_hash_algo(the_repository, repo_fmt.hash_algo);
+			repo_set_hash_algo(the_repository, repo_fmt.hash_algo, 0);
 	}
 
 	strbuf_release(&dir);
@@ -1377,7 +1377,7 @@ void check_repository_format(struct repository_format *fmt)
 		fmt = &repo_fmt;
 	check_repository_format_gently(get_git_dir(), fmt, NULL);
 	startup_info->have_repository = 1;
-	repo_set_hash_algo(the_repository, fmt->hash_algo);
+	repo_set_hash_algo(the_repository, fmt->hash_algo, 0);
 	clear_repository_format(&repo_fmt);
 }
 

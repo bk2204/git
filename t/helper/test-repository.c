@@ -22,7 +22,7 @@ static void test_parse_commit_in_graph(const char *gitdir, const char *worktree,
 	if (repo_init(&r, gitdir, worktree))
 		die("Couldn't init repo");
 
-	repo_set_hash_algo(the_repository, hash_algo_by_ptr(r.hash_algo));
+	repo_set_hash_algo(the_repository, hash_algo_by_ptr(r.hash_algo), 0);
 
 	c = lookup_commit(&r, commit_oid);
 
@@ -52,7 +52,7 @@ static void test_get_commit_tree_in_graph(const char *gitdir,
 	if (repo_init(&r, gitdir, worktree))
 		die("Couldn't init repo");
 
-	repo_set_hash_algo(the_repository, hash_algo_by_ptr(r.hash_algo));
+	repo_set_hash_algo(the_repository, hash_algo_by_ptr(r.hash_algo), 0);
 
 	c = lookup_commit(&r, commit_oid);
 

@@ -133,6 +133,9 @@ struct repository {
 	/* Repository's compatibility hash algorithm. */
 	const struct git_hash_algo *compat_hash_algo;
 
+	/* Map between object IDs for loose objects. */
+	struct loose_object_map *loose_map;
+
 	/* A unique-id for tracing purposes. */
 	int trace2_repo_id;
 

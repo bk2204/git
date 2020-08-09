@@ -277,8 +277,13 @@ int index_bulk_checkin(struct object_id *oid,
 		       int fd, size_t size, enum object_type type,
 		       const char *path, unsigned flags)
 {
-	int status = deflate_to_pack(&state, oid, fd, size, type,
-				     path, flags);
+	int status;
+
+	if (type != OBJ_BLOB)
+		return error("cannot stream objects of non-blob type");
+
+	status = deflate_to_pack(&state, oid, fd, size, type,
+				 path, flags);
 	if (!state.plugged)
 		finish_bulk_checkin(&state);
 	return status;

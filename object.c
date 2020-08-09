@@ -9,6 +9,7 @@
 #include "alloc.h"
 #include "packfile.h"
 #include "commit-graph.h"
+#include "loose.h"
 
 unsigned int get_max_object_index(void)
 {
@@ -517,6 +518,7 @@ static void free_object_directory(struct object_directory *odb)
 {
 	free(odb->path);
 	odb_clear_loose_cache(odb);
+	loose_object_map_clear(&odb->loose_map);
 	free(odb);
 }
 

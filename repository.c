@@ -9,6 +9,7 @@
 #include "config.h"
 #include "object.h"
 #include "lockfile.h"
+#include "loose.h"
 #include "submodule-config.h"
 
 /* The main repository */
@@ -88,8 +89,13 @@ void repo_set_gitdir(struct repository *repo,
 
 void repo_set_hash_algo(struct repository *repo, int hash_algo, int compat_hash_algo)
 {
+	if (hash_algo == GIT_HASH_SHA256 && !compat_hash_algo)
+		compat_hash_algo = GIT_HASH_SHA1;
+
 	repo->hash_algo = &hash_algos[hash_algo];
 	repo->compat_hash_algo = compat_hash_algo ? &hash_algos[compat_hash_algo] : NULL;
+	if (repo->compat_hash_algo)
+		repo_read_loose_object_map(&the_repo);
 }
 
 /*
@@ -175,6 +181,9 @@ int repo_init(struct repository *repo,
 	if (worktree)
 		repo_set_worktree(repo, worktree);
 
+	if (repo->compat_hash_algo)
+		repo_read_loose_object_map(repo);
+
 	clear_repository_format(&format);
 	return 0;
 
@@ -258,6 +267,9 @@ void repo_clear(struct repository *repo)
 		if (repo->index != &the_index)
 			FREE_AND_NULL(repo->index);
 	}
+
+	if (repo->loose_map)
+		loose_object_map_clear(&repo->loose_map);
 }
 
 int repo_read_index(struct repository *repo)

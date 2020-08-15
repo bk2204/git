@@ -218,4 +218,9 @@ enum interesting tree_entry_interesting(struct index_state *istate,
 					struct strbuf *, int,
 					const struct pathspec *ps);
 
+int convert_tree_object(struct repository *repo, struct strbuf *out,
+			const struct git_hash_algo *from,
+			const struct git_hash_algo *to,
+			const char *buffer, size_t size);
+
 #endif

@@ -5,6 +5,7 @@
 #include "tree.h"
 #include "pathspec.h"
 #include "json-writer.h"
+#include "loose.h"
 
 static const char *get_mode(const char *str, unsigned int *modep)
 {
@@ -51,6 +52,57 @@ static int decode_tree_entry(struct tree_desc *desc, const char *buf, unsigned l
 	desc->entry.pathlen = len - 1;
 	oidread(&desc->entry.oid, (const unsigned char *)path + len);
 
+	return 0;
+}
+
+static int decode_tree_entry_raw(struct object_id *oid, const char **path,
+				 size_t *len, const struct git_hash_algo *algo,
+				 const char *buf, unsigned long size)
+{
+	unsigned int mode;
+	const unsigned hashsz = algo->rawsz;
+
+	if (size < hashsz + 3 || buf[size - (hashsz + 1)]) {
+		return -1;
+	}
+
+	*path = get_mode(buf, &mode);
+	if (!*path || !**path)
+		return -1;
+	*len = strlen(*path) + 1;
+
+	oidread_algop(oid, (const unsigned char *)*path + *len, algo);
+	return 0;
+}
+
+int convert_tree_object(struct repository *repo, struct strbuf *out,
+			const struct git_hash_algo *from,
+			const struct git_hash_algo *to,
+			const char *buffer, size_t size)
+{
+	const char *p = buffer, *end = buffer + size;
+	if (!from)
+		from = repo->hash_algo;
+	if (!to)
+		to = repo->compat_hash_algo;
+	if (!to)
+		return -1;
+
+	while (p < end) {
+		struct object_id entry_oid, mapped_oid;
+		const char *path = NULL;
+		size_t pathlen;
+
+		if (decode_tree_entry_raw(&entry_oid, &path, &pathlen, from, p,
+					  end - p))
+			return error(_("failed to decode tree entry"));
+		if (repo_map_object(repo, &mapped_oid, to, &entry_oid))
+			return error(_("failed to map tree entry for %s"), oid_to_hex(&entry_oid));
+		strbuf_add(out, p, path - p);
+		strbuf_add(out, path, pathlen);
+		strbuf_add(out, mapped_oid.hash, to->rawsz);
+		p = path + pathlen + from->rawsz;
+	}
 	return 0;
 }
 

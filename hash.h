@@ -261,12 +261,17 @@ static inline void oidclr(struct object_id *oid)
 	oid->algo = hash_algo_by_ptr(the_hash_algo);
 }
 
-static inline void oidread(struct object_id *oid, const unsigned char *hash)
+static inline void oidread_algop(struct object_id *oid, const unsigned char *hash, const struct git_hash_algo *algop)
 {
-	size_t rawsz = the_hash_algo->rawsz;
+	size_t rawsz = algop->rawsz;
 	memcpy(oid->hash, hash, rawsz);
 	memset(oid->hash + rawsz, 0, GIT_MAX_RAWSZ - rawsz);
-	oid->algo = hash_algo_by_ptr(the_hash_algo);
+	oid->algo = hash_algo_by_ptr(algop);
+}
+
+static inline void oidread(struct object_id *oid, const unsigned char *hash)
+{
+	oidread_algop(oid, hash, the_hash_algo);
 }
 
 static inline int is_empty_blob_sha1(const unsigned char *sha1)

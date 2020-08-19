@@ -467,7 +467,8 @@ export GIT_COMMITTER_EMAIL GIT_COMMITTER_NAME
 export GIT_COMMITTER_DATE GIT_AUTHOR_DATE
 export EDITOR
 
-GIT_DEFAULT_HASH="${GIT_TEST_DEFAULT_HASH:-sha1}"
+GIT_DEFAULT_HASH="${GIT_TEST_DEFAULT_HASH%%:*}"
+GIT_DEFAULT_HASH="${GIT_DEFAULT_HASH:-sha1}"
 export GIT_DEFAULT_HASH
 GIT_TEST_MERGE_ALGORITHM="${GIT_TEST_MERGE_ALGORITHM:-ort}"
 export GIT_TEST_MERGE_ALGORITHM
@@ -1707,6 +1708,14 @@ test_lazy_prereq SHA1 '
 	"") test $(git hash-object /dev/null) = e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 ;;
 	*) false ;;
 	esac
+'
+
+# BROKEN_OBJECTS is a test if we can write deliberately broken objects and
+# expect them to work.  When running using SHA-256 mode with SHA-1
+# compatibility, we cannot write such objects because there's no SHA-1
+# compatibility value for a nonexistent object.
+test_lazy_prereq BROKEN_OBJECTS '
+	test "$test_hash_algo" = "$test_compat_hash_algo"
 '
 
 test_lazy_prereq REBASE_P '

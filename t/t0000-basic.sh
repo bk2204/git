@@ -1228,7 +1228,7 @@ test_expect_success 'writing this tree without --missing-ok' '
 	test_must_fail git write-tree
 '
 
-test_expect_success 'writing this tree with --missing-ok' '
+test_expect_success BROKEN_OBJECTS 'writing this tree with --missing-ok' '
 	git write-tree --missing-ok
 '
 

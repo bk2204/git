@@ -11,7 +11,12 @@ test_expect_success setup '
 		git add "$d"
 	done &&
 	echo zero >one &&
-	git update-index --add --info-only one &&
+	if test_have_prereq BROKEN_OBJECTS
+	then
+		git update-index --add --info-only one
+	else
+		git update-index --add one
+	fi &&
 	git write-tree --missing-ok >tree.missing &&
 	git ls-tree $(cat tree.missing) >top.missing &&
 	git ls-tree -r $(cat tree.missing) >all.missing &&

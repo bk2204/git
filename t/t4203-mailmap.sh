@@ -62,6 +62,41 @@ test_expect_success 'check-mailmap --stdin arguments' '
 	test_cmp expect actual
 '
 
+test_expect_success 'hashed mailmap' '
+	test_config mailmap.file ./hashed &&
+	hashed_author_name="@sha256:$(printf "$GIT_AUTHOR_NAME" | test-tool sha256)" &&
+	hashed_author_email="@sha256:$(printf "$GIT_AUTHOR_EMAIL" | test-tool sha256)" &&
+	cat >expect <<-EOF &&
+	$GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL>
+	EOF
+
+	cat >hashed <<-EOF &&
+	$GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $hashed_author_name <$GIT_AUTHOR_EMAIL>
+	EOF
+	git check-mailmap  "$GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL>" >actual &&
+	test_cmp expect actual &&
+
+	cat >hashed <<-EOF &&
+	Wrong <wrong@example.org> $GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL>
+	$GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $hashed_author_name <$GIT_AUTHOR_EMAIL>
+	EOF
+	# Check that we prefer literal matches over hashed names.
+	git check-mailmap  "$hashed_author_name <$GIT_AUTHOR_EMAIL>" >actual &&
+	test_cmp expect actual &&
+
+	cat >hashed <<-EOF &&
+	$GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $hashed_author_name <$hashed_author_email>
+	EOF
+	git check-mailmap  "$GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL>" >actual &&
+	test_cmp expect actual &&
+
+	cat >hashed <<-EOF &&
+	$GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> <$hashed_author_email>
+	EOF
+	git check-mailmap  "$GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL>" >actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'check-mailmap bogus contact' '
 	test_must_fail git check-mailmap bogus
 '

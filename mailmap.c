@@ -313,6 +313,41 @@ static struct string_list_item *lookup_prefix(struct string_list *map,
 	return NULL;
 }
 
+/*
+ * Convert an email or name into a hashed form for comparison.  The hashed form
+ * will be created in the form
+ * @sha256:c68b7a430ac8dee9676ec77a387194e23f234d024e03d844050cf6c01775c8f6,
+ * which would be the hashed form for "doe@example.com".
+ */
+static char *hashed_form(struct strbuf *buf, const struct git_hash_algo *algop, const char *key, size_t keylen)
+{
+	git_hash_ctx ctx;
+	unsigned char hashbuf[GIT_MAX_RAWSZ];
+	char hexbuf[GIT_MAX_HEXSZ + 1];
+
+	algop->init_fn(&ctx);
+	algop->update_fn(&ctx, key, keylen);
+	algop->final_fn(hashbuf, &ctx);
+	hash_to_hex_algop_r(hexbuf, hashbuf, algop);
+
+	strbuf_addf(buf, "@%s:%s", algop->name, hexbuf);
+	return buf->buf;
+}
+
+static struct string_list_item *lookup_one(struct string_list *map,
+					   const char *string, size_t len)
+{
+	struct strbuf buf = STRBUF_INIT;
+	struct string_list_item *item = lookup_prefix(map, string, len);
+	if (item)
+		return item;
+
+	hashed_form(&buf, &hash_algos[GIT_HASH_SHA256], string, len);
+	item = lookup_prefix(map, buf.buf, buf.len);
+	strbuf_release(&buf);
+	return item;
+}
+
 int map_user(struct string_list *map,
 	     const char **email, size_t *emaillen,
 	     const char **name, size_t *namelen)
@@ -324,7 +359,7 @@ int map_user(struct string_list *map,
 		 (int)*namelen, debug_str(*name),
 		 (int)*emaillen, debug_str(*email));
 
-	item = lookup_prefix(map, *email, *emaillen);
+	item = lookup_one(map, *email, *emaillen);
 	if (item != NULL) {
 		me = (struct mailmap_entry *)item->util;
 		if (me->namemap.nr) {
@@ -334,7 +369,7 @@ int map_user(struct string_list *map,
 			 * simple entry.
 			 */
 			struct string_list_item *subitem;
-			subitem = lookup_prefix(&me->namemap, *name, *namelen);
+			subitem = lookup_one(&me->namemap, *name, *namelen);
 			if (subitem)
 				item = subitem;
 		}

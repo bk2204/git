@@ -241,6 +241,45 @@ How do I know if I want to do a fetch or a pull?::
 	ignore the upstream changes.  A pull consists of a fetch followed
 	immediately by either a merge or rebase.  See linkgit:git-pull[1].
 
+[[syncing-across-computers]]
+How do I sync a Git repository across multiple computers, VMs, or operating systems?::
+  The best way to sync a repository across computers is by pushing and fetching.
+	This uses the native Git mechanisms to transport data efficiently and is the
+	easiest and best way to move data across machines.  If the machines aren't
+	connected by a network, you can use `git bundle` to create a file with your
+	changes and then fetch or pull them from the file on the remote machine.
+	Pushing and fetching are also the only secure ways to interact with a
+	repository you don't own or trust.
++
+However, sometimes people want to sync a repository with a working tree across
+machines.  While this isn't recommended, it can be done with `rsync` (usually
+over an SSH connection), but only when the repository is completely idle (that
+is, no processes, including `git gc`, are modifying it at all).  If `rsync`
+isn't available, you can use `tar` to create a tar archive of the repository and
+copy it to another machine.  Zip files shouldn't be used due to their poor
+support for permissions and symbolic links.
++
+You may also use a shared file system between the two machines that is POSIX
+compliant, such as SSHFS (SFTP) or NFSv4.  If you are using SFTP for this
+purpose, the server should support fsync and POSIX renames (OpenSSH does).  File
+systems that don't provide POSIX semantics, such as DAV mounts, shouldn't be
+used.
++
+Note that you must not work with untrusted working trees, since it's trivial
+for an attacker to set configuration options that will cause arbitrary code to
+be executed on your machine.  Also, in almost all cases when sharing a working
+tree across machines, Git will need to re-read all files the next time you run
+`git status` or otherwise refresh the index, which can be slow.  This generally
+can't be avoided and is part of the reason why sharing a working tree isn't
+recommended.
++
+In no circumstances should you share a working tree or bare repository using a
+cloud syncing service or store it in a directory managed by such a service.
+Such services sync file by file and don't maintain the invariants required for
+repository integrity; in addition, they can cause files to be added, removed, or
+duplicated unexpectedly.  If you must use one of these services, use it to store
+the repository in a tar archive instead.
+
 Merging and Rebasing
 --------------------
 

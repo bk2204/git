@@ -387,6 +387,41 @@ repository will apply to all users of the repository.
 See the following entry for information about normalizing line endings as well,
 and see linkgit:gitattributes[5] for more information about attribute files.
 
+[[line-ending-gitattributes]]
+How do I fix my line endings to work well across platforms?::
+  The best way to do this is to ask Git to perform automatic line ending
+	conversion in your repository such that it always stores LF (Unix) line
+	endings in the repository and checks them out to the user's preferred endings.
+	This is done using the `text` attribute in the `.gitattributes` file in the
+	root of your repository.  If you want to use the built-in heuristic to
+	determine text files, you can write this:
++
+----
+* text=auto
+----
++
+If you have certain files that must always use specific line endings when
+checked out, such as shell scripts, or PowerShell files, you can specifically
+specify the line endings to be used, and you can also specifically mark some
+files as not wanting line-ending conversion (`-text`):
++
+----
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.jpg -text
+----
++
+When you're done making these changes to the `.gitattributes` file, run `git add
+--renormalize .` and then commit.  This will make sure that the files in the
+repository are properly stored with LF endings.
++
+Using this approach means that each developer can choose the line endings that
+are best for their environment while keeping the repository consistent, avoiding
+needless changes in the repository based on differing line endings, and allowing
+tools like `git diff` to not display spurious whitespace errors.
++
+See linkgit:gitattributes[5] for more information about attribute files.
+
 [[windows-diff-control-m]]
 I'm on Windows and git diff shows my files as having a `^M` at the end.::
 	By default, Git expects files to be stored with Unix line endings.  As such,
@@ -396,7 +431,7 @@ I'm on Windows and git diff shows my files as having a `^M` at the end.::
 +
 You can store the files in the repository with Unix line endings and convert
 them automatically to your platform's line endings.  To do that, set the
-configuration option `core.eol` to `native` and see the following entry for
+configuration option `core.eol` to `native` and see the previous entry for
 information about how to configure files as text or binary.
 +
 You can also control this behavior with the `core.whitespace` setting if you

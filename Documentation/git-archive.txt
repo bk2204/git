@@ -30,6 +30,9 @@ extended pax header if the tar format is used; it can be extracted
 using 'git get-tar-commit-id'. In ZIP files it is stored as a file
 comment.
 
+The output of 'git archive' is not guaranteed to be stable and may change
+between versions.
+
 OPTIONS
 -------
 

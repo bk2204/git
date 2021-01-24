@@ -471,6 +471,48 @@ int parse_commit_buffer(struct repository *r, struct commit *item, const void *b
 	return 0;
 }
 
+int convert_commit_object(struct repository *repo, struct strbuf *out,
+			  const struct git_hash_algo *from,
+			  const struct git_hash_algo *to,
+			  const char *buffer, size_t size)
+{
+	const char *tail = buffer;
+	const char *bufptr = buffer;
+	const int tree_entry_len = from->hexsz + 5;
+	const int parent_entry_len = from->hexsz + 7;
+	struct object_id oid, compat_oid;
+	const char *p;
+
+	tail += size;
+	if (tail <= bufptr + tree_entry_len + 1 || memcmp(bufptr, "tree ", 5) ||
+			bufptr[tree_entry_len] != '\n')
+		return error("bogus commit object");
+	if (parse_oid_hex_algop(bufptr + 5, &oid, &p, from) < 0)
+		return error("bad tree pointer");
+
+	if (repo_map_object(repo, &compat_oid, to, &oid))
+		return error("unable to map tree %s in commit object",
+			     oid_to_hex(&oid));
+	strbuf_addf(out, "tree %s\n", oid_to_hex(&compat_oid));
+	bufptr = p + 1;
+
+	while (bufptr + parent_entry_len < tail && !memcmp(bufptr, "parent ", 7)) {
+		if (tail <= bufptr + parent_entry_len + 1 ||
+		    parse_oid_hex_algop(bufptr + 7, &oid, &p, from) ||
+		    *p != '\n')
+			return error("bad parents in commit");
+
+		if (repo_map_object(repo, &compat_oid, to, &oid))
+			return error("unable to map parent %s in commit object",
+				     oid_to_hex(&oid));
+
+		strbuf_addf(out, "parent %s\n", oid_to_hex(&compat_oid));
+		bufptr = p + 1;
+	}
+	strbuf_add(out, bufptr, tail - bufptr);
+	return 0;
+}
+
 int repo_parse_commit_internal(struct repository *r,
 			       struct commit *item,
 			       int quiet_on_missing,

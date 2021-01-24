@@ -2052,8 +2052,14 @@ static int convert_object_file(struct repository *repo,
 		*outbuf = strbuf_detach(&sbuf, outlen);
 		len = sbuf.len;
 		return 1;
-	case OBJ_TAG:
 	case OBJ_COMMIT:
+		if (convert_commit_object(repo, &sbuf, repo->hash_algo,
+					repo->compat_hash_algo, buf, len))
+			return -1;
+		*outbuf = strbuf_detach(&sbuf, outlen);
+		len = sbuf.len;
+		return 1;
+	case OBJ_TAG:
 		/* Not implemented yet, so fall through. */
 	case OBJ_BLOB:
 	default:

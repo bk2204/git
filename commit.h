@@ -374,6 +374,8 @@ int parse_buffer_signed_by_header(const char *buffer,
 				  struct strbuf *payload,
 				  struct strbuf *signature,
 				  const struct git_hash_algo *algop);
+int add_header_signature(struct strbuf *buf, struct strbuf *sig, const struct git_hash_algo *algo);
+
 int convert_commit_object(struct repository *repo, struct strbuf *out,
 			  const struct git_hash_algo *from,
 			  const struct git_hash_algo *to,

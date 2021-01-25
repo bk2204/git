@@ -1,12 +1,14 @@
 #include "cache.h"
 #include "tag.h"
 #include "object-store.h"
+#include "repository.h"
 #include "commit.h"
 #include "tree.h"
 #include "blob.h"
 #include "alloc.h"
 #include "gpg-interface.h"
 #include "packfile.h"
+#include "loose.h"
 
 const char *tag_type = "tag";
 
@@ -130,6 +132,52 @@ void release_tag_memory(struct tag *t)
 	t->tagged = NULL;
 	t->object.parsed = 0;
 	t->date = 0;
+}
+
+int convert_tag_object(struct repository *repo, struct strbuf *out,
+		       const struct git_hash_algo *from,
+		       const struct git_hash_algo *to,
+		       const char *buffer, size_t size)
+{
+	struct strbuf payload = STRBUF_INIT, temp = STRBUF_INIT, oursig = STRBUF_INIT, othersig = STRBUF_INIT;
+	size_t payload_size;
+	struct object_id oid, compat_oid;
+	const char *p;
+
+	/* Add some slop for longer signature header in the new algorithm. */
+	strbuf_grow(out, size + 7);
+
+	/* Is there a signature for our algorithm? */
+	payload_size = parse_signed_buffer(buffer, size);
+	strbuf_add(&payload, buffer, payload_size);
+	if (payload_size != size) {
+		/* Yes, there is. */
+		strbuf_add(&oursig, buffer + payload_size, size - payload_size);
+	}
+	/* Now, is there a signature for the other algorithm? */
+	if (parse_buffer_signed_by_header(payload.buf, payload.len, &temp, &othersig, to)) {
+		/* Yes, there is. */
+		strbuf_swap(&payload, &temp);
+		strbuf_release(&temp);
+	}
+
+	/*
+	 * Our payload is now in payload and we may have up to two signatrures
+	 * in oursig and othersig.
+	 */
+	if (strncmp(payload.buf, "object ", 7) || payload.buf[from->hexsz + 7] != '\n')
+		return error("bogus tag object");
+	if (parse_oid_hex_algop(payload.buf + 7, &oid, &p, from) < 0)
+		return error("bad tag object ID");
+	if (repo_map_object(repo, &compat_oid, to, &oid))
+		return error("unable to map tree %s in tag object",
+			     oid_to_hex(&oid));
+	strbuf_addf(out, "object %s\n", oid_to_hex(&compat_oid));
+	strbuf_add(out, p, payload.len - (p - payload.buf));
+	strbuf_addbuf(out, &othersig);
+	if (oursig.len)
+		add_header_signature(out, &oursig, from);
+	return 0;
 }
 
 int parse_tag_buffer(struct repository *r, struct tag *item, const void *data, unsigned long size)

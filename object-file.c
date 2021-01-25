@@ -2012,7 +2012,12 @@ static int convert_object_file(struct repository *repo,
 		len = sbuf.len;
 		return 1;
 	case OBJ_TAG:
-		/* Not implemented yet, so fall through. */
+		if (convert_tag_object(repo, &sbuf, repo->hash_algo,
+					repo->compat_hash_algo, buf, len))
+			return -1;
+		*outbuf = strbuf_detach(&sbuf, outlen);
+		len = sbuf.len;
+		return 1;
 	case OBJ_BLOB:
 	default:
 		/* No conversion necessary. */

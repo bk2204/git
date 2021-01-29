@@ -1,6 +1,18 @@
 #ifndef GIT_COMPAT_UTIL_H
 #define GIT_COMPAT_UTIL_H
 
+#if __STDC_VERSION__ - 0 < 199901L
+/*
+ * Git is in a testing period for mandatory C99 support in the compiler.  If
+ * your compiler is reasonably recent, you can try to enable C99 support (for
+ * GCC and clang, this can be done by setting CFLAGS=-std=c99 when building).
+ * If you encounter a problem and can't enable C99 support on your system, you
+ * can remove this #if directive, but please report the details of your system
+ * to git@vger.kernel.org.
+ */
+#error "Required C99 support is in a test phase.  Please see git-compat-util.h for more details."
+#endif
+
 #ifdef USE_MSVC_CRTDBG
 /*
  * For these to work they must appear very early in each

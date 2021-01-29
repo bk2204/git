@@ -806,6 +806,9 @@ endif()
 list(TRANSFORM git_shell_scripts PREPEND "${CMAKE_BINARY_DIR}/")
 list(TRANSFORM git_perl_scripts PREPEND "${CMAKE_BINARY_DIR}/")
 
+# This will degrade to C99 if needed.
+set_property(GLOBAL PROPERTY C_STANDARD 11)
+
 #install
 install(TARGETS git git-shell
 	RUNTIME DESTINATION bin)

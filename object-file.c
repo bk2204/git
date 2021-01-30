@@ -2100,7 +2100,7 @@ int write_object_file_compat(const void *buf, size_t len,
 	    write_loose_object(oid, hdr, hdrlen, buf, len, 0))
 		return -1;
 	if (compat_buf)
-		return repo_add_loose_object_map(r, oid, &compat_oid);
+		return repo_add_loose_object_map(r, oid, &compat_oid, 1);
 	return 0;
 }
 

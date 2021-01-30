@@ -2032,16 +2032,10 @@ static int freshen_packed_object(const struct object_id *oid)
 	return 1;
 }
 
-/*
- * Convert an object file from the main hash algorithm to the compatibility
- * algorithm.  Return -1 on failure, 0 on success if no memory was allocated,
- * and 1 on success if memory was allocated.
- */
-static int convert_object_file(struct repository *repo,
-			       const void **outbuf, size_t *outlen,
-			       const void *buf, size_t len, const char *typestr)
+int convert_object_file(struct repository *repo,
+			const void **outbuf, size_t *outlen,
+			const void *buf, size_t len, int type)
 {
-	int type = type_from_string_gently(typestr, -1, 1);
 	struct strbuf sbuf = STRBUF_INIT;
 
 	switch (type) {
@@ -2117,8 +2111,9 @@ int write_object_file(const void *buf, unsigned long len, const char *type,
 	write_object_file_prepare(the_hash_algo, buf, len, type, oid, hdr,
 				  &hdrlen);
 	if (compat_algo) {
+		int typeval = type_from_string_gently(type, -1, 1);
 		to_free = convert_object_file(the_repository, &compat_buf,
-					      &compat_len, buf, len, type);
+					      &compat_len, buf, len, typeval);
 		if (to_free < 0)
 			return error(_("failed to convert object file %s"), oid_to_hex(oid));
 	}

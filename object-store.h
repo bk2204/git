@@ -240,6 +240,15 @@ int hash_object_file_literally(const void *buf, unsigned long len,
 int hash_object_file_literally_algop(const void *buf, unsigned long len,
 				     const char *type, struct object_id *oid,
 				     unsigned flags, const struct git_hash_algo *algo);
+
+/*
+ * Convert an object file from the main hash algorithm to the compatibility
+ * algorithm.  Return -1 on failure, 0 on success if no memory was allocated,
+ * and 1 on success if memory was allocated.
+ */
+int convert_object_file(struct repository *repo,
+			const void **outbuf, size_t *outlen,
+			const void *buf, size_t len, int type);
 /*
  * Add an object file to the in-memory object store, without writing it
  * to disk.

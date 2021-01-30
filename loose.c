@@ -183,7 +183,7 @@ errout:
 }
 
 int repo_add_loose_object_map(struct repository *repo, const struct object_id *oid,
-			      const struct object_id *compat_oid)
+			      const struct object_id *compat_oid, int write)
 {
 	int inserted = 0;
 
@@ -192,7 +192,7 @@ int repo_add_loose_object_map(struct repository *repo, const struct object_id *o
 
 	inserted |= insert_oid_pair(repo->objects->odb->loose_map->to_compat, oid, compat_oid);
 	inserted |= insert_oid_pair(repo->objects->odb->loose_map->to_storage, compat_oid, oid);
-	if (inserted)
+	if (inserted && write)
 		return write_one_object(repo, oid, compat_oid);
 	return 0;
 }

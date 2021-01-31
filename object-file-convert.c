@@ -11,6 +11,30 @@
 #include "commit.h"
 #include "gpg-interface.h"
 #include "object-file-convert.h"
+#include "odb.h"
+#include "packfile.h"
+
+static int repo_packed_object_map_oid(struct repository *repo,
+				      const struct object_id *src,
+				      const struct git_hash_algo *dest_algo,
+				      struct object_id *dest)
+{
+	struct packed_git *p;
+	repo_for_each_pack(repo, p) {
+		uint32_t off;
+		const struct git_hash_algo *src_algo = src->algo ?
+						       &hash_algos[src->algo] :
+						       repo->hash_algo;
+
+		if (open_pack_index(p) || !p->num_objects)
+			continue;
+		if (!bsearch_pack(src, p, &off))
+			continue;
+		return nth_packed_object_id_algop(dest, p, off, src_algo, dest_algo);
+	}
+	return -1;
+}
+
 
 int repo_oid_to_algop(struct repository *repo, const struct object_id *srcoid,
 		      const struct git_hash_algo *to, struct object_id *dest)
@@ -36,6 +60,13 @@ int repo_oid_to_algop(struct repository *repo, const struct object_id *srcoid,
 		return 0;
 	}
 	if (repo_loose_object_map_oid(repo, src, to, dest)) {
+		/*
+		 * It's not in the loose object map, so let's see if it's in a
+		 * pack.
+		 */
+		if (!repo_packed_object_map_oid(repo, src, to, dest))
+			return 0;
+
 		/*
 		 * We may have loaded the object map at repo initialization but
 		 * another process (perhaps upstream of a pipe from us) may have

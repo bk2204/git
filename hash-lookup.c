@@ -100,17 +100,13 @@ int oid_pos(const struct object_id *oid, const void *table, size_t nr,
 	return index_pos_to_insert_pos(lo);
 }
 
-int bsearch_hash(const unsigned char *hash, const uint32_t *fanout_nbo,
-		 const unsigned char *table, size_t stride, uint32_t *result)
+static int bsearch_hash_1(const unsigned char *sha1, const unsigned char *table,
+			  size_t stride, size_t cmpsize, uint32_t hi,
+			  uint32_t lo, uint32_t *result)
 {
-	uint32_t hi, lo;
-
-	hi = ntohl(fanout_nbo[*hash]);
-	lo = ((*hash == 0x0) ? 0 : ntohl(fanout_nbo[*hash - 1]));
-
 	while (lo < hi) {
 		unsigned mi = lo + (hi - lo) / 2;
-		int cmp = hashcmp(table + mi * stride, hash);
+		int cmp = memcmp(table + mi * stride, sha1, cmpsize);
 
 		if (!cmp) {
 			if (result)
@@ -125,5 +121,36 @@ int bsearch_hash(const unsigned char *hash, const uint32_t *fanout_nbo,
 
 	if (result)
 		*result = lo;
+	return 0;
+}
+
+int bsearch_hash(const unsigned char *hash, const uint32_t *fanout_nbo,
+		 const unsigned char *table, size_t stride, uint32_t *result)
+{
+	uint32_t hi, lo;
+
+	hi = ntohl(fanout_nbo[*hash]);
+	lo = ((*hash == 0x0) ? 0 : ntohl(fanout_nbo[*hash - 1]));
+
+	return bsearch_hash_1(hash, table, stride, the_hash_algo->rawsz, hi, lo, result);
+
+}
+
+/* full_oid is assumed to follow directly behind short_oid in memory. */
+int bsearch_hash_v3(const unsigned char *hash, const unsigned char *full_oid,
+		    const uint32_t *pack_map, const unsigned char *short_oid,
+		    size_t stride, size_t hashsz, uint32_t *result)
+{
+	uint32_t obj_off, index;
+	int res = bsearch_hash_1(hash, short_oid, stride, stride, (full_oid - short_oid) / stride,
+				 0, &obj_off);
+	if (!res)
+		return 0;
+	index = ntohl(pack_map[obj_off]);
+	if (result)
+		*result = obj_off;
+	if (!memcmp(hash, full_oid + (hashsz * index), hashsz)) {
+		return 1;
+	}
 	return 0;
 }

@@ -15,6 +15,7 @@
 #include "packfile.h"
 #include "object-store.h"
 #include "promisor-remote.h"
+#include "loose.h"
 
 static const char index_pack_usage[] =
 "git index-pack [-v] [-o <index-file>] [--keep | --keep=<msg>] [--[no-]rev-index] [--verify] [--strict] (<pack-file> | --stdin [--fix-thin] [<pack-file>])";
@@ -160,6 +161,10 @@ static pthread_mutex_t deepest_delta_mutex;
 #define deepest_delta_lock()	lock_mutex(&deepest_delta_mutex)
 #define deepest_delta_unlock()	unlock_mutex(&deepest_delta_mutex)
 
+static pthread_mutex_t repo_mutex;
+#define repo_lock()	lock_mutex(&repo_mutex)
+#define repo_unlock()	unlock_mutex(&repo_mutex)
+
 static pthread_key_t key;
 
 static inline void lock_mutex(pthread_mutex_t *mutex)
@@ -183,6 +188,7 @@ static void init_thread(void)
 	init_recursive_mutex(&read_mutex);
 	pthread_mutex_init(&counter_mutex, NULL);
 	pthread_mutex_init(&work_mutex, NULL);
+	pthread_mutex_init(&repo_mutex, NULL);
 	if (show_stat)
 		pthread_mutex_init(&deepest_delta_mutex, NULL);
 	pthread_key_create(&key, NULL);
@@ -203,6 +209,7 @@ static void cleanup_thread(void)
 	pthread_mutex_destroy(&read_mutex);
 	pthread_mutex_destroy(&counter_mutex);
 	pthread_mutex_destroy(&work_mutex);
+	pthread_mutex_destroy(&repo_mutex);
 	if (show_stat)
 		pthread_mutex_destroy(&deepest_delta_mutex);
 	for (i = 0; i < nr_threads; i++)
@@ -438,13 +445,15 @@ static int is_delta_type(enum object_type type)
 }
 
 static void *unpack_entry_data(off_t offset, unsigned long size,
-			       enum object_type type, struct object_id *oid)
+			       enum object_type type, struct object_id *oid,
+			       struct object_id *compat_oid)
 {
 	static char fixed_buf[8192];
 	int status;
 	git_zstream stream;
 	void *buf;
-	git_hash_ctx c;
+	git_hash_ctx c, c_compat;
+	const struct git_hash_algo *compat = the_repository->compat_hash_algo;
 	char hdr[32];
 	int hdrlen;
 
@@ -453,8 +462,15 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 				   type_name(type),(uintmax_t)size) + 1;
 		the_hash_algo->init_fn(&c);
 		the_hash_algo->update_fn(&c, hdr, hdrlen);
-	} else
+		if (compat && compat_oid) {
+			compat->init_fn(&c_compat);
+			if (type == OBJ_BLOB)
+				compat->update_fn(&c_compat, hdr, hdrlen);
+		}
+	} else {
 		oid = NULL;
+		compat_oid = NULL;
+	}
 	if (type == OBJ_BLOB && size > big_file_threshold)
 		buf = fixed_buf;
 	else
@@ -473,6 +489,8 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 		use(input_len - stream.avail_in);
 		if (oid)
 			the_hash_algo->update_fn(&c, last_out, stream.next_out - last_out);
+		if (compat && compat_oid && type == OBJ_BLOB)
+			compat->update_fn(&c_compat, last_out, stream.next_out - last_out);
 		if (buf == fixed_buf) {
 			stream.next_out = buf;
 			stream.avail_out = sizeof(fixed_buf);
@@ -483,13 +501,43 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 	git_inflate_end(&stream);
 	if (oid)
 		the_hash_algo->final_oid_fn(oid, &c);
+	if (compat && compat_oid) {
+		if (type != OBJ_BLOB) {
+			/*
+			 * This is not a blob.  Let's remap it to the proper
+			 * algorithm.
+			 */
+			const void *outbuf;
+			size_t outlen;
+			int ret;
+			repo_lock();
+			ret = convert_object_file(the_repository, &outbuf,
+						  &outlen, buf, size, type);
+			repo_unlock();
+			if (ret < 0)
+				bad_object(offset, _("could not convert object"));
+
+			hdrlen = xsnprintf(hdr, sizeof(hdr), "%s %"PRIuMAX,
+					   type_name(type),(uintmax_t)outlen) + 1;
+
+			compat->update_fn(&c_compat, hdr, hdrlen);
+			compat->update_fn(&c_compat, outbuf, outlen);
+			if (ret)
+				free((void *)outbuf);
+		}
+		compat->final_oid_fn(compat_oid, &c_compat);
+		repo_lock();
+		repo_add_loose_object_map(the_repository, oid, compat_oid, 0);
+		repo_unlock();
+	}
 	return buf == fixed_buf ? NULL : buf;
 }
 
 static void *unpack_raw_entry(struct object_entry *obj,
 			      off_t *ofs_offset,
 			      struct object_id *ref_oid,
-			      struct object_id *oid)
+			      struct object_id *oid,
+			      struct object_id *compat_oid)
 {
 	unsigned char *p;
 	unsigned long size, c;
@@ -548,7 +596,7 @@ static void *unpack_raw_entry(struct object_entry *obj,
 	}
 	obj->hdr_size = consumed_bytes - obj->idx.offset;
 
-	data = unpack_entry_data(obj->idx.offset, obj->size, obj->type, oid);
+	data = unpack_entry_data(obj->idx.offset, obj->size, obj->type, oid, compat_oid);
 	obj->idx.crc32 = input_crc32;
 	return data;
 }
@@ -972,6 +1020,29 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 		bad_object(delta_obj->idx.offset, _("failed to apply delta"));
 	hash_object_file(the_hash_algo, result_data, result_size,
 			 type_name(delta_obj->real_type), &delta_obj->idx.oid);
+	if (the_repository->compat_hash_algo) {
+		const void *outbuf;
+		size_t outlen;
+		int ret;
+		repo_lock();
+		ret = convert_object_file(the_repository, &outbuf,
+					  &outlen, result_data, result_size,
+					  delta_obj->real_type);
+		repo_unlock();
+		if (ret < 0)
+			bad_object(delta_obj->idx.offset,
+				   _("could not convert object from delta"));
+
+		hash_object_file(the_repository->compat_hash_algo, outbuf, outlen,
+				 type_name(delta_obj->real_type),
+				 &delta_obj->idx.compat_oid);
+		repo_lock();
+		repo_add_loose_object_map(the_repository, &delta_obj->idx.oid,
+					  &delta_obj->idx.compat_oid, 0);
+		repo_unlock();
+		if (ret)
+			free((void *)outbuf);
+	}
 	sha1_object(result_data, NULL, result_size, delta_obj->real_type,
 		    &delta_obj->idx.oid);
 
@@ -1159,7 +1230,8 @@ static void parse_pack_objects(unsigned char *hash)
 		struct object_entry *obj = &objects[i];
 		void *data = unpack_raw_entry(obj, &ofs_delta->offset,
 					      &ref_delta_oid,
-					      &obj->idx.oid);
+					      &obj->idx.oid,
+					      &obj->idx.compat_oid);
 		obj->real_type = obj->type;
 		if (obj->type == OBJ_OFS_DELTA) {
 			nr_ofs_deltas++;
@@ -1569,7 +1641,7 @@ static int git_index_pack_config(const char *k, const char *v, void *cb)
 
 	if (!strcmp(k, "pack.indexversion")) {
 		opts->version = git_config_int(k, v);
-		if (opts->version > 2)
+		if (opts->version > 3)
 			die(_("bad pack.indexversion=%"PRIu32), opts->version);
 		return 0;
 	}
@@ -1815,7 +1887,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 			} else if (starts_with(arg, "--index-version=")) {
 				char *c;
 				opts.version = strtoul(arg + 16, &c, 10);
-				if (opts.version > 2)
+				if (opts.version > 3)
 					die(_("bad %s"), arg);
 				if (*c == ',')
 					opts.off32_limit = strtoul(c+1, &c, 0);

@@ -2013,8 +2013,16 @@ int nth_packed_object_id(struct object_id *oid,
 			 struct packed_git *p,
 			 uint32_t n)
 {
+	return nth_packed_object_id_algop(oid, p, n, p->repo->hash_algo);
+}
+
+int nth_packed_object_id_algop(struct object_id *oid,
+			       struct packed_git *p,
+			       uint32_t n,
+			       const struct git_hash_algo *algop)
+{
 	const unsigned char *index = p->index_data;
-	const unsigned int hashsz = p->repo->hash_algo->rawsz;
+	const unsigned int hashsz = algop->rawsz;
 	if (!index) {
 		if (open_pack_index(p))
 			return -1;
@@ -2025,14 +2033,14 @@ int nth_packed_object_id(struct object_id *oid,
 	if (p->index_version == 1) {
 		index += 4 * 256;
 		oidread(oid, index + st_add(st_mult(hashsz + 4, n), 4),
-			p->repo->hash_algo);
+			algop);
 	} else if (p->index_version == 2) {
 		index += 4 * 256 + 8;
-		oidread(oid, index + st_mult(hashsz, n), p->repo->hash_algo);
+		oidread(oid, index + st_mult(hashsz, n), algop);
 	} else {
-		int algo = hash_algo_by_ptr(p->repo->hash_algo);
+		int algo = hash_algo_by_ptr(algop);
 		const struct packed_git_format *pfp = &p->formats[algo-1];
-		oidread(oid, index + pfp->full_oid_offset + (hashsz * n), p->repo->hash_algo);
+		oidread(oid, index + pfp->full_oid_offset + st_mult(hashsz, n), algop);
 	}
 	return 0;
 }

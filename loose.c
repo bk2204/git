@@ -9,6 +9,7 @@
 #include "loose.h"
 #include "lockfile.h"
 #include "oidtree.h"
+#include "packfile.h"
 
 static const char *loose_object_header = "# loose-object-idx\n";
 

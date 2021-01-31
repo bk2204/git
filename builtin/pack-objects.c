@@ -36,6 +36,7 @@
 #include "trace2.h"
 #include "shallow.h"
 #include "promisor-remote.h"
+#include "loose.h"
 
 #define IN_PACK(obj) oe_in_pack(&to_pack, obj)
 #define SIZE(obj) oe_size(&to_pack, obj)
@@ -1366,6 +1367,9 @@ static void create_object_entry(const struct object_id *oid,
 
 	entry = packlist_alloc(&to_pack, oid);
 	entry->hash = hash;
+	if (repo_map_object(the_repository, &entry->idx.compat_oid,
+			    the_repository->compat_hash_algo, &entry->idx.oid) < 0)
+		die(_("can't map object %s while writing pack"), oid_to_hex(oid));
 	oe_set_type(entry, type);
 	if (exclude)
 		entry->preferred_base = 1;
@@ -3667,7 +3671,7 @@ static int option_parse_index_version(const struct option *opt,
 	BUG_ON_OPT_NEG(unset);
 
 	pack_idx_opts.version = strtoul(val, &c, 10);
-	if (pack_idx_opts.version > 2)
+	if (pack_idx_opts.version > 3)
 		die(_("unsupported index version %s"), val);
 	if (*c == ',' && c[1])
 		pack_idx_opts.off32_limit = strtoul(c+1, &c, 0);

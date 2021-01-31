@@ -1,6 +1,7 @@
 #ifndef PACKFILE_H
 #define PACKFILE_H
 
+#include "hash.h"
 #include "list.h"
 #include "object.h"
 #include "odb.h"
@@ -8,6 +9,14 @@
 
 /* in odb.h */
 struct object_info;
+
+struct packed_git_format {
+	/* This is also the location of the short OID table. */
+	uint64_t data_offset;
+	uint64_t full_oid_offset;
+	uint64_t order_map_offset;
+	uint32_t short_name_len;
+};
 
 struct packed_git {
 	struct hashmap_entry packmap_ent;
@@ -18,6 +27,8 @@ struct packed_git {
 	const void *index_data;
 	size_t index_size;
 	uint32_t num_objects;
+	uint32_t num_formats;
+	struct packed_git_format formats[GIT_HASH_NALGOS - 1];
 	size_t crc_offset;
 	struct oidset bad_objects;
 	int index_version;

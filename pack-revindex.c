@@ -138,11 +138,10 @@ static void create_pack_revindex(struct packed_git *p)
 	const unsigned hashsz = p->repo->hash_algo->rawsz;
 
 	ALLOC_ARRAY(p->revindex, num_ent + 1);
-	index += 4 * 256;
 
 	if (p->index_version > 1) {
 		const uint32_t *off_32 =
-			(uint32_t *)(index + 8 + (size_t)p->num_objects * (hashsz + 4));
+			(uint32_t *)(index + p->crc_offset + (size_t)p->num_objects * 4);
 		const uint32_t *off_64 = off_32 + p->num_objects;
 		for (i = 0; i < num_ent; i++) {
 			const uint32_t off = ntohl(*off_32++);
@@ -155,6 +154,7 @@ static void create_pack_revindex(struct packed_git *p)
 			p->revindex[i].nr = i;
 		}
 	} else {
+		index += 4 * 256;
 		for (i = 0; i < num_ent; i++) {
 			const uint32_t hl = *((uint32_t *)(index + (hashsz + 4) * i));
 			p->revindex[i].offset = ntohl(hl);

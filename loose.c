@@ -2,6 +2,8 @@
 #include "hash.h"
 #include "loose.h"
 #include "lockfile.h"
+#include "object-store.h"
+#include "packfile.h"
 
 static const char *loose_object_header = "# loose-object-idx\n";
 
@@ -197,6 +199,19 @@ int repo_add_loose_object_map(struct repository *repo, const struct object_id *o
 	return 0;
 }
 
+static int repo_map_packed_object(struct repository *repo, struct object_id *dest,
+		    const struct git_hash_algo *dest_algo, const struct object_id *src)
+{
+	struct packed_git *p;
+	for (p = get_packed_git(repo); p; p = p->next) {
+		uint32_t off;
+		if (!bsearch_pack(src, p, &off))
+			continue;
+		return nth_packed_object_id_algop(dest, p, off, dest_algo);
+	}
+	return -1;
+}
+
 int repo_map_object(struct repository *repo, struct object_id *dest,
 		    const struct git_hash_algo *dest_algo, const struct object_id *src)
 {
@@ -231,6 +246,12 @@ retry:
 		}
 	}
 	if (!retried) {
+		/*
+		 * It's not in the loose object map, so let's see if it's in a
+		 * pack.
+		 */
+		if (!repo_map_packed_object(repo, dest, dest_algo, src))
+			return 0;
 		/*
 		 * We may have loaded the object map at repo initialization but
 		 * another process (perhaps upstream of a pipe from us) may have

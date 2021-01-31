@@ -1968,8 +1968,16 @@ int nth_packed_object_id(struct object_id *oid,
 			 struct packed_git *p,
 			 uint32_t n)
 {
+	return nth_packed_object_id_algop(oid, p, n, the_hash_algo);
+}
+
+int nth_packed_object_id_algop(struct object_id *oid,
+			       struct packed_git *p,
+			       uint32_t n,
+			       const struct git_hash_algo *algop)
+{
 	const unsigned char *index = p->index_data;
-	const unsigned int hashsz = the_hash_algo->rawsz;
+	const unsigned int hashsz = algop->rawsz;
 	if (!index) {
 		if (open_pack_index(p))
 			return -1;
@@ -1985,7 +1993,7 @@ int nth_packed_object_id(struct object_id *oid,
 		index += 8;
 		oidread(oid, index + hashsz * n);
 	} else {
-		int algo = hash_algo_by_ptr(the_hash_algo);
+		int algo = hash_algo_by_ptr(algop);
 		const struct packed_git_format *pfp = &p->formats[algo-1];
 		oidread_algop(oid, index + pfp->full_oid_offset + (hashsz * n), algop);
 	}

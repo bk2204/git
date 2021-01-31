@@ -93,7 +93,7 @@ static int check_packed_git_idx(const char *path, struct packed_git *p)
 		return -1;
 	}
 	idx_size = xsize_t(st.st_size);
-	if (idx_size < 4 * 256 + hashsz + hashsz) {
+	if (idx_size < hashsz * 3) {
 		close(fd);
 		return error("index file %s is too small", path);
 	}
@@ -114,14 +114,14 @@ int load_idx(const char *path, const unsigned int hashsz, void *idx_map,
 	struct pack_idx_header *hdr = idx_map;
 	uint32_t version, nr, i, *index;
 
-	if (idx_size < 4 * 256 + hashsz + hashsz)
+	if (idx_size < hashsz * 3)
 		return error("index file %s is too small", path);
 	if (idx_map == NULL)
 		return error("empty data");
 
 	if (hdr->idx_signature == htonl(PACK_IDX_SIGNATURE)) {
 		version = ntohl(hdr->idx_version);
-		if (version < 2 || version > 2)
+		if (version < 2 || version > 3)
 			return error("index file %s is version %"PRIu32
 				     " and is not supported by this binary"
 				     " (try upgrading GIT to a newer version)",
@@ -129,15 +129,20 @@ int load_idx(const char *path, const unsigned int hashsz, void *idx_map,
 	} else
 		version = 1;
 
+	if (version < 3 && idx_size < 4 * 256 + hashsz + hashsz)
+		return error("index file %s is too small", path);
+
 	nr = 0;
 	index = idx_map;
 	if (version > 1)
 		index += 2;  /* skip index header */
-	for (i = 0; i < 256; i++) {
-		uint32_t n = ntohl(index[i]);
-		if (n < nr)
-			return error("non-monotonic index %s", path);
-		nr = n;
+	if (version <= 2) {
+		for (i = 0; i < 256; i++) {
+			uint32_t n = ntohl(index[i]);
+			if (n < nr)
+				return error("non-monotonic index %s", path);
+			nr = n;
+		}
 	}
 
 	if (version == 1) {
@@ -179,6 +184,59 @@ int load_idx(const char *path, const unsigned int hashsz, void *idx_map,
 		    (sizeof(off_t) <= 4))
 			return error("pack too large for current definition of off_t in %s", path);
 		p->crc_offset = 8 + 4 * 256 + nr * hashsz;
+	} else if (version == 3) {
+		uint32_t hdrlen, num_formats, trailer_offset;
+		const uint32_t *q = index;
+		int i;
+
+		hdrlen = ntohl(*q++);
+		if (idx_size < hdrlen) {
+			munmap(idx_map, idx_size);
+			return error("v3 index has truncated header");
+		}
+
+		nr = ntohl(*q++);
+		num_formats = ntohl(*q++);
+		if (num_formats < 1 || num_formats > ARRAY_SIZE(p->formats)) {
+			munmap(idx_map, idx_size);
+			return error("too many formats for v3 index");
+		}
+		memset(p->formats, 0, sizeof(p->formats));
+		for (i = 0; i < num_formats; i++) {
+			uint32_t format_id = ntohl(*q++);
+			uint32_t format = hash_algo_by_id(format_id);
+			struct packed_git_format *pfp;
+
+			if (format == GIT_HASH_UNKNOWN) {
+				munmap(idx_map, idx_size);
+				return error("v3 index with unknown format_id 0x%08x", format_id);
+			}
+			/*
+			 * We store at the value of the constant minus 1 to
+			 * avoid having to store a useless entry at offset 0.
+			 */
+			pfp = &p->formats[format-1];
+
+			pfp->short_name_len = ntohl(*q++);
+			pfp->data_offset = get_be64(q);
+			q += 2;
+
+			pfp->full_oid_offset = pfp->data_offset +
+					       (pfp->short_name_len * nr);
+			pfp->order_map_offset = pfp->full_oid_offset +
+						(hash_algos[format].rawsz * nr);
+			if (!i)
+				p->crc_offset = pfp->order_map_offset + nr * 4;
+		}
+		if (!p->formats[the_hash_algo - hash_algos - 1].data_offset) {
+			munmap(idx_map, idx_size);
+			return error("v3 index with missing data for this repository's algorithm");
+		}
+		trailer_offset = get_be64(q);
+		if (trailer_offset + 2 * hashsz != idx_size) {
+			munmap(idx_map, idx_size);
+			return error("v3 index with bad size\n");
+		}
 	}
 
 	p->index_version = version;
@@ -1866,6 +1924,19 @@ out:
 	return data;
 }
 
+static int bsearch_pack_v3(const struct object_id *oid, const struct packed_git *p, uint32_t *result)
+{
+	int algo = hash_algo_by_ptr(the_hash_algo);
+	const struct packed_git_format *pfp = &p->formats[algo - 1];
+	const unsigned char *data = p->index_data;
+
+	return bsearch_hash_v3(oid->hash, data + pfp->full_oid_offset,
+			       (const uint32_t *)(data + pfp->order_map_offset),
+			       data + pfp->data_offset,
+			       pfp->short_name_len,
+			       the_hash_algo->rawsz, result);
+}
+
 int bsearch_pack(const struct object_id *oid, const struct packed_git *p, uint32_t *result)
 {
 	const unsigned char *index_fanout = p->index_data;
@@ -1875,6 +1946,9 @@ int bsearch_pack(const struct object_id *oid, const struct packed_git *p, uint32
 
 	if (!index_fanout)
 		BUG("bsearch_pack called without a valid pack-index");
+
+	if (p->index_version == 3)
+		return bsearch_pack_v3(oid, p, result);
 
 	index_lookup = index_fanout + 4 * 256;
 	if (p->index_version == 1) {
@@ -1903,12 +1977,17 @@ int nth_packed_object_id(struct object_id *oid,
 	}
 	if (n >= p->num_objects)
 		return -1;
-	index += 4 * 256;
 	if (p->index_version == 1) {
+		index += 4 * 256;
 		oidread(oid, index + (hashsz + 4) * n + 4);
-	} else {
+	} else if (p->index_version == 2) {
+		index += 4 * 256;
 		index += 8;
 		oidread(oid, index + hashsz * n);
+	} else {
+		int algo = hash_algo_by_ptr(the_hash_algo);
+		const struct packed_git_format *pfp = &p->formats[algo-1];
+		oidread_algop(oid, index + pfp->full_oid_offset + (hashsz * n), algop);
 	}
 	return 0;
 }
@@ -1931,12 +2010,12 @@ off_t nth_packed_object_offset(const struct packed_git *p, uint32_t n)
 {
 	const unsigned char *index = p->index_data;
 	const unsigned int hashsz = the_hash_algo->rawsz;
-	index += 4 * 256;
 	if (p->index_version == 1) {
+		index += 4 * 256;
 		return ntohl(*((uint32_t *)(index + (hashsz + 4) * (size_t)n)));
 	} else {
 		uint32_t off;
-		index += 8 + (size_t)p->num_objects * (hashsz + 4);
+		index += p->crc_offset + (size_t)p->num_objects * 4;
 		off = ntohl(*((uint32_t *)(index + 4 * n)));
 		if (!(off & 0x80000000))
 			return off;

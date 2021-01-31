@@ -131,13 +131,18 @@ static void create_pack_revindex(struct packed_git *p)
 	unsigned i;
 	const char *index = p->index_data;
 	const unsigned hashsz = the_hash_algo->rawsz;
+	const uint32_t *order_map = NULL;
 
 	ALLOC_ARRAY(p->revindex, num_ent + 1);
-	index += 4 * 256;
+
+	if (p->index_version == 3) {
+		uint32_t algo = hash_algo_by_ptr(the_hash_algo);
+		order_map = (const uint32_t *)(index + p->formats[algo - 1].order_map_offset);
+	}
 
 	if (p->index_version > 1) {
 		const uint32_t *off_32 =
-			(uint32_t *)(index + 8 + (size_t)p->num_objects * (hashsz + 4));
+			(uint32_t *)(index + p->crc_offset + (size_t)p->num_objects * 4);
 		const uint32_t *off_64 = off_32 + p->num_objects;
 		for (i = 0; i < num_ent; i++) {
 			const uint32_t off = ntohl(*off_32++);
@@ -147,9 +152,13 @@ static void create_pack_revindex(struct packed_git *p)
 				p->revindex[i].offset = get_be64(off_64);
 				off_64 += 2;
 			}
-			p->revindex[i].nr = i;
+			if (order_map)
+				p->revindex[i].nr = ntohl(order_map[i]);
+			else
+				p->revindex[i].nr = i;
 		}
 	} else {
+		index += 4 * 256;
 		for (i = 0; i < num_ent; i++) {
 			const uint32_t hl = *((uint32_t *)(index + (hashsz + 4) * i));
 			p->revindex[i].offset = ntohl(hl);

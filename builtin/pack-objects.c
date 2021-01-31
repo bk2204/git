@@ -54,6 +54,13 @@
  */
 static struct packing_data to_pack;
 
+static int oid_compare(const void *_a, const void *_b)
+{
+	struct pack_idx_entry *a = *(struct pack_idx_entry **)_a;
+	struct pack_idx_entry *b = *(struct pack_idx_entry **)_b;
+	return oidcmp(&a->oid, &b->oid);
+}
+
 static inline struct object_entry *oe_delta(
 		const struct packing_data *pack,
 		const struct object_entry *e)
@@ -1461,6 +1468,8 @@ static void write_pack_file(void)
 
 			if (write_bitmap_index) {
 				size_t tmpname_len = tmpname.len;
+
+				QSORT(written_list, to_pack.nr_objects, oid_compare);
 
 				strbuf_addstr(&tmpname, "bitmap");
 				stop_progress(&progress_state);

@@ -1922,7 +1922,13 @@ test_lazy_prereq DEFAULT_REPO_FORMAT '
 # compatibility, we cannot write such objects because there's no SHA-1
 # compatibility value for a nonexistent object.
 test_lazy_prereq BROKEN_OBJECTS '
-	test -z "$test_repo_compat_hash_algo"
+	! test_have_prereq COMPAT_HASH
+'
+
+# COMPAT_HASH is a test if we're operating in a repository with SHA-256 with
+# SHA-1 compatibility.
+test_lazy_prereq COMPAT_HASH '
+	test -n "$test_repo_compat_hash_algo"
 '
 
 # Ensure that no test accidentally triggers a Git command

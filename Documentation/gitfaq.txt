@@ -185,6 +185,106 @@ Then, you can adjust your push URL to use `git@example_author` or
 `git@example_committer` instead of `git@example.org` (e.g., `git remote set-url
 git@example_author:org1/project1.git`).
 
+Problems Fetching and Pushing
+-----------------------------
+
+[[remote-connection-http-2-stream-error]]
+Why do I get an error about an HTTP/2 stream not being closed cleanly?::
+  Sometimes when pushing or fetching over HTTP, users see a message such as "RPC
+	failed; curl 92 HTTP/2 stream 0 was not closed cleanly".  This message
+	indicates that Git is using HTTP/2, a recent version of the HTTP protocol, and
+	that the remote server, or a middlebox, such as a proxy, TLS middlebox,
+	antivirus, or firewall, failed to speak the protocol correctly and thus the
+	connection was interrupted.
++
+In such a case, the software causing the problem is buggy and will likely be
+broken with a wide variety of web browsers and other HTTP-using applications.
+The best thing to do is contact the responsible party to get the software fixed.
++
+If that isn't possible, you can set the `http.version` option to `HTTP/1.1`,
+which will force the use of an older version of HTTP.  This should allow Git to
+function with this broken software or device.  If the remote server supports
+SSH, you may wish to try switching to SSH instead.
+
+[[remote-connection-http-411]]
+Why do I get an error about an HTTP 411 status?::
+  Sometimes users see error messages when pushing that refer to HTTP status 411,
+	such as "RPC failed; result=22, HTTP code = 411."  This status means that the
+	server or a machine in the middle, such as a proxy, TLS middlebox, antivirus,
+	firewall, or other middlebox, refuses to accept a streaming data connection.
++
+When pushing or fetching over HTTP, Git normally uses a small buffer and, if the
+data is large, uses HTTP 1.1 chunked transfer encoding or HTTP 2 streaming to
+send the data without a defined size.  This is useful because it allows a push
+or fetch to start much faster and therefore complete much faster.  This type of
+streaming has been standardized since 1999 and is well understood, and all
+modern software should be capable of supporting it.
++
+However, in this case, the remote server or middlebox is misconfigured and does
+not correctly support this.  The best thing to do is contact the responsible
+party and ask them to fix the server or middlebox, since this misconfiguration
+can affect many pieces of software, some of which will simply not function at
+all in this environment.
++
+If the remote server supports SSH, you may wish to try using SSH instead.  If
+that is not possible, you can set `http.postBuffer` to a larger value as a
+workaround.  This is one of the few times when that option is useful, but note
+<<http-postbuffer,as outlined in the answer above>> that doing so will increase
+the memory usage for every push, no matter how small, and will not be able to
+handle pushes of arbitrary sizes, so fixing the broken server or device or
+switching to SSH is preferable in almost all cases.
+
+[[remote-connection-reset]]
+Why do I get errors that the connection was reset?::
+	When pushing or fetching, sometimes users see problems where the connection
+	was reset.  Common symptoms of this problem include (but are not limited to)
+	messages like the following:
++
+* RPC failed; curl 56 OpenSSL SSL_read: Connection was reset, errno 10054
+* RPC failed; curl 55 SSL_write() returned SYSCALL, errno = 10053
+* RPC failed; curl 56 LibreSSL SSL_read: SSL_ERROR_SYSCALL, errno 60
+* RPC failed; result=56, HTTP code = 200
+* RPC failed; curl 56 GnuTLS recv error (-110): The TLS connection was non-properly terminated.
++
+These messages, and almost every message with a libcurl error code of 55 or 56,
+essentially mean that the network connection between Git and the remote server
+was terminated unexpectedly.  This can be caused by any sort of generic network
+problem, such as packet loss or an unstable connection.  Sometimes users also
+see it when connected to a VPN if the connection over the VPN is unstable.  In
+such a case, disabling the VPN or switching to a different connection may help
+the problem, or sending or receiving less data may work around the problem.
++
+This may also be caused by devices or software in the middle of the connection
+which attempt to inspect the data.  For example, if you're on a network which
+uses a TLS middlebox or a proxy, these devices may attempt to inspect the data
+and terminate the connection if the data is too large for them to handle or if
+they mistakenly think it is malicious, offensive, inappropriate, or otherwise
+unacceptable.  To test if this is the problem, try using a different network
+where these devices are not enabled, or contact your network administrator and
+report the problem to them.
++
+On Windows, and to a lesser extent on other platforms, antivirus, firewall, or
+network monitoring software that is not the default (on Windows, something other
+than Windows Defender and Windows Firewall) can intercept network connections
+and cause the same problems as the devices mentioned above.  This may also
+happen when using Git under the Windows Subsystem for Linux with such software.
+To test if this is the problem, remove the non-default software completely and
+restart your computer.  Some such software does not disable the broken
+functionality properly when it is set to disabled and so removing the software
+is the only way to perform the test.  If this is the problem, use the default
+software instead, report the problem to the software vendor, or contact your
+network administrator and report the problem to them.
++
+If you are using HTTPS and the remote server supports SSH, you may wish to try
+using SSH instead.
++
+Note that in all these cases, this is not a problem in Git, but a problem with
+the network or the devices and software managing it.  Some parties mistakenly
+recommend adjusting the `http.postBuffer` setting to work around this, but
+<<http-postbuffer,see the above answer>> for why that usually doesn't work, and
+even when it does work, indicates a defect in the network or software such as
+one mentioned above in this answer.
+
 Common Issues
 -------------
 

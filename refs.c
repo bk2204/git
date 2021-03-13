@@ -1793,7 +1793,7 @@ const char *resolve_ref_unsafe(const char *refname, int resolve_flags,
 }
 
 int resolve_gitlink_ref(const char *submodule, const char *refname,
-			struct object_id *oid)
+			struct object_id *oid, struct object_id *compat_oid)
 {
 	struct ref_store *refs;
 	int flags;
@@ -1806,6 +1806,24 @@ int resolve_gitlink_ref(const char *submodule, const char *refname,
 	if (!refs_resolve_ref_unsafe(refs, refname, 0, oid, &flags) ||
 	    is_null_oid(oid))
 		return -1;
+
+	if (compat_oid) {
+		struct repository subrepo;
+		const struct submodule *sub;
+		sub = submodule_from_path(the_repository, NULL, submodule);
+		if (!sub) {
+			fprintf(stderr, "dx: b\n");
+			return -1;
+		}
+		if (repo_submodule_init(&subrepo, the_repository, sub)) {
+			fprintf(stderr, "dx: c\n");
+			return -1;
+		}
+		if (repo_map_object(&subrepo, compat_oid, the_repository->compat_hash_algo, oid)) {
+			fprintf(stderr, "dx: d\n");
+			return -1;
+		}
+	}
 	return 0;
 }
 

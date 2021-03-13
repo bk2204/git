@@ -267,9 +267,6 @@ void repo_clear(struct repository *repo)
 		if (repo->index != &the_index)
 			FREE_AND_NULL(repo->index);
 	}
-
-	if (repo->loose_map)
-		loose_object_map_clear(&repo->loose_map);
 }
 
 int repo_read_index(struct repository *repo)

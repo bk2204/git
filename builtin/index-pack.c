@@ -559,7 +559,7 @@ static void *unpack_entry_data(off_t offset, size_t size,
 		}
 		git_hash_final_oid(compat_oid, &c_compat);
 		repo_lock();
-		odb_write_oid_map(the_repository->objects, oid, compat_oid, OBJ_MAP_WRITE);
+		odb_write_oid_map(the_repository->objects, oid, compat_oid, 0);
 		repo_unlock();
 	}
 	return buf == fixed_buf ? NULL : buf;
@@ -1154,7 +1154,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 		odb_write_oid_map(the_repository->objects,
 				  &delta_obj->idx.oid,
 				  &delta_obj->idx.compat_oid,
-				  OBJ_MAP_WRITE);
+				  OBJ_MAP_WRITE | OBJ_MAP_TYPE_LOOSE);
 		repo_unlock();
 		strbuf_release(&outbuf);
 	}

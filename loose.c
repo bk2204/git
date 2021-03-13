@@ -61,7 +61,7 @@ static int insert_loose_map(struct odb_source_loose *loose,
 	return inserted;
 }
 
-int loose_object_map_load(struct odb_source_loose *loose)
+int loose_object_map_load(struct odb_source_loose *loose, int flags UNUSED)
 {
 	struct repository *repo = loose->base.odb->repo;
 	struct strbuf buf = STRBUF_INIT;
@@ -117,14 +117,14 @@ int repo_read_loose_object_map(struct repository *repo)
 
 	for (source = repo->objects->sources; source; source = source->next) {
 		struct odb_source_files *files = odb_source_files_downcast(source);
-		if (loose_object_map_load(files->loose) < 0)
+		if (loose_object_map_load(files->loose, OBJ_MAP_TYPE_LOOSE) < 0)
 			return -1;
 	}
 
 	return 0;
 }
 
-int repo_write_loose_object_map(struct repository *repo)
+int repo_write_loose_object_map(struct repository *repo, int flags UNUSED)
 {
 	struct odb_source_files *files = odb_source_files_downcast(repo->objects->sources);
 	kh_oid_map_t *map = files->loose->map->to_compat;
@@ -172,7 +172,7 @@ errout:
 
 static int write_one_object(struct odb_source_loose *loose,
 			    const struct object_id *oid,
-			    const struct object_id *compat_oid)
+			    const struct object_id *compat_oid, int flags UNUSED)
 {
 	struct lock_file lock;
 	int fd;
@@ -223,7 +223,7 @@ int source_add_loose_object_map(struct odb_source_loose *loose,
 
 	inserted = insert_loose_map(loose, oid, compat_oid);
 	if (inserted && (flags & OBJ_MAP_WRITE))
-		return write_one_object(loose, oid, compat_oid);
+		return write_one_object(loose, oid, compat_oid, flags);
 	return 0;
 }
 

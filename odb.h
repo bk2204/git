@@ -706,6 +706,17 @@ int odb_map_oid(struct object_database *odb,
 
 enum odb_write_oid_map_flags {
 	/*
+	 * Internal, reserved value for values like the null OID, the empty
+	 * blob, and the empty tree.
+	 */
+	ODB_WRITE_OID_MAP_TYPE_RESERVED = OBJ_MAP_TYPE_RESERVED,
+	/* A loose object. */
+	ODB_WRITE_OID_MAP_TYPE_LOOSE = OBJ_MAP_TYPE_LOOSE,
+	/* A shallow, its parent, or its tree. */
+	ODB_WRITE_OID_MAP_TYPE_SHALLOW = OBJ_MAP_TYPE_SHALLOW,
+	/* A submodule. */
+	ODB_WRITE_OID_MAP_TYPE_SUBMODULE = OBJ_MAP_TYPE_SUBMODULE,
+	/*
 	 * Serialize this data to disk instead of persisting it only in memory.
 	 */
 	ODB_WRITE_OID_MAP_WRITE = OBJ_MAP_WRITE,

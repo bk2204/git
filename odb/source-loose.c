@@ -848,7 +848,7 @@ static int odb_source_loose_write_object(struct odb_source *source,
 		return -1;
 
 	if (compat_oid)
-		return source_add_loose_object_map(loose, oid, compat_oid, OBJ_MAP_WRITE);
+		return source_add_loose_object_map(loose, oid, compat_oid, OBJ_MAP_WRITE | OBJ_MAP_TYPE_LOOSE);
 
 	return 0;
 }
@@ -970,7 +970,7 @@ static int odb_source_loose_write_object_stream(struct odb_source *source,
 	err = finalize_object_file_flags(loose->base.odb->repo, tmp_file.buf, filename.buf,
 					 FOF_SKIP_COLLISION_CHECK);
 	if (!err && compat)
-		err = source_add_loose_object_map(loose, oid, &compat_oid, OBJ_MAP_WRITE);
+		err = source_add_loose_object_map(loose, oid, &compat_oid, OBJ_MAP_WRITE | OBJ_MAP_TYPE_LOOSE);
 cleanup:
 	strbuf_release(&tmp_file);
 	strbuf_release(&filename);
@@ -1177,7 +1177,7 @@ struct odb_source_loose *odb_source_loose_new(struct object_database *odb,
 	if (!is_absolute_path(loose->base.path))
 		chdir_notify_register(odb_source_loose_reparent, loose);
 
-	loose_object_map_load(loose);
+	loose_object_map_load(loose, OBJ_MAP_TYPE_LOOSE);
 
 	return loose;
 }

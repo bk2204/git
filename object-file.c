@@ -1005,6 +1005,7 @@ int index_path(struct index_state *istate, struct object_id *oid,
 	int fd;
 	struct strbuf sb = STRBUF_INIT;
 	int rc = 0;
+	struct object_id compat_oid;
 
 	switch (st->st_mode & S_IFMT) {
 	case S_IFREG:
@@ -1026,10 +1027,12 @@ int index_path(struct index_state *istate, struct object_id *oid,
 		strbuf_release(&sb);
 		break;
 	case S_IFDIR:
-		if (repo_resolve_gitlink_ref(istate->repo, path, "HEAD", oid, NULL))
+		if (repo_resolve_gitlink_ref(istate->repo, path, "HEAD", oid, &compat_oid))
 			return error(_("'%s' does not have a commit checked out"), path);
 		if (&hash_algos[oid->algo] != istate->repo->hash_algo)
 			return error(_("cannot add a submodule of a different hash algorithm"));
+		odb_write_oid_map(istate->repo->objects,
+				  oid, &compat_oid, OBJ_MAP_WRITE | OBJ_MAP_TYPE_SUBMODULE);
 		break;
 	default:
 		return error(_("%s: unsupported file type"), path);

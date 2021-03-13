@@ -23,6 +23,9 @@ struct object_directory {
 	char loose_objects_subdir_seen[256];
 	struct oid_array loose_objects_cache[256];
 
+	/* Map between object IDs for loose objects. */
+	struct loose_object_map *loose_map;
+
 	/*
 	 * Path to the alternative object store. If this is a relative path,
 	 * it is relative to the current working directory.

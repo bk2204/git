@@ -18,6 +18,8 @@
 #include "strvec.h"
 #include "repository.h"
 #include "sigchain.h"
+#include "submodule-config.h"
+#include "loose.h"
 
 /*
  * List of all available backends
@@ -1793,7 +1795,7 @@ const char *resolve_ref_unsafe(const char *refname, int resolve_flags,
 }
 
 int resolve_gitlink_ref(const char *submodule, const char *refname,
-			struct object_id *oid)
+			struct object_id *oid, struct object_id *compat_oid)
 {
 	struct ref_store *refs;
 	int flags;
@@ -1806,6 +1808,18 @@ int resolve_gitlink_ref(const char *submodule, const char *refname,
 	if (!refs_resolve_ref_unsafe(refs, refname, 0, oid, &flags) ||
 	    is_null_oid(oid))
 		return -1;
+
+	if (compat_oid) {
+		struct repository subrepo;
+		const struct submodule *sub;
+		sub = submodule_from_path_wt(the_repository, submodule);
+		if (!sub)
+			return -1;
+		if (repo_submodule_init(&subrepo, the_repository, sub))
+			return -1;
+		if (repo_map_object(&subrepo, compat_oid, the_repository->compat_hash_algo, oid))
+			return -1;
+	}
 	return 0;
 }
 

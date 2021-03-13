@@ -18,6 +18,8 @@
 #include "strvec.h"
 #include "repository.h"
 #include "sigchain.h"
+#include "submodule-config.h"
+#include "loose.h"
 
 /*
  * List of all available backends

@@ -559,7 +559,7 @@ static void *unpack_entry_data(off_t offset, size_t size,
 		}
 		git_hash_final_oid(compat_oid, &c_compat);
 		repo_lock();
-		repo_add_loose_object_map(the_repository->objects->sources, oid, compat_oid);
+		repo_add_loose_object_map(the_repository->objects->sources, oid, compat_oid, 0);
 		repo_unlock();
 	}
 	return buf == fixed_buf ? NULL : buf;
@@ -1153,7 +1153,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 		repo_lock();
 		repo_add_loose_object_map(the_repository->objects->sources,
 					  &delta_obj->idx.oid,
-					  &delta_obj->idx.compat_oid);
+					  &delta_obj->idx.compat_oid, LOOSE_TYPE_LOOSE);
 		repo_unlock();
 		strbuf_release(&outbuf);
 	}

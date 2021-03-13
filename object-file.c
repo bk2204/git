@@ -1296,7 +1296,7 @@ int index_path(struct index_state *istate, struct object_id *oid,
 		strbuf_release(&sb);
 		break;
 	case S_IFDIR:
-		return repo_resolve_gitlink_ref(istate->repo, path, "HEAD", oid);
+		return repo_resolve_gitlink_ref(istate->repo, path, "HEAD", oid, NULL);
 	default:
 		return error(_("%s: unsupported file type"), path);
 	}

@@ -3367,7 +3367,7 @@ static int remove_dir_recurse(struct strbuf *path, int flag, int *kept_up)
 
 	if ((flag & REMOVE_DIR_KEEP_NESTED_GIT) &&
 	    !repo_resolve_gitlink_ref(the_repository, path->buf,
-				      "HEAD", &submodule_head)) {
+				      "HEAD", &submodule_head, NULL)) {
 		/* Do not descend and nuke a nested git work tree. */
 		if (kept_up)
 			*kept_up = 1;

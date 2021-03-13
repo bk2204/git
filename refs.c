@@ -31,6 +31,9 @@
 #include "wildmatch.h"
 #include "ident.h"
 #include "fsck.h"
+#include "submodule-config.h"
+#include "loose.h"
+#include "object-file-convert.h"
 
 /*
  * List of all available backends
@@ -2281,7 +2284,7 @@ int ref_store_remove_on_disk(struct ref_store *refs, struct strbuf *err)
 
 int repo_resolve_gitlink_ref(struct repository *r,
 			     const char *submodule, const char *refname,
-			     struct object_id *oid)
+			     struct object_id *oid, struct object_id *compat_oid)
 {
 	struct ref_store *refs;
 	int flags;
@@ -2293,6 +2296,15 @@ int repo_resolve_gitlink_ref(struct repository *r,
 	if (!refs_resolve_ref_unsafe(refs, refname, 0, oid, &flags) ||
 	    is_null_oid(oid))
 		return -1;
+
+	if (r->compat_hash_algo && compat_oid) {
+		struct repository subrepo;
+		if (repo_submodule_init(&subrepo, r, submodule, null_oid(r->hash_algo)))
+			return -1;
+		if (repo_oid_to_algop(&subrepo, oid, r->compat_hash_algo, compat_oid))
+			return -1;
+		repo_clear(&subrepo);
+	}
 	return 0;
 }
 

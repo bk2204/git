@@ -71,7 +71,7 @@ static int check_removed(const struct cache_entry *ce, struct stat *st)
 		 */
 		if (!S_ISGITLINK(ce->ce_mode) &&
 		    repo_resolve_gitlink_ref(the_repository, ce->name,
-					     "HEAD", &sub))
+					     "HEAD", &sub, NULL))
 			return 1;
 	}
 	return 0;

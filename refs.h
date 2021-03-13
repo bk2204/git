@@ -182,11 +182,12 @@ int peel_iterated_oid(struct repository *r,
  * Resolve refname in the nested "gitlink" repository in the specified
  * submodule (which must be non-NULL). If the resolution is
  * successful, return 0 and set oid to the name of the object;
- * otherwise, return a non-zero value.
+ * otherwise, return a non-zero value.  compat_oid is set to the
+ * compatibility object ID if it is non-NULL.
  */
 int repo_resolve_gitlink_ref(struct repository *r,
 			     const char *submodule, const char *refname,
-			     struct object_id *oid);
+			     struct object_id *oid, struct object_id *compat_oid);
 
 /*
  * Return true iff abbrev_name is a possible abbreviation for

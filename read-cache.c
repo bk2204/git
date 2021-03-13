@@ -280,7 +280,7 @@ static int ce_compare_gitlink(const struct cache_entry *ce)
 	 * If so, we consider it always to match.
 	 */
 	if (repo_resolve_gitlink_ref(the_repository, ce->name,
-				     "HEAD", &oid) < 0)
+				     "HEAD", &oid, NULL) < 0)
 		return 0;
 	return !oideq(&oid, &ce->oid);
 }

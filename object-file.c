@@ -919,7 +919,7 @@ int odb_source_loose_write_stream(struct odb_source_loose *loose,
 	err = finalize_object_file_flags(loose->base.odb->repo, tmp_file.buf, filename.buf,
 					 FOF_SKIP_COLLISION_CHECK);
 	if (!err && compat)
-		err = repo_add_loose_object_map(loose, oid, &compat_oid);
+		err = repo_add_loose_object_map(&loose->base, oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_LOOSE);
 cleanup:
 	strbuf_release(&tmp_file);
 	strbuf_release(&filename);
@@ -959,7 +959,13 @@ int force_object_loose(struct odb_source *source,
 	hdrlen = format_object_header(hdr, sizeof(hdr), type, len);
 	ret = write_loose_object(files->loose, oid, hdr, hdrlen, buf, len, mtime, 0);
 	if (!ret && compat)
+<<<<<<< HEAD
 		ret = repo_add_loose_object_map(files->loose, oid, &compat_oid);
+||||||| parent of 81bb3f7e97 (loose: allow writing data for submodules)
+		ret = repo_add_loose_object_map(source, oid, &compat_oid);
+=======
+		ret = repo_add_loose_object_map(source, oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_LOOSE);
+>>>>>>> 81bb3f7e97 (loose: allow writing data for submodules)
 	free(buf);
 
 	return ret;
@@ -1423,6 +1429,7 @@ int index_path(struct index_state *istate, struct object_id *oid,
 	int fd;
 	struct strbuf sb = STRBUF_INIT;
 	int rc = 0;
+	struct object_id compat_oid;
 
 	switch (st->st_mode & S_IFMT) {
 	case S_IFREG:
@@ -1444,10 +1451,12 @@ int index_path(struct index_state *istate, struct object_id *oid,
 		strbuf_release(&sb);
 		break;
 	case S_IFDIR:
-		if (repo_resolve_gitlink_ref(istate->repo, path, "HEAD", oid, NULL))
+		if (repo_resolve_gitlink_ref(istate->repo, path, "HEAD", oid, &compat_oid))
 			return error(_("'%s' does not have a commit checked out"), path);
 		if (&hash_algos[oid->algo] != istate->repo->hash_algo)
 			return error(_("cannot add a submodule of a different hash algorithm"));
+		repo_add_loose_object_map(istate->repo->objects->sources,
+					  oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_SUBMODULE);
 		break;
 	default:
 		return error(_("%s: unsupported file type"), path);

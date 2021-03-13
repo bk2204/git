@@ -620,7 +620,7 @@ static int odb_source_loose_write_object(struct odb_source *source,
 	if (write_loose_object(loose, oid, hdr, hdrlen, buf, len, 0, flags))
 		return -1;
 	if (compat)
-		return repo_add_loose_object_map(loose, oid, &compat_oid);
+		return repo_add_loose_object_map(source, oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_LOOSE);
 	return 0;
 }
 

@@ -28,6 +28,7 @@
 #include "sparse-index.h"
 #include "csum-file.h"
 #include "promisor-remote.h"
+#include "loose.h"
 
 /* Mask for the name length in ce_flags in the on-disk index */
 
@@ -739,7 +740,8 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 	int add_option = (ADD_CACHE_OK_TO_ADD|ADD_CACHE_OK_TO_REPLACE|
 			  (intent_only ? ADD_CACHE_NEW_ONLY : 0));
 	int hash_flags = HASH_WRITE_OBJECT;
-	struct object_id oid;
+	const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+	struct object_id oid, compat_oid;
 
 	if (flags & ADD_CACHE_RENORMALIZE)
 		hash_flags |= HASH_RENORMALIZE;
@@ -749,8 +751,11 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 
 	namelen = strlen(path);
 	if (S_ISDIR(st_mode)) {
-		if (resolve_gitlink_ref(path, "HEAD", &oid, NULL) < 0)
+		if (resolve_gitlink_ref(path, "HEAD", &oid,
+					compat ?  &compat_oid : NULL) < 0)
 			return error(_("'%s' does not have a commit checked out"), path);
+		if (compat)
+			repo_add_loose_object_map(the_repository, &oid, &compat_oid, 1);
 		while (namelen && path[namelen-1] == '/')
 			namelen--;
 	}

@@ -18,6 +18,7 @@
 #include "dir.h"
 #include "split-index.h"
 #include "fsmonitor.h"
+#include "loose.h"
 
 /*
  * Default to not allowing changes to the list of files. The
@@ -321,7 +322,7 @@ static int add_one_path(const struct cache_entry *old, const char *path, int len
  */
 static int process_directory(const char *path, int len, struct stat *st)
 {
-	struct object_id oid;
+	struct object_id oid, compat_oid;
 	int pos = cache_name_pos(path, len);
 
 	/* Exact match: file or existing gitlink */
@@ -330,8 +331,11 @@ static int process_directory(const char *path, int len, struct stat *st)
 		if (S_ISGITLINK(ce->ce_mode)) {
 
 			/* Do nothing to the index if there is no HEAD! */
-			if (resolve_gitlink_ref(path, "HEAD", &oid, NULL) < 0)
+			if (resolve_gitlink_ref(path, "HEAD", &oid, &compat_oid) < 0)
 				return 0;
+
+			if (the_repository->compat_hash_algo)
+				repo_add_loose_object_map(the_repository, &oid, &compat_oid, 1);
 
 			return add_one_path(ce, path, len, st);
 		}
@@ -356,8 +360,11 @@ static int process_directory(const char *path, int len, struct stat *st)
 	}
 
 	/* No match - should we add it as a gitlink? */
-	if (!resolve_gitlink_ref(path, "HEAD", &oid, NULL))
+	if (!resolve_gitlink_ref(path, "HEAD", &oid, &compat_oid)) {
+		if (the_repository->compat_hash_algo)
+			repo_add_loose_object_map(the_repository, &oid, &compat_oid, 1);
 		return add_one_path(NULL, path, len, st);
+	}
 
 	/* Error out. */
 	return error("%s: is a directory - add files inside instead", path);

@@ -2400,6 +2400,7 @@ int index_path(struct index_state *istate, struct object_id *oid,
 	int fd;
 	struct strbuf sb = STRBUF_INIT;
 	int rc = 0;
+	struct object_id compat_oid;
 
 	switch (st->st_mode & S_IFMT) {
 	case S_IFREG:
@@ -2421,7 +2422,9 @@ int index_path(struct index_state *istate, struct object_id *oid,
 		strbuf_release(&sb);
 		break;
 	case S_IFDIR:
-		return resolve_gitlink_ref(path, "HEAD", oid, NULL);
+		rc = resolve_gitlink_ref(path, "HEAD", oid, &compat_oid);
+		repo_add_loose_object_map(the_repository, oid, &compat_oid, 1);
+		break;
 	default:
 		return error(_("%s: unsupported file type"), path);
 	}

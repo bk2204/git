@@ -19,7 +19,7 @@ int repo_loose_object_map_oid(struct repository *repo,
 			      struct object_id *dest);
 int repo_add_loose_object_map(struct odb_source *source,
 			      const struct object_id *oid,
-			      const struct object_id *compat_oid);
+			      const struct object_id *compat_oid, int write);
 int repo_read_loose_object_map(struct repository *repo);
 int repo_write_loose_object_map(struct repository *repo);
 

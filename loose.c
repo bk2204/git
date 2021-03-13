@@ -208,7 +208,7 @@ errout:
 
 int repo_add_loose_object_map(struct odb_source *source,
 			      const struct object_id *oid,
-			      const struct object_id *compat_oid)
+			      const struct object_id *compat_oid, int write)
 {
 	int inserted = 0;
 
@@ -216,7 +216,7 @@ int repo_add_loose_object_map(struct odb_source *source,
 		return 0;
 
 	inserted = insert_loose_map(source, oid, compat_oid);
-	if (inserted)
+	if (inserted && write)
 		return write_one_object(source, oid, compat_oid);
 	return 0;
 }

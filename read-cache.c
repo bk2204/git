@@ -755,7 +755,7 @@ int add_to_index(struct index_state *istate, const char *path, struct stat *st, 
 					compat ?  &compat_oid : NULL) < 0)
 			return error(_("'%s' does not have a commit checked out"), path);
 		if (compat)
-			repo_add_loose_object_map(the_repository, &oid, &compat_oid, 1);
+			repo_add_loose_object_map(the_repository, &oid, &compat_oid, LOOSE_INDEX_SUBMODULE | LOOSE_WRITE);
 		while (namelen && path[namelen-1] == '/')
 			namelen--;
 	}

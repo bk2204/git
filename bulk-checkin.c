@@ -285,7 +285,7 @@ static int deflate_to_pack(struct bulk_checkin_state *state,
 			   state->alloc_written);
 		state->written[state->nr_written++] = idx;
 		if (compat)
-			repo_add_loose_object_map(the_repository, result_oid, &compat_oid, 1);
+			repo_add_loose_object_map(the_repository, result_oid, &compat_oid, LOOSE_WRITE | LOOSE_INDEX_LOOSE);
 	}
 	return 0;
 }

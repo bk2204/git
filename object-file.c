@@ -2094,7 +2094,7 @@ int write_object_file_compat(const void *buf, size_t len,
 	    write_loose_object(oid, hdr, hdrlen, buf, len, 0))
 		return -1;
 	if (compat_buf)
-		return repo_add_loose_object_map(r, oid, &compat_oid, 1);
+		return repo_add_loose_object_map(r, oid, &compat_oid, LOOSE_WRITE | LOOSE_INDEX_LOOSE);
 	return 0;
 }
 
@@ -2423,7 +2423,7 @@ int index_path(struct index_state *istate, struct object_id *oid,
 		break;
 	case S_IFDIR:
 		rc = resolve_gitlink_ref(path, "HEAD", oid, &compat_oid);
-		repo_add_loose_object_map(the_repository, oid, &compat_oid, 1);
+		repo_add_loose_object_map(the_repository, oid, &compat_oid, LOOSE_WRITE | LOOSE_INDEX_SUBMODULE);
 		break;
 	default:
 		return error(_("%s: unsupported file type"), path);

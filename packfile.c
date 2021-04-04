@@ -2000,10 +2000,11 @@ int nth_packed_object_id_algop(struct object_id *oid,
 	}
 	if (n >= p->num_objects)
 		return -1;
-	index += 4 * 256;
 	if (p->index_version == 1) {
+		index += 4 * 256;
 		oidread(oid, index + (hashsz + 4) * n + 4);
 	} else if (p->index_version == 2) {
+		index += 4 * 256;
 		index += 8;
 		oidread(oid, index + hashsz * n);
 	} else {

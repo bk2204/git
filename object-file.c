@@ -1029,7 +1029,7 @@ int stream_loose_object(struct odb_source *source,
 	err = finalize_object_file_flags(source->odb->repo, tmp_file.buf, filename.buf,
 					 FOF_SKIP_COLLISION_CHECK);
 	if (!err && compat)
-		err = repo_add_loose_object_map(source, oid, &compat_oid, 1);
+		err = repo_add_loose_object_map(source, oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_LOOSE);
 cleanup:
 	strbuf_release(&tmp_file);
 	strbuf_release(&filename);
@@ -1073,7 +1073,7 @@ int write_object_file(struct odb_source *source,
 	if (write_loose_object(source, oid, hdr, hdrlen, buf, len, 0, flags))
 		return -1;
 	if (compat)
-		return repo_add_loose_object_map(source, oid, &compat_oid, 1);
+		return repo_add_loose_object_map(source, oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_LOOSE);
 	return 0;
 }
 
@@ -1107,7 +1107,7 @@ int force_object_loose(struct odb_source *source,
 	hdrlen = format_object_header(hdr, sizeof(hdr), type, len);
 	ret = write_loose_object(source, oid, hdr, hdrlen, buf, len, mtime, 0);
 	if (!ret && compat)
-		ret = repo_add_loose_object_map(source, oid, &compat_oid, 1);
+		ret = repo_add_loose_object_map(source, oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_LOOSE);
 	free(buf);
 
 	return ret;
@@ -1297,8 +1297,10 @@ int index_path(struct index_state *istate, struct object_id *oid,
 		strbuf_release(&sb);
 		break;
 	case S_IFDIR:
-		rc = repo_resolve_gitlink_ref(istate->repo, path, "HEAD", oid, NULL);
-		repo_add_loose_object_map(istate->repo->objects->sources, oid, &compat_oid, 1);
+		rc = repo_resolve_gitlink_ref(istate->repo, path, "HEAD", oid, &compat_oid);
+		if (!rc)
+			repo_add_loose_object_map(istate->repo->objects->sources,
+						  oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_SUBMODULE);
 		break;
 	default:
 		return error(_("%s: unsupported file type"), path);

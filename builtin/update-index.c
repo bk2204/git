@@ -357,7 +357,7 @@ static int process_directory(const char *path, int len, struct stat *st)
 				return 0;
 
 			if (the_repository->compat_hash_algo)
-				repo_add_loose_object_map(the_repository, &oid, &compat_oid, 1);
+				repo_add_loose_object_map(the_repository->objects->sources, &oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_SUBMODULE);
 
 			return add_one_path(ce, path, len, st);
 		}
@@ -384,7 +384,7 @@ static int process_directory(const char *path, int len, struct stat *st)
 	/* No match - should we add it as a gitlink? */
 	if (!repo_resolve_gitlink_ref(the_repository, path, "HEAD", &oid, &compat_oid)) {
 		if (the_repository->compat_hash_algo)
-			repo_add_loose_object_map(the_repository, &oid, &compat_oid, 1);
+			repo_add_loose_object_map(the_repository->objects->sources, &oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_SUBMODULE);
 		return add_one_path(NULL, path, len, st);
 	}
 

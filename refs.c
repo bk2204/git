@@ -1813,18 +1813,12 @@ int resolve_gitlink_ref(const char *submodule, const char *refname,
 		struct repository subrepo;
 		const struct submodule *sub;
 		sub = submodule_from_path(the_repository, NULL, submodule);
-		if (!sub) {
-			fprintf(stderr, "dx: b\n");
+		if (!sub)
 			return -1;
-		}
-		if (repo_submodule_init(&subrepo, the_repository, sub)) {
-			fprintf(stderr, "dx: c\n");
+		if (repo_submodule_init(&subrepo, the_repository, sub))
 			return -1;
-		}
-		if (repo_map_object(&subrepo, compat_oid, the_repository->compat_hash_algo, oid)) {
-			fprintf(stderr, "dx: d\n");
+		if (repo_map_object(&subrepo, compat_oid, the_repository->compat_hash_algo, oid))
 			return -1;
-		}
 	}
 	return 0;
 }

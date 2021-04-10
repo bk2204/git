@@ -385,6 +385,22 @@ static int name_and_item_from_var(const char *var, struct strbuf *name,
 	return 1;
 }
 
+static struct submodule *init_submodule(void)
+{
+	struct submodule *submodule = xcalloc(1, sizeof(*submodule));
+
+	submodule->name = NULL;
+	submodule->path = NULL;
+	submodule->url = NULL;
+	submodule->update_strategy.type = SM_UPDATE_UNSPECIFIED;
+	submodule->update_strategy.command = NULL;
+	submodule->fetch_recurse = RECURSE_SUBMODULES_NONE;
+	submodule->ignore = NULL;
+	submodule->branch = NULL;
+	submodule->recommend_shallow = -1;
+	return submodule;
+}
+
 static struct submodule *lookup_or_create_by_name(struct submodule_cache *cache,
 		const struct object_id *gitmodules_oid, const char *name)
 {
@@ -395,19 +411,10 @@ static struct submodule *lookup_or_create_by_name(struct submodule_cache *cache,
 	if (submodule)
 		return submodule;
 
-	submodule = xmalloc(sizeof(*submodule));
+	submodule = init_submodule();
 
 	strbuf_addstr(&name_buf, name);
 	submodule->name = strbuf_detach(&name_buf, NULL);
-
-	submodule->path = NULL;
-	submodule->url = NULL;
-	submodule->update_strategy.type = SM_UPDATE_UNSPECIFIED;
-	submodule->update_strategy.command = NULL;
-	submodule->fetch_recurse = RECURSE_SUBMODULES_NONE;
-	submodule->ignore = NULL;
-	submodule->branch = NULL;
-	submodule->recommend_shallow = -1;
 
 	oidcpy(&submodule->gitmodules_oid, gitmodules_oid);
 
@@ -706,7 +713,7 @@ static const struct submodule *config_from(struct submodule_cache *cache,
 	 * return the first submodule. Can be used to check whether
 	 * there are any submodules parsed.
 	 */
-	if (!treeish_name || !key) {
+	if (!key) {
 		struct hashmap_iter iter;
 		struct submodule_entry *entry;
 
@@ -718,7 +725,9 @@ static const struct submodule *config_from(struct submodule_cache *cache,
 		return entry->config;
 	}
 
-	if (!gitmodule_oid_from_commit(treeish_name, &oid, &rev))
+	if (!treeish_name)
+		oidcpy(&oid, null_oid(the_repository->hash_algo));
+	else if (!gitmodule_oid_from_commit(treeish_name, &oid, &rev))
 		goto out;
 
 	switch (lookup_type) {
@@ -945,6 +954,18 @@ void submodule_entry_list_release(struct submodule_entry_list *list)
 		free(list->entries[i].repo);
 	}
 	free(list->entries);
+}
+const struct submodule *submodule_from_path_wt(struct repository *r,
+					       const char *path)
+{
+	struct submodule *s;
+	const struct submodule *p = submodule_from_path(r, NULL, path);
+	if (p)
+		return p;
+	s = init_submodule();
+	s->path = strdup(path);
+	cache_put_path(r->submodule_cache, s);
+	return s;
 }
 
 void submodule_free(struct repository *r)

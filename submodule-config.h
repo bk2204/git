@@ -80,6 +80,14 @@ const struct submodule *submodule_from_path(struct repository *r,
 					    const char *path);
 
 /**
+ * Given a path in the working tree, return the submodule that is bound at the
+ * path.  If the path is not registerd in .gitmodules, only the path entry will
+ * be filled in.
+ */
+const struct submodule *submodule_from_path_wt(struct repository *r,
+					       const char *path);
+
+/**
  * Use these to free the internally cached values.
  */
 void submodule_free(struct repository *r);

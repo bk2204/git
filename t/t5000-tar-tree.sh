@@ -421,6 +421,10 @@ test_expect_success LONG_IS_64BIT 'set up repository with huge blob' '
 	path=$(test_oid_to_path $obj) &&
 	mkdir -p .git/objects/$(dirname $path) &&
 	cp "$TEST_DIRECTORY"/t5000/huge-object .git/objects/$path &&
+	if test "$(test_oid algo)" != "$(test_oid --hash=compat algo)"
+	then
+		echo "$(test_oid obj) $(test_oid --hash=compat obj)" >>.git/objects/loose-object-idx
+	fi &&
 	rm -f .git/index &&
 	git update-index --add --cacheinfo 100644,$obj,huge &&
 	git commit -m huge

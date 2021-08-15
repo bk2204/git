@@ -137,7 +137,8 @@ void release_tag_memory(struct tag *t)
 int convert_tag_object(struct repository *repo, struct strbuf *out,
 		       const struct git_hash_algo *from,
 		       const struct git_hash_algo *to,
-		       const char *buffer, size_t size)
+		       const char *buffer, size_t size,
+		       struct object_id *missing_oid)
 {
 	struct strbuf payload = STRBUF_INIT, temp = STRBUF_INIT, oursig = STRBUF_INIT, othersig = STRBUF_INIT;
 	size_t payload_size;
@@ -169,9 +170,14 @@ int convert_tag_object(struct repository *repo, struct strbuf *out,
 		return error("bogus tag object");
 	if (parse_oid_hex_algop(payload.buf + 7, &oid, &p, from) < 0)
 		return error("bad tag object ID");
-	if (repo_map_object(repo, &compat_oid, to, &oid))
-		return error("unable to map tree %s in tag object",
-			     oid_to_hex(&oid));
+	if (repo_map_object(repo, &compat_oid, to, &oid)) {
+		if (missing_oid)
+			oidcpy(missing_oid, &oid);
+		else
+			error("unable to map tree %s in tag object",
+			      oid_to_hex(&oid));
+		return -2;
+	}
 	strbuf_addf(out, "object %s\n", oid_to_hex(&compat_oid));
 	strbuf_add(out, p, payload.len - (p - payload.buf));
 	strbuf_addbuf(out, &othersig);

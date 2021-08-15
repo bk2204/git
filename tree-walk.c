@@ -78,7 +78,8 @@ static int decode_tree_entry_raw(struct object_id *oid, const char **path,
 int convert_tree_object(struct repository *repo, struct strbuf *out,
 			const struct git_hash_algo *from,
 			const struct git_hash_algo *to,
-			const char *buffer, size_t size)
+			const char *buffer, size_t size,
+			struct object_id *missing_oid)
 {
 	const char *p = buffer, *end = buffer + size;
 	if (!from)
@@ -96,8 +97,13 @@ int convert_tree_object(struct repository *repo, struct strbuf *out,
 		if (decode_tree_entry_raw(&entry_oid, &path, &pathlen, from, p,
 					  end - p))
 			return error(_("failed to decode tree entry"));
-		if (repo_map_object(repo, &mapped_oid, to, &entry_oid))
-			return error(_("failed to map tree entry for %s"), oid_to_hex(&entry_oid));
+		if (repo_map_object(repo, &mapped_oid, to, &entry_oid)) {
+			if (missing_oid)
+				oidcpy(missing_oid, &entry_oid);
+			else
+				error(_("failed to map tree entry for %s"), oid_to_hex(&entry_oid));
+			return -2;
+		}
 		strbuf_add(out, p, path - p);
 		strbuf_add(out, path, pathlen);
 		strbuf_add(out, mapped_oid.hash, to->rawsz);

@@ -512,7 +512,7 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 			int ret;
 			repo_lock();
 			ret = convert_object_file(the_repository, &outbuf,
-						  &outlen, buf, size, type);
+						  &outlen, buf, size, type, NULL);
 			repo_unlock();
 			if (ret < 0)
 				bad_object(offset, _("could not convert object"));
@@ -1027,7 +1027,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 		repo_lock();
 		ret = convert_object_file(the_repository, &outbuf,
 					  &outlen, result_data, result_size,
-					  delta_obj->real_type);
+					  delta_obj->real_type, NULL);
 		repo_unlock();
 		if (ret < 0)
 			bad_object(delta_obj->idx.offset,

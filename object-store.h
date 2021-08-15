@@ -253,12 +253,17 @@ int hash_object_file_literally_algop(const void *buf, unsigned long len,
 
 /*
  * Convert an object file from the main hash algorithm to the compatibility
- * algorithm.  Return -1 on failure, 0 on success if no memory was allocated,
- * and 1 on success if memory was allocated.
+ * algorithm.  Return -2 if the failure was due to a missing object, -1 on other
+ * failure, 0 on success if no memory was allocated, and 1 on success if memory
+ * was allocated.
+ *
+ * If missing_oid is not NULL and mapping failed due to a missing object, set it
+ * to the object ID of the object whose absence caused the failure.
  */
 int convert_object_file(struct repository *repo,
 			const void **outbuf, size_t *outlen,
-			const void *buf, size_t len, int type);
+			const void *buf, size_t len, int type,
+			struct object_id *missing_oid);
 /*
  * Add an object file to the in-memory object store, without writing it
  * to disk.

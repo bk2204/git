@@ -23,6 +23,7 @@ struct object_id *get_tagged_oid(struct tag *tag);
 int convert_tag_object(struct repository *repo, struct strbuf *out,
 		       const struct git_hash_algo *from,
 		       const struct git_hash_algo *to,
-		       const char *buffer, size_t size);
+		       const char *buffer, size_t size,
+		       struct object_id *missing_oid);
 
 #endif /* TAG_H */

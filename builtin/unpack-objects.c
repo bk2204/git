@@ -20,6 +20,8 @@
 #include "decorate.h"
 #include "fsck.h"
 #include "packfile.h"
+#include "loose.h"
+#include "object-file-convert.h"
 
 static int dry_run, quiet, recover, has_errors, strict;
 static const char unpack_usage[] = "git unpack-objects [-n] [-q] [-r] [--strict]";
@@ -210,6 +212,79 @@ static void write_cached_object(struct object *obj, struct obj_buffer *obj_buf)
 	obj->flags |= FLAG_WRITTEN;
 }
 
+static int compare_obj_list(const void *a, const void *b)
+{
+	const struct obj_info *p = a, *q = b;
+	return oidcmp(&p->oid, &q->oid);
+}
+
+static void map_object(struct object *obj, struct obj_buffer *obj_buf)
+{
+
+	struct strbuf outbuf = STRBUF_INIT;
+	struct object_id compat_oid, last_oid;
+	struct missing_object missing;
+	int ret;
+
+	memset(&last_oid, 0, sizeof(last_oid));
+
+	while (1) {
+		void *cvtbuf;
+		size_t cvtsz;
+
+		if (obj->type == OBJ_BLOB) {
+			ret = 0;
+			cvtbuf = obj_buf->buffer;
+			cvtsz = obj_buf->size;
+		} else {
+			ret = convert_object_file(the_repository, &outbuf,
+						  the_repository->hash_algo,
+						  the_repository->compat_hash_algo,
+						  obj_buf->buffer,
+						  obj_buf->size, obj->type,
+						  &missing, 1);
+			cvtbuf = outbuf.buf;
+			cvtsz = outbuf.len;
+		}
+		if (ret == -2) {
+			struct obj_info *p, to_find;
+			struct obj_buffer *buf;
+
+			if (oideq(&last_oid, &missing.oid))
+				goto err;
+			oidcpy(&to_find.oid, &missing.oid);
+			p = bsearch(&to_find, obj_list, nr_objects,
+				    sizeof(*obj_list), compare_obj_list);
+
+			if (!p)
+				goto err;
+
+			buf = lookup_object_buffer(p->obj);
+			if (!buf)
+				die("Whoops! Cannot find object '%s'",
+				    oid_to_hex(&obj->oid));
+			map_object(p->obj, buf);
+			continue;
+		}
+		if (ret < 0)
+			goto err;
+		if (!strict) {
+			write_cached_object(obj, obj_buf);
+		} else {
+			hash_object_file(the_repository->compat_hash_algo,
+					 cvtbuf, cvtsz, obj->type,
+					 &compat_oid);
+			repo_add_loose_object_map(the_repository->objects->sources, &obj->oid,
+						  &compat_oid, 0);
+		}
+		strbuf_release(&outbuf);
+		return;
+	}
+err:
+	strbuf_release(&outbuf);
+	die("cannot map object %s while unpacking", oid_to_hex(&obj->oid));
+}
+
 /*
  * At the very end of the processing, write_rest() scans the objects
  * that have reachability requirements and calls this function.
@@ -242,18 +317,25 @@ static int check_object(struct object *obj, enum object_type type,
 	obj_buf = lookup_object_buffer(obj);
 	if (!obj_buf)
 		die("Whoops! Cannot find object '%s'", oid_to_hex(&obj->oid));
-	if (fsck_object(obj, obj_buf->buffer, obj_buf->size, &fsck_options))
-		die("fsck error in packed object");
-	fsck_options.walk = check_object;
-	if (fsck_walk(obj, NULL, &fsck_options))
-		die("Error on reachable objects of %s", oid_to_hex(&obj->oid));
-	write_cached_object(obj, obj_buf);
+	if (strict) {
+		if (fsck_object(obj, obj_buf->buffer, obj_buf->size, &fsck_options))
+			die("fsck error in packed object");
+		fsck_options.walk = check_object;
+		if (fsck_walk(obj, NULL, &fsck_options))
+			die("Error on reachable objects of %s", oid_to_hex(&obj->oid));
+	}
+	if (the_repository->compat_hash_algo)
+		map_object(obj, obj_buf);
+	if (strict)
+		write_cached_object(obj, obj_buf);
 	return 0;
 }
 
 static void write_rest(void)
 {
 	unsigned i;
+	if (the_repository->compat_hash_algo)
+		QSORT(obj_list, nr_objects, compare_obj_list);
 	for (i = 0; i < nr_objects; i++) {
 		if (obj_list[i].obj)
 			check_object(obj_list[i].obj, OBJ_ANY, NULL, NULL);
@@ -271,9 +353,9 @@ static void added_object(unsigned nr, enum object_type type,
 static void write_object(unsigned nr, enum object_type type,
 			 void *buf, unsigned long size)
 {
-	if (!strict) {
+	if (!strict && !the_repository->compat_hash_algo) {
 		if (odb_write_object(the_repository->objects, buf, size, type,
-				     &obj_list[nr].oid) < 0)
+				      &obj_list[nr].oid) < 0)
 			die("failed to write object");
 		added_object(nr, type, buf, size);
 		free(buf);
@@ -675,9 +757,9 @@ int cmd_unpack_objects(int argc,
 	the_hash_algo->init_fn(&tmp_ctx);
 	git_hash_clone(&tmp_ctx, &ctx);
 	git_hash_final_oid(&oid, &tmp_ctx);
-	if (strict) {
+	if (strict || the_repository->compat_hash_algo) {
 		write_rest();
-		if (fsck_finish(&fsck_options))
+		if (strict && fsck_finish(&fsck_options))
 			die(_("fsck error in pack objects"));
 	}
 	if (!hasheq(fill(the_hash_algo->rawsz), oid.hash,

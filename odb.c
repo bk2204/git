@@ -665,7 +665,7 @@ static int oid_object_info_convert(struct repository *r,
 		if (type != OBJ_BLOB) {
 			ret = convert_object_file(r, &outbuf,
 						  r->hash_algo, input_algo,
-						  content, size, type, !do_die);
+						  content, size, type, NULL, !do_die);
 			free(content);
 			if (ret == -1)
 				return -1;

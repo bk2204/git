@@ -82,16 +82,16 @@ int repo_oid_to_algop(struct repository *repo, const struct object_id *srcoid,
 
 static int decode_tree_entry_raw(struct object_id *oid, const char **path,
 				 size_t *len, const struct git_hash_algo *algo,
-				 const char *buf, unsigned long size)
+				 uint16_t *mode, const char *buf,
+				 unsigned long size)
 {
-	uint16_t mode;
 	const unsigned hashsz = algo->rawsz;
 
 	if (size < hashsz + 3 || buf[size - (hashsz + 1)]) {
 		return -1;
 	}
 
-	*path = parse_mode(buf, &mode);
+	*path = parse_mode(buf, mode);
 	if (!*path || !**path)
 		return -1;
 	*len = strlen(*path) + 1;
@@ -104,7 +104,8 @@ static int convert_tree_object(struct repository *repo,
 			       struct strbuf *out,
 			       const struct git_hash_algo *from,
 			       const struct git_hash_algo *to,
-			       const char *buffer, size_t size)
+			       const char *buffer, size_t size,
+			       struct missing_object *missing)
 {
 	const char *p = buffer, *end = buffer + size;
 
@@ -112,12 +113,20 @@ static int convert_tree_object(struct repository *repo,
 		struct object_id entry_oid, mapped_oid;
 		const char *path = NULL;
 		size_t pathlen;
+		uint16_t mode;
 
-		if (decode_tree_entry_raw(&entry_oid, &path, &pathlen, from, p,
-					  end - p))
+		if (decode_tree_entry_raw(&entry_oid, &path, &pathlen, from,
+					  &mode, p, end - p))
 			return error(_("failed to decode tree entry"));
-		if (repo_oid_to_algop(repo, &entry_oid, to, &mapped_oid))
+		if (repo_oid_to_algop(repo, &entry_oid, to, &mapped_oid)) {
+			if (missing) {
+				missing->mode = mode;
+				missing->type = object_type(mode);
+				oidcpy(&missing->oid, &entry_oid);
+				return -2;
+			}
 			return error(_("failed to map tree entry for %s"), oid_to_hex(&entry_oid));
+		}
 		strbuf_add(out, p, path - p);
 		strbuf_add(out, path, pathlen);
 		strbuf_add(out, mapped_oid.hash, to->rawsz);
@@ -130,7 +139,8 @@ static int convert_tag_object(struct repository *repo,
 			      struct strbuf *out,
 			      const struct git_hash_algo *from,
 			      const struct git_hash_algo *to,
-			      const char *buffer, size_t size)
+			      const char *buffer, size_t size,
+			      struct missing_object *missing)
 {
 	struct strbuf payload = STRBUF_INIT, oursig = STRBUF_INIT, othersig = STRBUF_INIT;
 	const int entry_len = from->hexsz + 7;
@@ -144,9 +154,16 @@ static int convert_tag_object(struct repository *repo,
 		return error("bogus tag object");
 	if (parse_oid_hex_algop(buffer + 7, &oid, &p, from) < 0)
 		return error("bad tag object ID");
-	if (repo_oid_to_algop(repo, &oid, to, &mapped_oid))
+	if (repo_oid_to_algop(repo, &oid, to, &mapped_oid)) {
+		if (missing) {
+			missing->mode = 0;
+			missing->type = OBJ_ANY;
+			oidcpy(&missing->oid, &oid);
+			return -2;
+		}
 		return error("unable to map tree %s in tag object",
 			     oid_to_hex(&oid));
+	}
 	size -= ((p + 1) - buffer);
 	buffer = p + 1;
 
@@ -182,7 +199,8 @@ static int convert_commit_object(struct repository *repo,
 				 struct strbuf *out,
 				 const struct git_hash_algo *from,
 				 const struct git_hash_algo *to,
-				 const char *buffer, size_t size)
+				 const char *buffer, size_t size,
+				 struct missing_object *missing)
 {
 	const char *tail = buffer;
 	const char *bufptr = buffer;
@@ -205,9 +223,16 @@ static int convert_commit_object(struct repository *repo,
 			    (p != eol))
 				return error(_("bad %s in commit"), "tree");
 
-			if (repo_oid_to_algop(repo, &oid, to, &mapped_oid))
+			if (repo_oid_to_algop(repo, &oid, to, &mapped_oid)) {
+				if (missing) {
+					missing->mode = S_IFDIR;
+					missing->type = OBJ_TREE;
+					oidcpy(&missing->oid, &oid);
+					return -2;
+				}
 				return error(_("unable to map %s %s in commit object"),
 					     "tree", oid_to_hex(&oid));
+			}
 			strbuf_addf(out, "tree %s\n", oid_to_hex(&mapped_oid));
 		}
 		else if (((bufptr + 7) < eol) && !memcmp(bufptr, "parent ", 7))
@@ -217,9 +242,16 @@ static int convert_commit_object(struct repository *repo,
 			    (p != eol))
 				return error(_("bad %s in commit"), "parent");
 
-			if (repo_oid_to_algop(repo, &oid, to, &mapped_oid))
+			if (repo_oid_to_algop(repo, &oid, to, &mapped_oid)) {
+				if (missing) {
+					missing->mode = 0;
+					missing->type = OBJ_COMMIT;
+					oidcpy(&missing->oid, &oid);
+					return -2;
+				}
 				return error(_("unable to map %s %s in commit object"),
 					     "parent", oid_to_hex(&oid));
+			}
 
 			strbuf_addf(out, "parent %s\n", oid_to_hex(&mapped_oid));
 		}
@@ -242,7 +274,7 @@ static int convert_commit_object(struct repository *repo,
 			}
 
 			/* Compute the new tag object */
-			if (convert_tag_object(repo, &new_tag, from, to, tag.buf, tag.len)) {
+			if (convert_tag_object(repo, &new_tag, from, to, tag.buf, tag.len, missing)) {
 				strbuf_release(&tag);
 				strbuf_release(&new_tag);
 				return -1;
@@ -287,6 +319,7 @@ int convert_object_file(struct repository *repo,
 			const struct git_hash_algo *to,
 			const void *buf, size_t len,
 			enum object_type type,
+			struct missing_object *missing,
 			int gentle)
 {
 	int ret;
@@ -297,13 +330,13 @@ int convert_object_file(struct repository *repo,
 
 	switch (type) {
 	case OBJ_COMMIT:
-		ret = convert_commit_object(repo, outbuf, from, to, buf, len);
+		ret = convert_commit_object(repo, outbuf, from, to, buf, len, missing);
 		break;
 	case OBJ_TREE:
-		ret = convert_tree_object(repo, outbuf, from, to, buf, len);
+		ret = convert_tree_object(repo, outbuf, from, to, buf, len, missing);
 		break;
 	case OBJ_TAG:
-		ret = convert_tag_object(repo, outbuf, from, to, buf, len);
+		ret = convert_tag_object(repo, outbuf, from, to, buf, len, missing);
 		break;
 	default:
 		/* Not implemented yet, so fail. */

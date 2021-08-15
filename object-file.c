@@ -1197,7 +1197,7 @@ int odb_source_loose_write_object(struct odb_source *source,
 		else {
 			struct strbuf converted = STRBUF_INIT;
 			convert_object_file(source->odb->repo, &converted, algo, compat,
-					    buf, len, type, 0);
+					    buf, len, type, NULL, 0);
 			hash_object_file(compat, converted.buf, converted.len,
 					 type, &compat_oid);
 			strbuf_release(&converted);

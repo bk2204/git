@@ -173,8 +173,8 @@ static int do_sign(struct strbuf *buffer, struct object_id **compat_oid,
 	if (compat) {
 		const struct git_hash_algo *algo = the_repository->hash_algo;
 
-		if (convert_object_file(the_repository ,&compat_buf, algo, compat,
-					buffer->buf, buffer->len, OBJ_TAG, 1))
+		if (convert_object_file(the_repository, &compat_buf, algo, compat,
+					buffer->buf, buffer->len, OBJ_TAG, NULL, 1))
 			goto out;
 		if (sign_buffer(&compat_buf, &compat_sig, keyid, 0))
 			goto out;

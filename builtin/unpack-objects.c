@@ -13,6 +13,7 @@
 #include "progress.h"
 #include "decorate.h"
 #include "fsck.h"
+#include "loose.h"
 
 static int dry_run, quiet, recover, has_errors, strict;
 static const char unpack_usage[] = "git unpack-objects [-n] [-q] [-r] [--strict]";
@@ -182,6 +183,64 @@ static void write_cached_object(struct object *obj, struct obj_buffer *obj_buf)
 	obj->flags |= FLAG_WRITTEN;
 }
 
+static int compare_obj_list(const void *a, const void *b)
+{
+	const struct obj_info *p = a, *q = b;
+	return oidcmp(&p->oid, &q->oid);
+}
+
+static void map_object(struct object *obj, struct obj_buffer *obj_buf)
+{
+
+	const void *outbuf;
+	size_t outlen;
+	struct object_id missing_oid, compat_oid, last_oid;
+	int ret;
+
+	memset(&last_oid, 0, sizeof(last_oid));
+
+	while (1) {
+		ret = convert_object_file(the_repository, &outbuf,
+					  &outlen, obj_buf->buffer,
+					  obj_buf->size, obj->type,
+					  &missing_oid);
+		if (ret == -2) {
+			struct obj_info *p, to_find;
+			struct obj_buffer *buf;
+
+			if (oideq(&last_oid, &missing_oid))
+				goto err;
+			oidcpy(&to_find.oid, &missing_oid);
+			p = bsearch(&to_find, obj_list, nr_objects,
+				    sizeof(*obj_list), compare_obj_list);
+
+			if (!p)
+				goto err;
+
+			buf = lookup_object_buffer(p->obj);
+			if (!buf)
+				die("Whoops! Cannot find object '%s'",
+				    oid_to_hex(&obj->oid));
+			map_object(p->obj, buf);
+			continue;
+		}
+		if (ret < 0)
+			goto err;
+		if (!strict) {
+			write_cached_object(obj, obj_buf);
+		} else {
+			hash_object_file(the_repository->compat_hash_algo,
+					 outbuf, outlen, type_name(obj->type),
+					 &compat_oid);
+			repo_add_loose_object_map(the_repository, &obj->oid,
+						  &compat_oid, 0);
+		}
+		return;
+	}
+err:
+	die("cannot map object %s while unpacking", oid_to_hex(&obj->oid));
+}
+
 /*
  * At the very end of the processing, write_rest() scans the objects
  * that have reachability requirements and calls this function.
@@ -213,18 +272,25 @@ static int check_object(struct object *obj, enum object_type type,
 	obj_buf = lookup_object_buffer(obj);
 	if (!obj_buf)
 		die("Whoops! Cannot find object '%s'", oid_to_hex(&obj->oid));
-	if (fsck_object(obj, obj_buf->buffer, obj_buf->size, &fsck_options))
-		die("fsck error in packed object");
-	fsck_options.walk = check_object;
-	if (fsck_walk(obj, NULL, &fsck_options))
-		die("Error on reachable objects of %s", oid_to_hex(&obj->oid));
-	write_cached_object(obj, obj_buf);
+	if (strict) {
+		if (fsck_object(obj, obj_buf->buffer, obj_buf->size, &fsck_options))
+			die("fsck error in packed object");
+		fsck_options.walk = check_object;
+		if (fsck_walk(obj, NULL, &fsck_options))
+			die("Error on reachable objects of %s", oid_to_hex(&obj->oid));
+	}
+	if (the_repository->compat_hash_algo)
+		map_object(obj, obj_buf);
+	if (strict)
+		write_cached_object(obj, obj_buf);
 	return 0;
 }
 
-static void write_rest(void)
+static void write_rest()
 {
 	unsigned i;
+	if (the_repository->compat_hash_algo)
+		QSORT(obj_list, nr_objects, compare_obj_list);
 	for (i = 0; i < nr_objects; i++) {
 		if (obj_list[i].obj)
 			check_object(obj_list[i].obj, OBJ_ANY, NULL, NULL);
@@ -242,7 +308,7 @@ static void added_object(unsigned nr, enum object_type type,
 static void write_object(unsigned nr, enum object_type type,
 			 void *buf, unsigned long size)
 {
-	if (!strict) {
+	if (!strict && !the_repository->compat_hash_algo) {
 		if (write_object_file(buf, size, type_name(type),
 				      &obj_list[nr].oid) < 0)
 			die("failed to write object");
@@ -578,9 +644,9 @@ int cmd_unpack_objects(int argc, const char **argv, const char *prefix)
 	unpack_all();
 	the_hash_algo->update_fn(&ctx, buffer, offset);
 	the_hash_algo->final_oid_fn(&oid, &ctx);
-	if (strict) {
+	if (strict || the_repository->compat_hash_algo) {
 		write_rest();
-		if (fsck_finish(&fsck_options))
+		if (strict && fsck_finish(&fsck_options))
 			die(_("fsck error in pack objects"));
 	}
 	if (!hasheq(fill(the_hash_algo->rawsz), oid.hash))

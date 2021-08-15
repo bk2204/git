@@ -7,6 +7,12 @@ struct git_hash_algo;
 struct strbuf;
 #include "object.h"
 
+struct missing_object {
+	struct object_id oid;
+	unsigned mode;
+	enum object_type type;
+};
+
 int repo_oid_to_algop(struct repository *repo, const struct object_id *src,
 		      const struct git_hash_algo *to, struct object_id *dest);
 
@@ -20,6 +26,7 @@ int convert_object_file(struct repository *repo,
 			const struct git_hash_algo *to,
 			const void *buf, size_t len,
 			enum object_type type,
+			struct missing_object *missing,
 			int gentle);
 
 #endif /* OBJECT_CONVERT_H */

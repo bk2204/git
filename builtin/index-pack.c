@@ -546,7 +546,7 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 			ret = convert_object_file(the_repository, &outbuf,
 						  the_repository->hash_algo,
 						  compat,
-						  buf, size, type, 0);
+						  buf, size, type, NULL, 0);
 			repo_unlock();
 			if (ret < 0)
 				bad_object(offset, _("could not convert object"));
@@ -1132,7 +1132,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 						  the_repository->hash_algo,
 						  the_repository->compat_hash_algo,
 						  result_data, result_size,
-						  delta_obj->real_type, 0);
+						  delta_obj->real_type, NULL, 0);
 			repo_unlock();
 			buf = outbuf.buf;
 			len = outbuf.len;

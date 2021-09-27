@@ -42,6 +42,11 @@ test_expect_success \
       git update-ref HEAD $(echo C | git commit-tree $(git write-tree) -p $B) &&
       rm .git/objects/info/alternates &&
 
+      if test_path_is_file ../.git/objects/loose-object-idx
+      then
+	sed -e 1d ../.git/objects/loose-object-idx >>.git/objects/loose-object-idx
+      fi &&
+
       git --git-dir=../.git cat-file commit $B |
       git hash-object -t commit -w --stdin &&
 

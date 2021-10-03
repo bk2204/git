@@ -106,6 +106,19 @@ struct ref_delta_entry {
 	int obj_no;
 };
 
+struct pack_ctx {
+	/* We always read in 4kB chunks. */
+	unsigned char input_buffer[4096];
+	unsigned int input_offset, input_len;
+	off_t consumed_bytes;
+	unsigned deepest_delta;
+	git_hash_ctx input_ctx;
+	uint32_t input_crc32;
+	int input_fd, output_fd;
+};
+static struct pack_ctx pack_ctx;
+static off_t max_input_size;
+
 static struct object_entry *objects;
 static struct object_stat *obj_stat;
 static struct ofs_delta_entry *ofs_deltas;
@@ -130,15 +143,6 @@ static int check_self_contained_and_connected;
 
 static struct progress *progress;
 
-/* We always read in 4kB chunks. */
-static unsigned char input_buffer[4096];
-static unsigned int input_offset, input_len;
-static off_t consumed_bytes;
-static off_t max_input_size;
-static unsigned deepest_delta;
-static git_hash_ctx input_ctx;
-static uint32_t input_crc32;
-static int input_fd, output_fd;
 static const char *curr_pack;
 
 static struct thread_local *thread_data;
@@ -280,12 +284,13 @@ static unsigned check_objects(void)
 /* Discard current buffer used content. */
 static void flush(void)
 {
-	if (input_offset) {
-		if (output_fd >= 0)
-			write_or_die(output_fd, input_buffer, input_offset);
-		the_hash_algo->update_fn(&input_ctx, input_buffer, input_offset);
-		memmove(input_buffer, input_buffer + input_offset, input_len);
-		input_offset = 0;
+	struct pack_ctx *c = &pack_ctx;
+	if (c->input_offset) {
+		if (c->output_fd >= 0)
+			write_or_die(c->output_fd, c->input_buffer, c->input_offset);
+		the_hash_algo->update_fn(&c->input_ctx, c->input_buffer, c->input_offset);
+		memmove(c->input_buffer, c->input_buffer + c->input_offset, c->input_len);
+		c->input_offset = 0;
 	}
 }
 
@@ -295,64 +300,67 @@ static void flush(void)
  */
 static void *fill(int min)
 {
-	if (min <= input_len)
-		return input_buffer + input_offset;
-	if (min > sizeof(input_buffer))
+	struct pack_ctx *c = &pack_ctx;
+	if (min <= c->input_len)
+		return c->input_buffer + c->input_offset;
+	if (min > sizeof(c->input_buffer))
 		die(Q_("cannot fill %d byte",
 		       "cannot fill %d bytes",
 		       min),
 		    min);
 	flush();
 	do {
-		ssize_t ret = xread(input_fd, input_buffer + input_len,
-				sizeof(input_buffer) - input_len);
+		ssize_t ret = xread(c->input_fd, c->input_buffer + c->input_len,
+				sizeof(c->input_buffer) - c->input_len);
 		if (ret <= 0) {
 			if (!ret)
 				die(_("early EOF"));
 			die_errno(_("read error on input"));
 		}
-		input_len += ret;
+		c->input_len += ret;
 		if (from_stdin)
-			display_throughput(progress, consumed_bytes + input_len);
-	} while (input_len < min);
-	return input_buffer;
+			display_throughput(progress, c->consumed_bytes + c->input_len);
+	} while (c->input_len < min);
+	return c->input_buffer;
 }
 
 static void use(int bytes)
 {
-	if (bytes > input_len)
+	struct pack_ctx *c = &pack_ctx;
+	if (bytes > c->input_len)
 		die(_("used more bytes than were available"));
-	input_crc32 = crc32(input_crc32, input_buffer + input_offset, bytes);
-	input_len -= bytes;
-	input_offset += bytes;
+	c->input_crc32 = crc32(c->input_crc32, c->input_buffer + c->input_offset, bytes);
+	c->input_len -= bytes;
+	c->input_offset += bytes;
 
 	/* make sure off_t is sufficiently large not to wrap */
-	if (signed_add_overflows(consumed_bytes, bytes))
+	if (signed_add_overflows(c->consumed_bytes, bytes))
 		die(_("pack too large for current definition of off_t"));
-	consumed_bytes += bytes;
-	if (max_input_size && consumed_bytes > max_input_size)
+	c->consumed_bytes += bytes;
+	if (max_input_size && c->consumed_bytes > max_input_size)
 		die(_("pack exceeds maximum allowed size"));
 }
 
 static const char *open_pack_file(const char *pack_name)
 {
+	struct pack_ctx *c = &pack_ctx;
 	if (from_stdin) {
-		input_fd = 0;
+		c->input_fd = 0;
 		if (!pack_name) {
 			struct strbuf tmp_file = STRBUF_INIT;
-			output_fd = odb_mkstemp(&tmp_file,
+			c->output_fd = odb_mkstemp(&tmp_file,
 						"pack/tmp_pack_XXXXXX");
 			pack_name = strbuf_detach(&tmp_file, NULL);
 		} else {
-			output_fd = xopen(pack_name, O_CREAT|O_EXCL|O_RDWR, 0600);
+			c->output_fd = xopen(pack_name, O_CREAT|O_EXCL|O_RDWR, 0600);
 		}
-		nothread_data.pack_fd = output_fd;
+		nothread_data.pack_fd = c->output_fd;
 	} else {
-		input_fd = xopen(pack_name, O_RDONLY);
-		output_fd = -1;
-		nothread_data.pack_fd = input_fd;
+		c->input_fd = xopen(pack_name, O_RDONLY);
+		c->output_fd = -1;
+		nothread_data.pack_fd = c->input_fd;
 	}
-	the_hash_algo->init_fn(&input_ctx);
+	the_hash_algo->init_fn(&c->input_ctx);
 	return pack_name;
 }
 
@@ -450,6 +458,7 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 {
 	static char fixed_buf[8192];
 	int status;
+	struct pack_ctx *ctx = &pack_ctx;
 	git_zstream stream;
 	void *buf;
 	git_hash_ctx c, c_compat;
@@ -484,9 +493,9 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 	do {
 		unsigned char *last_out = stream.next_out;
 		stream.next_in = fill(1);
-		stream.avail_in = input_len;
+		stream.avail_in = ctx->input_len;
 		status = git_inflate(&stream, 0);
-		use(input_len - stream.avail_in);
+		use(ctx->input_len - stream.avail_in);
 		if (oid)
 			the_hash_algo->update_fn(&c, last_out, stream.next_out - last_out);
 		if (compat && compat_oid && type == OBJ_BLOB)
@@ -544,9 +553,10 @@ static void *unpack_raw_entry(struct object_entry *obj,
 	off_t base_offset;
 	unsigned shift;
 	void *data;
+	struct pack_ctx *ctx = &pack_ctx;
 
-	obj->idx.offset = consumed_bytes;
-	input_crc32 = crc32(0, NULL, 0);
+	obj->idx.offset = ctx->consumed_bytes;
+	ctx->input_crc32 = crc32(0, NULL, 0);
 
 	p = fill(1);
 	c = *p;
@@ -594,10 +604,10 @@ static void *unpack_raw_entry(struct object_entry *obj,
 	default:
 		bad_object(obj->idx.offset, _("unknown object type %d"), obj->type);
 	}
-	obj->hdr_size = consumed_bytes - obj->idx.offset;
+	obj->hdr_size = ctx->consumed_bytes - obj->idx.offset;
 
 	data = unpack_entry_data(obj->idx.offset, obj->size, obj->type, oid, compat_oid);
-	obj->idx.crc32 = input_crc32;
+	obj->idx.crc32 = ctx->input_crc32;
 	return data;
 }
 
@@ -1000,14 +1010,15 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 	void *delta_data, *result_data;
 	struct base_data *result;
 	unsigned long result_size;
+	struct pack_ctx *c = &pack_ctx;
 
 	if (show_stat) {
 		int i = delta_obj - objects;
 		int j = base->obj - objects;
 		obj_stat[i].delta_depth = obj_stat[j].delta_depth + 1;
 		deepest_delta_lock();
-		if (deepest_delta < obj_stat[i].delta_depth)
-			deepest_delta = obj_stat[i].delta_depth;
+		if (c->deepest_delta < obj_stat[i].delta_depth)
+			c->deepest_delta = obj_stat[i].delta_depth;
 		deepest_delta_unlock();
 		obj_stat[i].base_object_no = j;
 	}
@@ -1220,6 +1231,7 @@ static void parse_pack_objects(unsigned char *hash)
 	struct ofs_delta_entry *ofs_delta = ofs_deltas;
 	struct object_id ref_delta_oid;
 	struct stat st;
+	struct pack_ctx *c = &pack_ctx;
 
 	if (verbose)
 		progress = start_progress(
@@ -1252,21 +1264,21 @@ static void parse_pack_objects(unsigned char *hash)
 		free(data);
 		display_progress(progress, i+1);
 	}
-	objects[i].idx.offset = consumed_bytes;
+	objects[i].idx.offset = c->consumed_bytes;
 	stop_progress(&progress);
 
 	/* Check pack integrity */
 	flush();
-	the_hash_algo->final_fn(hash, &input_ctx);
+	the_hash_algo->final_fn(hash, &c->input_ctx);
 	if (!hasheq(fill(the_hash_algo->rawsz), hash))
 		die(_("pack is corrupted (SHA1 mismatch)"));
 	use(the_hash_algo->rawsz);
 
 	/* If input_fd is a file, we should have reached its end now. */
-	if (fstat(input_fd, &st))
+	if (fstat(c->input_fd, &st))
 		die_errno(_("cannot fstat packfile"));
 	if (S_ISREG(st.st_mode) &&
-			lseek(input_fd, 0, SEEK_CUR) - input_len != st.st_size)
+			lseek(c->input_fd, 0, SEEK_CUR) - c->input_len != st.st_size)
 		die(_("pack has junk at the end"));
 
 	for (i = 0; i < nr_objects; i++) {
@@ -1332,6 +1344,7 @@ static void resolve_deltas(void)
 static void fix_unresolved_deltas(struct hashfile *f);
 static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned char *pack_hash)
 {
+	struct pack_ctx *c = &pack_ctx;
 	if (nr_ref_deltas + nr_ofs_deltas == nr_resolved_deltas) {
 		stop_progress(&progress);
 		/* Flush remaining pack final hash. */
@@ -1350,7 +1363,7 @@ static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned cha
 		REALLOC_ARRAY(objects, nr_objects + nr_unresolved + 1);
 		memset(objects + nr_objects + 1, 0,
 		       nr_unresolved * sizeof(*objects));
-		f = hashfd(output_fd, curr_pack);
+		f = hashfd(c->output_fd, curr_pack);
 		fix_unresolved_deltas(f);
 		strbuf_addf(&msg, Q_("completed with %d local object",
 				     "completed with %d local objects",
@@ -1360,9 +1373,9 @@ static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned cha
 		strbuf_release(&msg);
 		finalize_hashfile(f, tail_hash, 0);
 		hashcpy(read_hash, pack_hash);
-		fixup_pack_header_footer(output_fd, pack_hash,
+		fixup_pack_header_footer(c->output_fd, pack_hash,
 					 curr_pack, nr_objects,
-					 read_hash, consumed_bytes-the_hash_algo->rawsz);
+					 read_hash, c->consumed_bytes-the_hash_algo->rawsz);
 		if (!hasheq(read_hash, tail_hash))
 			die(_("Unexpected tail checksum for %s "
 			      "(disk corruption?)"), curr_pack);
@@ -1576,12 +1589,13 @@ static void final(const char *final_pack_name, const char *curr_pack_name,
 	struct strbuf index_name = STRBUF_INIT;
 	struct strbuf rev_index_name = STRBUF_INIT;
 	int err;
+	struct pack_ctx *c = &pack_ctx;
 
 	if (!from_stdin) {
-		close(input_fd);
+		close(c->input_fd);
 	} else {
-		fsync_or_die(output_fd, curr_pack_name);
-		err = close(output_fd);
+		fsync_or_die(c->output_fd, curr_pack_name);
+		err = close(c->output_fd);
 		if (err)
 			die_errno(_("error while closing pack file"));
 	}
@@ -1621,12 +1635,12 @@ static void final(const char *final_pack_name, const char *curr_pack_name,
 		 * Let's just mimic git-unpack-objects here and write
 		 * the last part of the input buffer to stdout.
 		 */
-		while (input_len) {
-			err = xwrite(1, input_buffer + input_offset, input_len);
+		while (c->input_len) {
+			err = xwrite(1, c->input_buffer + c->input_offset, c->input_len);
 			if (err <= 0)
 				break;
-			input_len -= err;
-			input_offset += err;
+			c->input_len -= err;
+			c->input_offset += err;
 		}
 	}
 
@@ -1737,9 +1751,10 @@ static void show_pack_info(int stat_only)
 {
 	int i, baseobjects = nr_objects - nr_ref_deltas - nr_ofs_deltas;
 	unsigned long *chain_histogram = NULL;
+	struct pack_ctx *c = &pack_ctx;
 
-	if (deepest_delta)
-		CALLOC_ARRAY(chain_histogram, deepest_delta);
+	if (c->deepest_delta)
+		CALLOC_ARRAY(chain_histogram, c->deepest_delta);
 
 	for (i = 0; i < nr_objects; i++) {
 		struct object_entry *obj = &objects[i];
@@ -1766,7 +1781,7 @@ static void show_pack_info(int stat_only)
 			     "non delta: %d objects",
 			     baseobjects),
 			  baseobjects);
-	for (i = 0; i < deepest_delta; i++) {
+	for (i = 0; i < c->deepest_delta; i++) {
 		if (!chain_histogram[i])
 			continue;
 		printf_ln(Q_("chain length = %d: %lu object",
@@ -1861,7 +1876,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 				struct pack_header *hdr;
 				char *c;
 
-				hdr = (struct pack_header *)input_buffer;
+				hdr = (struct pack_header *)pack_ctx.input_buffer;
 				hdr->hdr_signature = htonl(PACK_SIGNATURE);
 				hdr->hdr_version = htonl(strtoul(arg + 14, &c, 10));
 				if (*c != ',')
@@ -1869,7 +1884,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 				hdr->hdr_entries = htonl(strtoul(c + 1, &c, 10));
 				if (*c)
 					die(_("bad %s"), arg);
-				input_len = sizeof(*hdr);
+				pack_ctx.input_len = sizeof(*hdr);
 			} else if (!strcmp(arg, "-v")) {
 				verbose = 1;
 			} else if (!strcmp(arg, "--progress-title")) {
@@ -1999,7 +2014,7 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 		      keep_msg, promisor_msg,
 		      pack_hash);
 	else
-		close(input_fd);
+		close(pack_ctx.input_fd);
 
 	if (do_fsck_object && fsck_finish(&fsck_options))
 		die(_("fsck error in pack objects"));

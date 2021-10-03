@@ -309,9 +309,8 @@ static unsigned check_objects(void)
 
 
 /* Discard current buffer used content. */
-static void flush(void)
+static void flush(struct pack_ctx *c)
 {
-	struct pack_ctx *c = &pack_ctx;
 	if (c->input_offset) {
 		if (c->output_fd >= 0)
 			write_or_die(c->output_fd, c->input_buffer, c->input_offset);
@@ -325,9 +324,8 @@ static void flush(void)
  * Make sure at least "min" bytes are available in the buffer, and
  * return the pointer to the buffer.
  */
-static void *fill(int min)
+static void *fill(struct pack_ctx *c, int min)
 {
-	struct pack_ctx *c = &pack_ctx;
 	if (min <= c->input_len)
 		return c->input_buffer + c->input_offset;
 	if (min > sizeof(c->input_buffer))
@@ -335,7 +333,7 @@ static void *fill(int min)
 		       "cannot fill %d bytes",
 		       min),
 		    min);
-	flush();
+	flush(c);
 	do {
 		ssize_t ret = xread(c->input_fd, c->input_buffer + c->input_len,
 				sizeof(c->input_buffer) - c->input_len);
@@ -351,9 +349,8 @@ static void *fill(int min)
 	return c->input_buffer;
 }
 
-static void use(int bytes)
+static void use(struct pack_ctx *c, int bytes)
 {
-	struct pack_ctx *c = &pack_ctx;
 	if (bytes > c->input_len)
 		die(_("used more bytes than were available"));
 	c->input_crc32 = crc32(c->input_crc32, c->input_buffer + c->input_offset, bytes);
@@ -372,9 +369,8 @@ static void use(int bytes)
 	}
 }
 
-static const char *open_pack_file(const char *pack_name)
+static const char *open_pack_file(struct pack_ctx *c, const char *pack_name)
 {
-	struct pack_ctx *c = &pack_ctx;
 	if (from_stdin) {
 		c->input_fd = 0;
 		if (!pack_name) {
@@ -395,9 +391,9 @@ static const char *open_pack_file(const char *pack_name)
 	return pack_name;
 }
 
-static void parse_pack_header(void)
+static void parse_pack_header(struct pack_ctx *c)
 {
-	unsigned char *hdr = fill(sizeof(struct pack_header));
+	unsigned char *hdr = fill(c, sizeof(struct pack_header));
 
 	/* Header consistency check */
 	if (get_be32(hdr) != PACK_SIGNATURE)
@@ -409,7 +405,7 @@ static void parse_pack_header(void)
 	hdr += 4;
 
 	nr_objects = get_be32(hdr);
-	use(sizeof(struct pack_header));
+	use(c, sizeof(struct pack_header));
 }
 
 __attribute__((format (printf, 2, 3)))
@@ -487,11 +483,11 @@ static int is_delta_type(enum object_type type)
 
 static void *unpack_entry_data(off_t offset, size_t size,
 			       enum object_type type, struct object_id *oid,
-			       struct object_id *compat_oid)
+			       struct object_id *compat_oid,
+			       struct pack_ctx *ctx)
 {
 	static char fixed_buf[8192];
 	int status;
-	struct pack_ctx *ctx = &pack_ctx;
 	git_zstream stream;
 	void *buf;
 	struct git_hash_ctx c, c_compat;
@@ -525,10 +521,10 @@ static void *unpack_entry_data(off_t offset, size_t size,
 
 	do {
 		unsigned char *last_out = stream.next_out;
-		stream.next_in = fill(1);
+		stream.next_in = fill(ctx, 1);
 		stream.avail_in = ctx->input_len;
 		status = git_inflate(&stream, 0);
-		use(ctx->input_len - stream.avail_in);
+		use(ctx, ctx->input_len - stream.avail_in);
 		if (oid)
 			git_hash_update(&c, last_out, stream.next_out - last_out);
 		if (compat && compat_oid && type == OBJ_BLOB)
@@ -579,30 +575,30 @@ static void *unpack_raw_entry(struct object_entry *obj,
 			      off_t *ofs_offset,
 			      struct object_id *ref_oid,
 			      struct object_id *oid,
-			      struct object_id *compat_oid)
+			      struct object_id *compat_oid,
+			      struct pack_ctx *ctx)
 {
 	unsigned char *p;
 	size_t size, c;
 	off_t base_offset;
 	unsigned shift;
 	void *data;
-	struct pack_ctx *ctx = &pack_ctx;
 
 	obj->idx.offset = ctx->consumed_bytes;
 	ctx->input_crc32 = crc32(0, NULL, 0);
 
-	p = fill(1);
+	p = fill(ctx, 1);
 	c = *p;
-	use(1);
+	use(ctx, 1);
 	obj->type = (c >> 4) & 7;
 	size = (c & 15);
 	shift = 4;
 	while (c & 0x80) {
 		if ((bitsizeof(size_t) - 7) < shift)
 			die(_("object size too large for this platform"));
-		p = fill(1);
+		p = fill(ctx, 1);
 		c = *p;
-		use(1);
+		use(ctx, 1);
 		size += (c & 0x7f) << shift;
 		shift += 7;
 	}
@@ -610,22 +606,22 @@ static void *unpack_raw_entry(struct object_entry *obj,
 
 	switch (obj->type) {
 	case OBJ_REF_DELTA:
-		oidread(ref_oid, fill(the_hash_algo->rawsz),
+		oidread(ref_oid, fill(ctx, the_hash_algo->rawsz),
 			the_repository->hash_algo);
-		use(the_hash_algo->rawsz);
+		use(ctx, the_hash_algo->rawsz);
 		break;
 	case OBJ_OFS_DELTA:
-		p = fill(1);
+		p = fill(ctx, 1);
 		c = *p;
-		use(1);
+		use(ctx, 1);
 		base_offset = c & 127;
 		while (c & 128) {
 			base_offset += 1;
 			if (!base_offset || MSB(base_offset, 7))
 				bad_object(obj->idx.offset, _("offset value overflow for delta base object"));
-			p = fill(1);
+			p = fill(ctx, 1);
 			c = *p;
-			use(1);
+			use(ctx, 1);
 			base_offset = (base_offset << 7) + (c & 127);
 		}
 		*ofs_offset = obj->idx.offset - base_offset;
@@ -642,7 +638,7 @@ static void *unpack_raw_entry(struct object_entry *obj,
 	}
 	obj->hdr_size = ctx->consumed_bytes - obj->idx.offset;
 
-	data = unpack_entry_data(obj->idx.offset, obj->size, obj->type, oid, compat_oid);
+	data = unpack_entry_data(obj->idx.offset, obj->size, obj->type, oid, compat_oid, ctx);
 	obj->idx.crc32 = ctx->input_crc32;
 	return data;
 }
@@ -1104,12 +1100,12 @@ static struct base_data *make_base(struct object_entry *obj,
 }
 
 static struct base_data *resolve_delta(struct object_entry *delta_obj,
-				       struct base_data *base)
+				       struct base_data *base,
+				       struct pack_ctx *c)
 {
 	void *delta_data, *result_data;
 	struct base_data *result;
 	unsigned long result_size;
-	struct pack_ctx *c = &pack_ctx;
 
 	if (show_stat) {
 		int i = delta_obj - objects;
@@ -1281,7 +1277,7 @@ static void *threaded_second_pass(void *data)
 
 		if (child_obj) {
 			if (parent) {
-				child = resolve_delta(child_obj, parent);
+				child = resolve_delta(child_obj, parent, &pack_ctx);
 				if (!child->children_remaining)
 					FREE_AND_NULL(child->data);
 			} else{
@@ -1348,14 +1344,13 @@ static void *threaded_second_pass(void *data)
  * - calculate SHA1 of all non-delta objects;
  * - remember base (SHA1 or offset) for all deltas.
  */
-static void parse_pack_objects(unsigned char *hash)
+static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 {
 	int i, nr_delays = 0;
 	struct ofs_delta_entry *ofs_delta = ofs_deltas;
 	struct object_id ref_delta_oid;
 	struct stat st;
 	struct git_hash_ctx tmp_ctx;
-	struct pack_ctx *c = &pack_ctx;
 
 	if (verbose)
 		progress = start_progress(
@@ -1368,7 +1363,7 @@ static void parse_pack_objects(unsigned char *hash)
 		void *data = unpack_raw_entry(obj, &ofs_delta->offset,
 					      &ref_delta_oid,
 					      &obj->idx.oid,
-					      &obj->idx.compat_oid);
+					      &obj->idx.compat_oid, c);
 		obj->real_type = obj->type;
 		if (obj->type == OBJ_OFS_DELTA) {
 			nr_ofs_deltas++;
@@ -1393,13 +1388,13 @@ static void parse_pack_objects(unsigned char *hash)
 	stop_progress(&progress);
 
 	/* Check pack integrity */
-	flush();
+	flush(c);
 	the_hash_algo->init_fn(&tmp_ctx);
 	git_hash_clone(&tmp_ctx, &c->input_ctx);
 	git_hash_final(hash, &tmp_ctx);
-	if (!hasheq(fill(the_hash_algo->rawsz), hash, the_repository->hash_algo))
+	if (!hasheq(fill(c, the_hash_algo->rawsz), hash, the_repository->hash_algo))
 		die(_("pack is corrupted (SHA1 mismatch)"));
-	use(the_hash_algo->rawsz);
+	use(c, the_hash_algo->rawsz);
 
 	/* If input_fd is a file, we should have reached its end now. */
 	if (fstat(c->input_fd, &st))
@@ -1470,13 +1465,13 @@ static void resolve_deltas(struct pack_idx_option *opts)
  * - write the final pack hash
  */
 static void fix_unresolved_deltas(struct hashfile *f);
-static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned char *pack_hash)
+static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned char *pack_hash,
+			  struct pack_ctx *c)
 {
-	struct pack_ctx *c = &pack_ctx;
 	if (nr_ref_deltas + nr_ofs_deltas == nr_resolved_deltas) {
 		stop_progress(&progress);
 		/* Flush remaining pack final hash. */
-		flush();
+		flush(c);
 		return;
 	}
 
@@ -1870,11 +1865,10 @@ static void read_idx_option(struct pack_idx_option *opts, const char *pack_name)
 	free(p);
 }
 
-static void show_pack_info(int stat_only)
+static void show_pack_info(struct pack_ctx *c, int stat_only)
 {
 	int i, baseobjects = nr_objects - nr_ref_deltas - nr_ofs_deltas;
 	unsigned long *chain_histogram = NULL;
-	struct pack_ctx *c = &pack_ctx;
 
 	if (c->deepest_delta)
 		CALLOC_ARRAY(chain_histogram, c->deepest_delta);
@@ -2178,24 +2172,24 @@ int cmd_index_pack(int argc,
 			nr_threads = 20; /* hard cap */
 	}
 
-	curr_pack = open_pack_file(pack_name);
-	parse_pack_header();
+	curr_pack = open_pack_file(&pack_ctx, pack_name);
+	parse_pack_header(&pack_ctx);
 	CALLOC_ARRAY(objects, st_add(nr_objects, 1));
 	if (show_stat)
 		CALLOC_ARRAY(obj_stat, st_add(nr_objects, 1));
 	CALLOC_ARRAY(ofs_deltas, nr_objects);
-	parse_pack_objects(pack_hash);
+	parse_pack_objects(&pack_ctx, pack_hash);
 	if (report_end_of_input)
 		write_in_full(2, "\0", 1);
 	resolve_deltas(&opts);
-	conclude_pack(fix_thin_pack, curr_pack, pack_hash);
+	conclude_pack(fix_thin_pack, curr_pack, pack_hash, &pack_ctx);
 	free(ofs_deltas);
 	free(ref_deltas);
 	if (strict)
 		foreign_nr = check_objects();
 
 	if (show_stat)
-		show_pack_info(stat_only);
+		show_pack_info(&pack_ctx, stat_only);
 
 	ALLOC_ARRAY(idx_objects, nr_objects);
 	for (i = 0; i < nr_objects; i++)

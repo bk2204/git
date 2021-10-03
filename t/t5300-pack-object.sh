@@ -166,6 +166,7 @@ check_unpack () {
 	git -C git2 unpack-objects -n <"$1".pack &&
 	git -C git2 unpack-objects <"$1".pack &&
 	(cd .git && find objects -type f -print) |
+	grep -v loose-object-idx |
 	while read path
 	do
 		cmp git2/$path .git/$path || {

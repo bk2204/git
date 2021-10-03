@@ -550,15 +550,21 @@ static void *unpack_entry_data(off_t offset, size_t size,
 			 * algorithm.
 			 */
 			struct strbuf outbuf = STRBUF_INIT;
+			struct missing_object missing;
 			int ret;
 			repo_lock();
 			ret = convert_object_file(the_repository, &outbuf,
 						  the_repository->hash_algo,
 						  compat,
-						  buf, size, type, NULL, 0);
+						  buf, size, type, &missing, 1);
 			repo_unlock();
-			if (ret < 0)
+			/* If we have a missing object, we'll get to it later. */
+			if (ret == -2) {
+				oidclr(compat_oid, compat);
+				return buf == fixed_buf ? NULL : buf;
+			} else if (ret < 0) {
 				bad_object(offset, _("could not convert object"));
+			}
 
 			hdrlen = xsnprintf(hdr, sizeof(hdr), "%s %"PRIuMAX,
 					   type_name(type),(uintmax_t)outbuf.len) + 1;
@@ -1135,6 +1141,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 		int ret = 0;
 		char *buf;
 		size_t len;
+		struct missing_object missing;
 
 		if (delta_obj->real_type != OBJ_BLOB) {
 			repo_lock();
@@ -1142,13 +1149,17 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 						  the_repository->hash_algo,
 						  the_repository->compat_hash_algo,
 						  result_data, result_size,
-						  delta_obj->real_type, NULL, 0);
+						  delta_obj->real_type, &missing, 1);
 			repo_unlock();
 			buf = outbuf.buf;
 			len = outbuf.len;
 		} else {
 			buf = result_data;
 			len = result_size;
+		}
+		if (ret == -2) {
+			oidclr(&delta_obj->idx.compat_oid, the_repository->compat_hash_algo);
+			goto finish;
 		}
 		if (ret < 0)
 			bad_object(delta_obj->idx.offset,
@@ -1169,6 +1180,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 		repo_unlock();
 		strbuf_release(&outbuf);
 	}
+finish:
 	sha1_object(result_data, NULL, result_size, delta_obj->real_type,
 		    &delta_obj->idx.oid);
 
@@ -1420,7 +1432,6 @@ static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 		die(_("confusion beyond insanity in parse_pack_objects()"));
 }
 
-UNUSED
 static void init_reader_at_offset(struct pack_ctx_reader *rdr,
 				  const struct git_hash_algo *algo,
 				  int input_fd, int output_fd, off_t offset)
@@ -1484,6 +1495,115 @@ static void resolve_deltas(struct pack_idx_option *opts)
 		return;
 	}
 	threaded_second_pass(&nothread_data);
+}
+
+static int compare_array_objects_by_oid(const void *a, const void *b) {
+	const struct object_entry *const *x = a, *const *y = b;
+	return oidcmp(&(*x)->idx.oid, &(*y)->idx.oid);
+}
+
+static int compare_array_objects_by_compat_oid(const void *a, const void *b) {
+	const struct object_entry *const *x = a, *const *y = b;
+	return oidcmp(&(*x)->idx.compat_oid, &(*y)->idx.compat_oid);
+}
+
+static int compare_objects_by_offset(const void *a, const void *b)
+{
+	const struct object_entry *x = a, *y = b;
+	return x->idx.offset < y->idx.offset ? -1 : (x->idx.offset > y->idx.offset ? 1 : 0);
+}
+
+static void *resolve_delta_recursively(struct pack_ctx *c,
+				       struct object_entry *obj,
+				       struct object_entry **sorted_objects,
+				       struct object_entry *objects,
+				       size_t *sizep,
+				       struct object_id *baseoid,
+				       size_t *baseoffset,
+				       void **base_data,
+				       size_t *basesizep)
+{
+	void *data, *base = NULL, *delta = NULL;
+	struct pack_ctx_reader rdr;
+	off_t ofs_offset, boffset;
+	struct object_id ref_oid;
+	struct object_entry *p, **q, to_find, *to_findp = &to_find;
+	size_t basesz;
+	unsigned long deltasz;
+
+	init_reader_at_offset(&rdr, the_repository->hash_algo, c->rdr.input_fd,
+			      -1, obj->idx.offset);
+	data = unpack_raw_entry(obj, &ofs_offset, &ref_oid, NULL, NULL, &rdr);
+
+	if (obj->type == obj->real_type) {
+		*sizep = obj->size;
+		return data;
+	}
+
+	if (obj->type == OBJ_OFS_DELTA) {
+		to_find.idx.offset = ofs_offset;
+		p = bsearch(&to_find, objects, nr_objects,
+			    sizeof(*objects),
+			    compare_objects_by_offset);
+		if (!p)
+			goto out;
+	} else {
+		oidcpy(&to_find.idx.compat_oid, &ref_oid);
+		q = bsearch(&to_findp, sorted_objects, nr_objects,
+			    sizeof(*sorted_objects),
+			    compare_array_objects_by_compat_oid);
+		p = q ? *q : NULL;
+		if (!p) {
+			enum object_type type;
+			unsigned long size;
+			/*
+			 * This item is not in the pack and exists in the
+			 * repository.  Let's look up the object ID and then
+			 * unpack the object.
+			 */
+			if (repo_oid_to_algop(the_repository, &ref_oid,
+					      the_repository->hash_algo, &ref_oid))
+				goto out;
+			base = odb_read_object(the_repository->objects,
+					       &ref_oid, &type, &size);
+			basesz = size;
+			oidcpy(baseoid, &ref_oid);
+			*baseoffset = 0;
+		}
+	}
+	if (p) {
+		oidcpy(baseoid, &p->idx.compat_oid);
+		boffset = p->idx.offset;
+	} else {
+		boffset = 0;
+	}
+	if (*base_data) {
+		FREE_AND_NULL(*base_data);
+		*basesizep = 0;
+		*baseoffset = 0;
+	}
+	if (!base) {
+		if (!p)
+			goto out;
+		base = resolve_delta_recursively(c, p, sorted_objects, objects,
+						 &basesz, baseoid, baseoffset,
+						 base_data, basesizep);
+		if (*base_data) {
+			FREE_AND_NULL(*base_data);
+			*basesizep = 0;
+			*baseoffset = 0;
+		}
+	}
+	if (!base)
+		goto out;
+	*base_data = base;
+	*basesizep = basesz;
+	*baseoffset = boffset;
+	delta = patch_delta(base, basesz, data, obj->size, &deltasz);
+	*sizep = deltasz;
+out:
+	free(data);
+	return delta;
 }
 
 /*
@@ -2004,6 +2124,138 @@ static void repack_local_links(void)
 	free(base_name);
 }
 
+static void map_one_object(struct pack_ctx *c,
+			   struct object_entry **sorted_objects,
+			   struct object_entry *obj)
+{
+	struct strbuf outbuf = STRBUF_INIT;
+	void *buf = NULL, *base = NULL;
+	size_t hdrlen, base_unused;
+	size_t size, basesize;
+	struct object_id last_oid, base_oid;
+	struct missing_object missing;
+	struct git_hash_ctx ctx;
+	char hdr[32];
+	int ret;
+	const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+
+	/* Already done. */
+	if (!is_null_oid(&obj->idx.compat_oid)) {
+		repo_add_loose_object_map(the_repository->objects->sources,
+					  &obj->idx.oid, &obj->idx.compat_oid,
+					  LOOSE_TYPE_LOOSE);
+		return;
+	}
+
+	oidclr(&last_oid, compat);
+
+	if (obj->type != obj->real_type) {
+		buf = resolve_delta_recursively(c, obj, sorted_objects, objects,
+						&size, &base_oid, &base_unused,
+						&base, &basesize);
+		free(base);
+	} else {
+		buf = get_data_from_pack(obj);
+		size = obj->size;
+	}
+	if (!buf)
+		goto err;
+
+	while (1) {
+		void *cvtbuf;
+		size_t cvtsz;
+
+		if (obj->real_type == OBJ_BLOB) {
+			cvtbuf = buf;
+			cvtsz = size;
+			ret = 0;
+		} else {
+			ret = convert_object_file(the_repository, &outbuf,
+						  the_repository->hash_algo, compat,
+						  buf, size, obj->real_type,
+						  &missing, 1);
+			cvtbuf = outbuf.buf;
+			cvtsz = outbuf.len;
+		}
+		if (ret == -2) {
+			struct object_entry **p, to_find, *to_find_p = &to_find;
+
+			if (oideq(&last_oid, &missing.oid))
+				goto err;
+			oidcpy(&to_find.idx.oid, &missing.oid);
+			p = bsearch(&to_find_p, sorted_objects, nr_objects,
+				    sizeof(*sorted_objects),
+				    compare_array_objects_by_oid);
+
+			if (!p)
+				goto err;
+
+			map_one_object(c, sorted_objects, *p);
+			continue;
+		}
+		if (ret < 0)
+			goto err;
+		compat->init_fn(&ctx);
+
+		hdrlen = xsnprintf(hdr, sizeof(hdr), "%s %"PRIuMAX,
+				   type_name(obj->real_type),(uintmax_t)outbuf.len) + 1;
+
+		compat->update_fn(&ctx, hdr, hdrlen);
+		compat->update_fn(&ctx, cvtbuf, cvtsz);
+		compat->final_oid_fn(&obj->idx.compat_oid, &ctx);
+		repo_add_loose_object_map(the_repository->objects->sources,
+					  &obj->idx.oid, &obj->idx.compat_oid,
+					  LOOSE_TYPE_LOOSE);
+		strbuf_reset(&outbuf);
+		break;
+	}
+	strbuf_release(&outbuf);
+	free(buf);
+	return;
+err:
+	die(_("could not map object %s"), oid_to_hex(&obj->idx.oid));
+}
+
+static void compute_compat_hashes(struct pack_ctx *orig)
+{
+	unsigned long i;
+	struct object_entry **sorted_objects;
+	struct pack_ctx c;
+	unsigned char unused[GIT_MAX_RAWSZ];
+
+	memset(&c, 0, sizeof(c));
+
+	if (from_stdin)
+		c.rdr.input_fd = orig->rdr.output_fd;
+	else
+		c.rdr.input_fd = orig->rdr.input_fd;
+	c.rdr.output_fd = -1;
+
+	/*
+	 * This is not actually used, but it is called from some of the delta
+	 * unpacking functions, so it must be initialized.
+	 */
+	the_hash_algo->init_fn(&c.rdr.input_ctx);
+
+	if (verbose)
+		progress = start_progress(the_repository, _("Mapping objects"), nr_objects);
+
+	ALLOC_ARRAY(sorted_objects, nr_objects);
+	for (i = 0; i < nr_objects; i++)
+		sorted_objects[i] = objects + i;
+	QSORT(sorted_objects, nr_objects, compare_array_objects_by_oid);
+
+	for (i = 0; i < nr_objects; i++) {
+		map_one_object(&c, sorted_objects, &objects[i]);
+		display_progress(progress, i + 1);
+	}
+
+	the_hash_algo->final_fn(unused, &c.rdr.input_ctx);
+	free(sorted_objects);
+
+	stop_progress(&progress);
+}
+
 int cmd_index_pack(int argc,
 		   const char **argv,
 		   const char *prefix,
@@ -2210,6 +2462,8 @@ int cmd_index_pack(int argc,
 		write_in_full(2, "\0", 1);
 	resolve_deltas(&opts);
 	conclude_pack(fix_thin_pack, curr_pack, pack_hash, &pack_ctx.rdr);
+	if (the_repository->compat_hash_algo)
+		compute_compat_hashes(&pack_ctx);
 	free(ofs_deltas);
 	free(ref_deltas);
 	if (strict)

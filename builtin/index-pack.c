@@ -514,13 +514,20 @@ static void *unpack_entry_data(off_t offset, unsigned long size,
 			 */
 			const void *outbuf;
 			size_t outlen;
+			struct object_id missing_oid;
 			int ret;
 			repo_lock();
 			ret = convert_object_file(the_repository, &outbuf,
-						  &outlen, buf, size, type, NULL);
+						  &outlen, buf, size, type,
+						  &missing_oid);
 			repo_unlock();
-			if (ret < 0)
+			/* If we have a missing object, we'll get to it later. */
+			if (ret == -2) {
+				oidclr(compat_oid);
+				return buf == fixed_buf ? NULL : buf;
+			} else if (ret < 0) {
 				bad_object(offset, _("could not convert object"));
+			}
 
 			hdrlen = xsnprintf(hdr, sizeof(hdr), "%s %"PRIuMAX,
 					   type_name(type),(uintmax_t)outlen) + 1;
@@ -1030,12 +1037,17 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 	if (the_repository->compat_hash_algo) {
 		const void *outbuf;
 		size_t outlen;
+		struct object_id missing_oid;
 		int ret;
 		repo_lock();
 		ret = convert_object_file(the_repository, &outbuf,
 					  &outlen, result_data, result_size,
-					  delta_obj->real_type, NULL);
+					  delta_obj->real_type, &missing_oid);
 		repo_unlock();
+		if (ret == -2) {
+			oidclr(&delta_obj->idx.oid);
+			goto finish;
+		}
 		if (ret < 0)
 			bad_object(delta_obj->idx.offset,
 				   _("could not convert object from delta"));
@@ -1050,6 +1062,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 		if (ret)
 			free((void *)outbuf);
 	}
+finish:
 	sha1_object(result_data, NULL, result_size, delta_obj->real_type,
 		    &delta_obj->idx.oid);
 
@@ -1786,6 +1799,111 @@ static void show_pack_info(struct pack_ctx *c, int stat_only)
 	}
 }
 
+static int compare_objects_by_oid(const void *a, const void *b)
+{
+	const struct object_entry *x = a, *y = b;
+	return oidcmp(&x->idx.oid, &y->idx.oid);
+}
+
+static void map_one_object(struct pack_ctx *c,
+			   const struct object_entry *sorted_objects,
+			   struct object_entry *obj)
+{
+	const void *outbuf = NULL;
+	void *buf = NULL;
+	size_t outlen, hdrlen;
+	off_t unused;
+	struct object_id missing_oid, last_oid;
+	git_hash_ctx ctx;
+	char hdr[32];
+	int ret;
+	const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+
+	/* Already done. */
+	if (!is_null_oid(&obj->idx.compat_oid))
+		return;
+
+	oidclr(&last_oid);
+
+	c->input_offset = 0;
+	c->input_len = 0;
+	c->consumed_bytes = obj->idx.offset;
+	if (lseek(c->input_fd, obj->idx.offset, SEEK_SET) < 0)
+		die(_("cannot seek while mapping object"));
+	buf = unpack_raw_entry(obj, &unused, &obj->idx.oid, NULL, NULL, c);
+
+	while (1) {
+		ret = convert_object_file(the_repository, &outbuf,
+					  &outlen, buf, obj->size, obj->type,
+					  &missing_oid);
+		if (ret == -2) {
+			struct object_entry *p, to_find;
+
+			if (oideq(&last_oid, &missing_oid))
+				goto err;
+			oidcpy(&to_find.idx.oid, &missing_oid);
+			p = bsearch(&to_find, sorted_objects, nr_objects,
+				    sizeof(*sorted_objects),
+				    compare_objects_by_oid);
+
+			if (!p)
+				goto err;
+
+			map_one_object(c, sorted_objects, p);
+			continue;
+		}
+		if (ret < 0)
+			goto err;
+		compat->init_fn(&ctx);
+
+		hdrlen = xsnprintf(hdr, sizeof(hdr), "%s %"PRIuMAX,
+				   type_name(obj->type),(uintmax_t)outlen) + 1;
+
+		compat->update_fn(&ctx, hdr, hdrlen);
+		compat->update_fn(&ctx, outbuf, outlen);
+		compat->final_oid_fn(&obj->idx.compat_oid, &ctx);
+		repo_add_loose_object_map(the_repository, &obj->idx.oid, &obj->idx.compat_oid, LOOSE_INDEX_LOOSE);
+		if (ret)
+			free((void *)outbuf);
+		break;
+	}
+	free(buf);
+	return;
+err:
+	die(_("could not map object %s"), oid_to_hex(&obj->idx.oid));
+}
+
+static void compute_compat_hashes(struct pack_ctx *orig)
+{
+	unsigned long i;
+	struct object_entry *sorted_objects;
+	struct pack_ctx c;
+
+	memset(&c, 0, sizeof(c));
+
+	if (from_stdin)
+		c.input_fd = orig->output_fd;
+	else
+		c.input_fd = orig->input_fd;
+	c.output_fd = -1;
+
+	if (verbose)
+		progress = start_progress(_("Mapping objects"), nr_objects);
+
+	ALLOC_ARRAY(sorted_objects, nr_objects);
+	memcpy(sorted_objects, objects, nr_objects * sizeof(*sorted_objects));
+	QSORT(sorted_objects, nr_objects, compare_objects_by_oid);
+
+	for (i = 0; i < nr_objects; i++) {
+		map_one_object(&c, sorted_objects, &objects[i]);
+		display_progress(progress, i + 1);
+	}
+
+	free(sorted_objects);
+
+	stop_progress(&progress);
+}
+
 int cmd_index_pack(int argc, const char **argv, const char *prefix)
 {
 	int i, fix_thin_pack = 0, verify = 0, stat_only = 0, rev_index;
@@ -1983,6 +2101,8 @@ int cmd_index_pack(int argc, const char **argv, const char *prefix)
 		write_in_full(2, "\0", 1);
 	resolve_deltas();
 	conclude_pack(fix_thin_pack, curr_pack, pack_hash, &pack_ctx);
+	if (the_repository->compat_hash_algo)
+		compute_compat_hashes(&pack_ctx);
 	free(ofs_deltas);
 	free(ref_deltas);
 	if (strict)

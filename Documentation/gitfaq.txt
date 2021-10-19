@@ -241,6 +241,32 @@ How do I know if I want to do a fetch or a pull?::
 	ignore the upstream changes.  A pull consists of a fetch followed
 	immediately by either a merge or rebase.  See linkgit:git-pull[1].
 
+Design
+------
+
+[[monorepos]]
+Should we use a monorepo or many individual repos?::
+	This is a decision that is typically made based on an organization's needs and
+	desires for their projects.  Git has several features, such as shallow clone,
+	partial clone, and sparse checkout to make working with large repositories
+	easier, and there is active development on making the monorepo experience
+	better.
++
+However, at a certain size, the performance of a monorepo will likely become
+unacceptable _unless_ you use these features.  If you choose to start with a
+monorepo and continue to grow, you may end up unhappy with the performance
+characteristics at a point where making a change is difficult.  The performance
+of using many smaller repositories will almost always be much better and will
+generally not necessitate the use of these more advanced features.  If you are
+concerned about future performance of your repository and related tools, you may
+wish to avoid a monorepo.
++
+Ultimately, you should make a decision fully informed about the potential
+benefits and downsides, including the capabilities, performance, and future
+requirements for your repository and related tools, including your hosting
+platform, build tools, and other programs you typically use as part of your
+workflow.
+
 Merging and Rebasing
 --------------------
 

@@ -521,7 +521,8 @@ to use when checking files out.  You can also override this by specifying a
 particular line ending such as `eol=lf` or `eol=crlf` if those files must always
 have that ending in the working tree (e.g., for functionality reasons).
 +
-For example, the following might be appropriate in some projects:
+For example, generally shell files must have LF endings and batch files must
+have CRLF endings, so the following might be appropriate in some projects:
 +
 ----
 # By default, guess.
@@ -529,7 +530,7 @@ For example, the following might be appropriate in some projects:
 # Mark all C files as text.
 *.c	text
 # Ensure all shell files end up with LF endings and all batch files end up
-# with CRLF endings in the working tree and both end up with LF in the repo.
+# with CRLF endings in the working tree and both have LF in the repo.
 *.sh text eol=lf
 *.bat text eol=crlf
 # Mark all JPEG files as binary.

@@ -48,7 +48,7 @@ remove_object () {
 	rm "$(sha1_file "$1")"
 }
 
-test_expect_success 'object with bad sha1' '
+test_expect_success BROKEN_OBJECTS 'object with bad sha1' '
 	sha=$(echo blob | git hash-object -w --stdin) &&
 	old=$(test_oid_to_path "$sha") &&
 	new=$(dirname $old)/$(test_oid ff_2) &&
@@ -281,7 +281,7 @@ check_duplicate_names success x x.1 x/
 check_duplicate_names success x x.1.2 x.1/ x/
 check_duplicate_names success x x.1 x.1.2 x/
 
-test_expect_success 'unparseable tree object' '
+test_expect_success BROKEN_OBJECTS 'unparseable tree object' '
 	test_oid_cache <<-\EOF &&
 	junk sha1:twenty-bytes-of-junk
 	junk sha256:twenty-bytes-of-junk-twelve-more
@@ -300,7 +300,7 @@ test_expect_success 'unparseable tree object' '
 	test_i18ngrep ! "fatal: empty filename in tree entry" out
 '
 
-test_expect_success 'tree entry with type mismatch' '
+test_expect_success BROKEN_OBJECTS 'tree entry with type mismatch' '
 	test_when_finished "remove_object \$blob" &&
 	test_when_finished "remove_object \$tree" &&
 	test_when_finished "remove_object \$commit" &&
@@ -318,7 +318,7 @@ test_expect_success 'tree entry with type mismatch' '
 	test_i18ngrep ! "dangling blob" out
 '
 
-test_expect_success 'tag pointing to nonexistent' '
+test_expect_success BROKEN_OBJECTS 'tag pointing to nonexistent' '
 	badoid=$(test_oid deadbeef) &&
 	cat >invalid-tag <<-EOF &&
 	object $badoid
@@ -427,7 +427,7 @@ test_expect_success 'rev-list --verify-objects' '
 	test_must_be_empty out
 '
 
-test_expect_success 'rev-list --verify-objects with bad sha1' '
+test_expect_success BROKEN_OBJECTS 'rev-list --verify-objects with bad sha1' '
 	sha=$(echo blob | git hash-object -w --stdin) &&
 	old=$(test_oid_to_path $sha) &&
 	new=$(dirname $old)/$(test_oid ff_2) &&

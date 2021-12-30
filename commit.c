@@ -495,7 +495,7 @@ int convert_commit_object(struct repository *repo, struct strbuf *out,
 		if (missing_oid)
 			oidcpy(missing_oid, &oid);
 		else
-			error("unable t(o map tree %s in commit object", oid_to_hex(&oid));
+			error("unable to map tree %s in commit object", oid_to_hex(&oid));
 		return -2;
 	}
 	strbuf_addf(out, "tree %s\n", oid_to_hex(&compat_oid));

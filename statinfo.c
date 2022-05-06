@@ -2,6 +2,19 @@
 #include "environment.h"
 #include "statinfo.h"
 
+static unsigned int munge_st_size(off_t st_size) {
+	unsigned int sd_size = st_size & 0xffffffff;
+
+	/*
+	 * If the file is an exact multiple of 4 GiB, modify the value so it
+	 * doesn't get marked as racily clean (zero).
+	 */
+	if (!sd_size && st_size)
+		return 0x80000000;
+	else
+		return sd_size;
+}
+
 void fill_stat_data(struct stat_data *sd, struct stat *st)
 {
 	sd->sd_ctime.sec = (unsigned int)st->st_ctime;
@@ -12,7 +25,7 @@ void fill_stat_data(struct stat_data *sd, struct stat *st)
 	sd->sd_ino = st->st_ino;
 	sd->sd_uid = st->st_uid;
 	sd->sd_gid = st->st_gid;
-	sd->sd_size = st->st_size;
+	sd->sd_size = munge_st_size(st->st_size);
 }
 
 int match_stat_data(const struct stat_data *sd, struct stat *st)
@@ -51,7 +64,7 @@ int match_stat_data(const struct stat_data *sd, struct stat *st)
 			changed |= INODE_CHANGED;
 #endif
 
-	if (sd->sd_size != (unsigned int) st->st_size)
+	if (sd->sd_size != munge_st_size(st->st_size))
 		changed |= DATA_CHANGED;
 
 	return changed;

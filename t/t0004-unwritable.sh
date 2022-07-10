@@ -38,11 +38,14 @@ test_expect_success POSIXPERM,SANITY 'commit should notice unwritable repository
 
 test_lazy_prereq COMMIT_OUT 'test -e "$TRASH_DIRECTORY"/out.commit'
 test_expect_success COMMIT_OUT 'commit output on unwritable repository' '
+	# With both SHA-1 and SHA-256, the first line gets printed twice.
+	# Ignore that.
+	cat out.commit | uniq >actual &&
 	cat >expect <<-\EOF &&
 	error: insufficient permission for adding an object to repository database .git/objects
 	error: Error building trees
 	EOF
-	test_cmp expect out.commit
+	test_cmp expect actual
 '
 
 test_expect_success POSIXPERM,SANITY 'update-index should notice unwritable repository' '

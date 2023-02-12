@@ -1,0 +1,276 @@
+Git Canonical Tar Format
+========================
+
+Overview
+--------
+
+Many people find it convenient to have tar archives that are bit-for-bit
+identical between versions.  This can be valuable to validate that an archive
+has not changed using a cryptographic hash without needing to store the archive
+itself.
+
+However, up to now, Git has not guaranteed a consistent format, although people
+often make the assumption that Git's archives will never change in their
+serialization of data.  This has led to several notable problems with various
+forges.
+
+This document proposes a canonical tar format based on the POSIX pax format that
+is bit-for-bit identical across versions based on the same input.  It is
+referred to as ctar-v1 (canonical tar version 1).
+
+Goals and Rationale
+-------------------
+
+The goals for this format are that it is first and foremost reproducible, that
+identical trees produce identical results when requested, that it is simple and
+easy to implement correctly, and that it is useful in general.  While we don't
+consider functionality needs beyond Git's at the moment (such as hardlinks,
+xattrs, or sparse files), there is intense interest in reproducible builds, and
+so it makes sense to design something that can see general use for software
+interchange.
+
+Because the goal is strict reproducibility, this format doesn't honor
+`tar.umask`, `export-subst`, or other options that can produce different output.
+It serializes all timestamps as the Epoch, which produces identical results
+whether the tree is serialized as a tree, commit, or tag.  This is consistent
+with the behaviour of some other tar serializers, including the default for
+modern Rust crates, and is not believed to pose any interoperability problems.
+
+Object IDs are not included in this version of the format because this produces
+non-identical data when identical data is serialized with different hash
+algorithms.
+
+Introduction to the Underlying Format
+-------------------------------------
+
+A pax archive is an extended form of the ustar (Unix standard tar) archive, both
+defined in POSIX.1-2001.  Each file in a ustar archive is preceded by a single
+512-byte header block, followed by as many 512-byte data blocks as needed to
+store the data, padded with zeros.  At the end of the archive are two 512-byte
+blocks filled completely with zeros.
+
+A pax archive may additionally contain extended headers.  There is optionally
+one for the entire archive, which is called the global header, and one for each
+file.  If present, the global extended header is the first entry in the archive,
+and the per-file header precedes the file to which it corresponds.  Every
+extended header contains a normal ustar header block with either the `g`
+(global) or `x` (per-file) type, followed by metadata in a textual
+length-key-value form (`%d %s=%s\n`) which is stored as the data of this
+pseudo-file.
+
+A global extended header sets metadata for the entire file, and a per-file
+extended header applies to only the file to which it corresponds.  A per-file
+extended header overrides any data specified in the global extended header, and
+all extended headers override any data stored in a normal ustar per-file header
+block.
+
+While pax extensions are widely supported by most modern versions of tar
+(including versions on Windows and all major open-source OSes), some older
+archivers and non-tar implementations which do not understand them typically
+extract the extended headers as regular files.  Thus, this specification defines
+these entries to have reasonable permissions and unique names.
+
+General Architecture
+--------------------
+
+All canonical tar archives are valid POSIX pax archives as that format is
+https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html[defined in
+POSIX.1-2017].  Every archive will have a global header indicating the version
+and format and what types of data are valid in the archive.
+
+Every file serialized in the archive is serialized in lexicographical order by
+the bytes in its full path name.  A directory is always serialized before its
+contents, and a directory is never serialized with a trailing slash.  If a
+system uses a Unicode encoding other than UTF-8, it encodes filenames as UTF-8.
+Each file shall contain a pax extended header record.
+
+It is possible to encode some extended headers in multiple ways because the
+length in the header encodes its own length.  For example, in cases where the
+length value can be encoded as either 99 or 100, both can lead to identical
+header data.  The shortest possible encoding must always be used.
+
+In any event where multiple encodings are possible, the shortest and, if there
+is still confusion, lexicographically first (by byte value) must always be used.
+All unspecified padding is filled with NUL bytes.
+
+[[version-number]]
+Version Number
+--------------
+
+The base version number for this version is `ctar-v1`.
+
+One may add one or more extensions by suffixing the version with a dash (if any
+extensions are present) and the relevant characters in order by their bytes.
+Only one is currently defined:
+
+|===
+| Extension | Meaning
+
+| `t`       | Timestamps are preserved
+|===
+
+Thus, if timestamps are preserved, the version number is `ctar-v1-t`, and if no
+extensions are provided, then the version number is `ctar-v1`.
+
+For Git, preserving timestamps means that if the object used to serialize is a
+committish (commit or tag), the `atime` and `mtime` timestamps are those of the
+committer timestamp in the commit.  For trees, the timestamp preserved is 1
+second from the Epoch (Unix timestamp 1).  (The Unix timestamp 0 is known to
+cause problems with some software that uses it as a sentinel.)
+
+This allows the user to decide whether to produce identical data regardless of
+whether a commit or tag or its corresponding tree is used (without `t`) or to
+preserve potentially valuable timestamps (with `t`).
+
+Extended Headers
+----------------
+
+Global Extended Header
+~~~~~~~~~~~~~~~~~~~~~~
+
+The global extended header (record `g`) shall contain one header:
+`CTAR.version`, which contains the version number specified above.
+
+The contents of the ustar header for the global extended header are as mentioned
+in <<serialization>>, except that the `name` field contains `pax_global_header`.
+
+Per-File Extended Header
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each file has a per-file extended header.
+
+The following per-file extended header fields are included:
+
+|===
+| Field Name   | When Present          | Value
+
+| `atime`      | without `t` extension | `1.000000000`
+| `atime`      | with `t` extension    | Unix timestamp formatted as "%.9f"
+| `gid`        | always                | `0`
+| `gname`      | always                | `root`
+| `hdrcharset` | binary path           | `BINARY`
+| `linkpath`   | symbolic link         | full path name of the link destination
+| `mtime`      | without `t` extension | `1.000000000`
+| `mtime`      | with `t` extension    | Unix timestamp formatted as "%.9f"
+| `path`       | always                | full path name of the file
+| `size`       | always                | size of the data in bytes
+| `uid`        | always                | `0`
+| `uname`      | always                | `root`
+|===
+
+Note that the `hdrcharset` entry appears if and only if the `path` or, if
+present, the `linkpath`, header contains a non-UTF-8 encoded string.  Because
+Git does not store the encoding of file names, it has no way of knowing whether
+a file name which could be valid UTF-8 actually is, but for the purposes of
+compatibility, such file names are assumed to be UTF-8 and are not declared as
+binary.  This improves portability to systems which always use Unicode.
+
+However, because we do not know for certain whether these values are UTF-8,
+we avoid explicitly declaring them as such and rely on the default archiver
+behavior if they appear to be, which may be more sensible.
+
+The `path` field contains the full path name without a leading slash or leading
+`.` or `..` component.  The path never contains a directory component which is
+`.` or `..`.
+
+The `linkpath` field contains the full symbolic link destination.  `.` and `..`
+components are permitted if the destination contains those values.
+
+In all cases, path names use `/` as the directory separator.
+
+The reason for always including most of the entries in the archive is to aid in
+implementing and testing correct serialization.  If these entries are always
+present, then this process becomes much simpler, whereas if they are only
+included as needed, then errors are more likely.
+
+The `name` field of the ustar header of this extended header is `paxheader.%d`,
+where `%d` represents the shortest-form decimal integer encoding the index of
+this file in the archive, starting with 0.  All files, directories, and links of
+whatever kind are counted, but extended headers are not.
+
+As mentioned in <<version-number>>, the `atime` and `mtime` contain the
+timestamp of the committer timestamp of the commit (for commits and tags) and
+the Unix timestamp 1 for trees if the `t` extension is in use, and the Unix
+timestamp 1 if it is not.  These are always formatted with 9 decimal places and
+otherwise in the shortest form (that is, without leading zeros).  These values
+always appear in some form.
+
+The order of these fields and other relevant details as to their serialization
+are discussed in <<serialization>>.
+
+[[serialization]]
+Serialization of Extended Headers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When serializing the header block for an extended header, the following values
+should be used.  Note that all text fields are be NUL-padded on the right when
+they do not fill the field, and all octal fields are left-padded with zeros such
+that they fill the field with a single trailing NUL.  An empty field contains
+only NULs.
+
+|===
+| Field Name | Value
+
+| `name`     | `pax_global_header` (global) or `paxheader.%d` (per-file) (see above)
+| `mode`     | `0640`
+| `uid`      | `0`
+| `gid`      | `0`
+| `size`     | the size of the extended header in bytes
+| `mtime`    | `0` (the Epoch)
+| `chksum`   | as specified in the standard
+| `typeflag` | `g` (global) or `x` (per-file)
+| `linkname` | empty
+| `magic`    | as specified in the standard
+| `version`  | as specified in the standard
+| `uname`    | `root`
+| `gname`    | `root`
+| `devmajor` | `0`
+| `devminor` | `0`
+| `prefix`   | empty
+|===
+
+When encoding the data in the body of an extended header, all entries are sorted
+in order by the byte values of their keys as encoded in UTF-8.  Duplicate keys
+are not permitted.
+
+Because the format allows multiple length encodings of some values, the shortest
+possible encoding must always be used.
+
+ustar headers
+-------------
+
+The ustar header for each file is serialized as below.  Note that all text
+fields are be NUL-padded on the right when they do not fill the field, and all
+octal fields are left-padded with zeros such that they fill the field with a
+single trailing NUL.  An empty field contains only NULs.
+
+|===
+| Field Name | Value
+
+| `name`     | the last path component if it fits; otherwise, `path.%d`
+| `mode`     | `0640` (regular file), `0777` (symbolic link), `0750` (directory)
+| `uid`      | `0`
+| `gid`      | `0`
+| `size`     | the size of the data in bytes for regular files if it fits; otherwise, `0`
+| `mtime`    | `0` (the Epoch)
+| `chksum`   | as specified in the standard
+| `typeflag` | `0` (regular file), `2` (symbolic link), `5` (directory)
+| `linkname` | empty
+| `magic`    | as specified in the standard
+| `version`  | as specified in the standard
+| `uname`    | `root`
+| `gname`    | `root`
+| `devmajor` | `0`
+| `devminor` | `0`
+| `prefix`   | all non-trailing path components if they fit; otherwise, empty
+|===
+
+Note that the `size` field is always 0 for non-regular files.  The `typeflag`
+value for regular files is always `0`, not NUL.
+
+`prefix` does not contain a trailing slash.
+
+If the `name` field cannot contain the last path component, then it is
+serialized as `path.%d`, where `%d` represents the shortest-form decimal integer
+encoding the index of this file in the archive, starting with 0.  The `%d` value
+in this case is completely identical to the `%d` in the per-file pax header.

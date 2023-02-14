@@ -27,6 +27,7 @@ static struct test_cmd cmds[] = {
 	{ "dump-cache-tree", cmd__dump_cache_tree },
 	{ "dump-fsmonitor", cmd__dump_fsmonitor },
 	{ "dump-split-index", cmd__dump_split_index },
+	{ "dump-tar", cmd__dump_tar },
 	{ "dump-untracked-cache", cmd__dump_untracked_cache },
 	{ "env-helper", cmd__env_helper },
 	{ "example-decorate", cmd__example_decorate },

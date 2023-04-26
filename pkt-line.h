@@ -190,6 +190,8 @@ struct packet_reader {
 	int line_peeked;
 
 	unsigned use_sideband : 1;
+	/* indicates if we saw an explicit capability */
+	unsigned hash_algo_explicit : 1;
 	const char *me;
 
 	/* hash algorithm in use */

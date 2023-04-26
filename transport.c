@@ -147,6 +147,12 @@ static void get_refs_from_bundle_inner(struct transport *transport)
 		die(_("could not read bundle '%s'"), transport->url);
 
 	transport->hash_algo = data->header.hash_algo;
+	/*
+	 * This is always set, even if we didn't get an explicit object-format
+	 * capability, since we know that a missing capability or a v2 bundle
+	 * definitively indicates SHA-1.
+	 */
+	transport->hash_algo_explicit = 1;
 }
 
 static struct ref *get_refs_from_bundle(struct transport *transport,
@@ -190,6 +196,7 @@ static int fetch_refs_from_bundle(struct transport *transport,
 	ret = unbundle(the_repository, &data->header, data->fd,
 		       &extra_index_pack_args, 0);
 	transport->hash_algo = data->header.hash_algo;
+	transport->hash_algo_explicit = 1;
 	return ret;
 }
 
@@ -360,6 +367,7 @@ static struct ref *handshake(struct transport *transport, int for_push,
 	}
 	data->finished_handshake = 1;
 	transport->hash_algo = reader.hash_algo;
+	transport->hash_algo_explicit = reader.hash_algo_explicit;
 
 	if (reader.line_peeked)
 		BUG("buffer must be empty at the end of handshake()");
@@ -1190,6 +1198,7 @@ struct transport *transport_get(struct remote *remote, const char *url)
 	}
 
 	ret->hash_algo = &hash_algos[GIT_HASH_SHA1];
+	ret->hash_algo_explicit = 0;
 
 	return ret;
 }
@@ -1197,6 +1206,11 @@ struct transport *transport_get(struct remote *remote, const char *url)
 const struct git_hash_algo *transport_get_hash_algo(struct transport *transport)
 {
 	return transport->hash_algo;
+}
+
+int transport_get_hash_algo_explicit(struct transport *transport)
+{
+	return transport->hash_algo_explicit;
 }
 
 int transport_set_option(struct transport *transport,

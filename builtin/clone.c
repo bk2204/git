@@ -1316,13 +1316,15 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		}
 	}
 
+	if (transport_get_hash_algo_explicit(transport)) {
 		/*
 		 * Now that we know what algorithm the remote side is using,
 		 * let's set ours to the same thing.
 		 */
-	hash_algo = hash_algo_by_ptr(transport_get_hash_algo(transport));
-	initialize_repository_version(hash_algo, 1);
-	repo_set_hash_algo(the_repository, hash_algo);
+		hash_algo = hash_algo_by_ptr(transport_get_hash_algo(transport));
+		initialize_repository_version(hash_algo, 1);
+		repo_set_hash_algo(the_repository, hash_algo);
+	}
 
 	if (mapped_refs) {
 		/*

@@ -243,8 +243,10 @@ static void process_capabilities(struct packet_reader *reader, int *linelen)
 	if (feat_val) {
 		char *hash_name = xstrndup(feat_val, feat_len);
 		int hash_algo = hash_algo_by_name(hash_name);
-		if (hash_algo != GIT_HASH_UNKNOWN)
+		if (hash_algo != GIT_HASH_UNKNOWN) {
 			reader->hash_algo = &hash_algos[hash_algo];
+			reader->hash_algo_explicit = 1;
+		}
 		free(hash_name);
 	} else {
 		reader->hash_algo = &hash_algos[GIT_HASH_SHA1];
@@ -493,6 +495,7 @@ static void send_capabilities(int fd_out, struct packet_reader *reader)
 		if (hash_algo == GIT_HASH_UNKNOWN)
 			die(_("unknown object format '%s' specified by server"), hash_name);
 		reader->hash_algo = &hash_algos[hash_algo];
+		reader->hash_algo_explicit = 1;
 		packet_write_fmt(fd_out, "object-format=%s", reader->hash_algo->name);
 	} else {
 		reader->hash_algo = &hash_algos[GIT_HASH_SHA1];

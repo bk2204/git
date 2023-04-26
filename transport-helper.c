@@ -1236,6 +1236,7 @@ static struct ref *get_refs_list_using_list(struct transport *transport,
 					die(_("unsupported object format '%s'"),
 					    value);
 				transport->hash_algo = &hash_algos[algo];
+				transport->hash_algo_explicit = 1;
 			}
 			continue;
 		}

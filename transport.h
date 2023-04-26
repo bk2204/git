@@ -129,6 +129,11 @@ struct transport {
 	 **/
 	unsigned progress : 1;
 	/*
+	 * Indicates whether the hash algorithm was initialized explicitly as
+	 * opposed to using a fallback.
+	 */
+	unsigned hash_algo_explicit : 1;
+	/*
 	 * If transport is at least potentially smart, this points to
 	 * git_transport_options structure to use in case transport
 	 * actually turns out to be smart.
@@ -305,6 +310,15 @@ int transport_get_remote_bundle_uri(struct transport *transport);
  * This can only be called after fetching the remote refs.
  */
 const struct git_hash_algo *transport_get_hash_algo(struct transport *transport);
+/*
+ * Fetch whether the hash algorithm provided was explicitly set.
+ *
+ * If this value is false, "transport_get_hash_algo" will always return a value
+ * of SHA-1, which is the default algorithm if none is specified.
+ *
+ * This can only be called after fetching the remote refs.
+ */
+int transport_get_hash_algo_explicit(struct transport *transport);
 int transport_fetch_refs(struct transport *transport, struct ref *refs);
 
 /*

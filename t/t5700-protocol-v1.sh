@@ -249,10 +249,12 @@ test_expect_success 'push with ssh:// using protocol v1' '
 . "$TEST_DIRECTORY"/lib-httpd.sh
 start_httpd
 
-test_expect_success 'create repo to be served by http:// transport' '
+test_expect_success 'create repos to be served by http:// transport' '
 	git init "$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	git -C "$HTTPD_DOCUMENT_ROOT_PATH/http_parent" config http.receivepack true &&
-	test_commit -C "$HTTPD_DOCUMENT_ROOT_PATH/http_parent" one
+	test_commit -C "$HTTPD_DOCUMENT_ROOT_PATH/http_parent" one &&
+	git init --object-format=sha256 "$HTTPD_DOCUMENT_ROOT_PATH/sha256" &&
+	git -C "$HTTPD_DOCUMENT_ROOT_PATH/sha256" config http.receivepack true
 '
 
 test_expect_success 'clone with http:// using protocol v1' '
@@ -261,6 +263,21 @@ test_expect_success 'clone with http:// using protocol v1' '
 
 	git -C http_child log -1 --format=%s >actual &&
 	git -C "$HTTPD_DOCUMENT_ROOT_PATH/http_parent" log -1 --format=%s >expect &&
+	test_cmp expect actual &&
+
+	# Client requested to use protocol v1
+	grep "Git-Protocol: version=1" log &&
+	# Server responded using protocol v1
+	grep "git< version 1" log
+'
+
+test_expect_success 'clone with http:// using protocol v1 with empty SHA-256 repo' '
+	GIT_TRACE_PACKET=1 GIT_TRACE_CURL=1 git -c protocol.version=1 \
+		clone "$HTTPD_URL/smart/sha256" sha256 2>log &&
+
+	cat log &&
+	echo sha256 >expect &&
+	git -C sha256 rev-parse --show-object-format >actual &&
 	test_cmp expect actual &&
 
 	# Client requested to use protocol v1

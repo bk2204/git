@@ -4,6 +4,7 @@
 #ifndef CONVERT_H
 #define CONVERT_H
 
+#include "git-compat-util.h"
 #include "hash-ll.h"
 #include "string-list.h"
 

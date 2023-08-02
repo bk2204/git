@@ -491,6 +491,23 @@ not exist, or may have different contents. So, smudge and clean commands
 should not try to access the file on disk, but only act as filters on the
 content provided to them on standard input.
 
+If the `filter` attribute is set, the `clean-if-size` and `smudge-if-size`
+attributes may be used to control when the filter takes effect.  Each of these
+values may be set to `-N`, `N-`, or `M-N`, where _M_ and _N_ are integers
+representing a size in bytes, to impose an upper limit, a lower limit, or both,
+respectively, on the filter.
+
+If one of these two attributes is set and the working tree file (for
+`clean-if-size`) or the blob in the index (for `smudge-if-size`) does not match,
+the file is not filtered.  If the corresponding attribute is not set, `filter`
+operates unconditionally on the files matching the pattern.
+
+Note that using both attributes for the same files is not recommended because
+this can lead to unexpected and hard-to-troubleshoot behavior where a file is
+cleaned, but then is not smudged, or vice versa.  Using at most one of those
+attributes is strongly advised.  `clean-if-size` requires that the input be a
+file (which excludes using `git hash-object --stdin` to clean files).
+
 Long Running Filter Process
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

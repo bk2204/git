@@ -81,12 +81,23 @@ enum convert_crlf_action {
 
 struct convert_driver;
 
+struct conv_attrs_filter_size {
+	int enabled;
+	uintmax_t low, high;
+};
+
+struct conv_attrs_filter {
+	struct conv_attrs_filter_size smudge;
+	struct conv_attrs_filter_size clean;
+};
+
 struct conv_attrs {
 	struct convert_driver *drv;
 	enum convert_crlf_action attr_action; /* What attr says */
 	enum convert_crlf_action crlf_action; /* When no attr is set, use core.autocrlf */
 	int ident;
 	const char *working_tree_encoding; /* Supported encoding or default encoding if NULL */
+	struct conv_attrs_filter filter_size;
 };
 
 void convert_attrs(struct index_state *istate,

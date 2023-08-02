@@ -987,17 +987,45 @@ static struct convert_driver {
 
 static int apply_filter(const char *path, const char *src, size_t len,
 			int fd, struct strbuf *dst, struct convert_driver *drv,
+			const struct conv_attrs_filter *fsz,
 			const unsigned int wanted_capability,
 			const struct checkout_metadata *meta,
 			struct delayed_checkout *dco)
 {
 	const char *cmd = NULL;
+	const struct conv_attrs_filter_size *fsza;
 
 	if (!drv)
 		return 0;
 
 	if (!dst)
 		return 1;
+
+	if (wanted_capability == CAP_CLEAN)
+		fsza = &fsz->clean;
+	else
+		fsza = &fsz->smudge;
+
+	/*
+	 * If size limits are enabled and we're outside of them, do nothing
+	 * silently.  If size limits aren't enabled, then we operate
+	 * unconditionally.
+	 */
+	if (fsza->enabled) {
+		uintmax_t input_len = len;
+
+		if (fd != -1) {
+			struct stat st;
+			int res = fstat(fd, &st);
+			if (res < 0 || (st.st_mode & S_IFMT) != S_IFREG) {
+				error(_("external filter with size limits cannot be run on a non-file"));
+				return 0;
+			}
+			input_len = st.st_size;
+		}
+		if (input_len < fsza->low || input_len > fsza->high)
+			return 0;
+	}
 
 	if ((wanted_capability & CAP_CLEAN) && !drv->process && drv->clean)
 		cmd = drv->clean;
@@ -1300,6 +1328,38 @@ static int git_path_check_ident(struct attr_check_item *check)
 	return !!ATTR_TRUE(value);
 }
 
+static int git_path_check_filter_if_size(struct attr_check_item *check, uintmax_t *low, uintmax_t *high)
+{
+	const char *value = check->value;
+	size_t len;
+	char *endptr = NULL;
+
+	if (ATTR_TRUE(value) || ATTR_FALSE(value) || ATTR_UNSET(value))
+		return 0;
+
+	len = strlen(value);
+	if (len >= 2 && value[0] == '-') {
+		/* "-N": upper limit only. */
+		*low = 0;
+		*high = strtoumax(value + 1, &endptr, 0);
+		return !*endptr;
+	}
+	if (len >= 1) {
+		*low = strtoumax(value, &endptr, 0);
+		if (*endptr++ != '-')
+			return 0;
+		if (!*endptr) {
+			/* "N-": lower limit only. */
+			*high = UINTMAX_MAX;
+			return 1;
+		}
+		/* "M-N": both low and high. */
+		*high = strtoumax(endptr, &endptr, 0);
+		return !*endptr;
+	}
+	return 0;
+}
+
 static struct attr_check *check;
 
 void convert_attrs(struct index_state *istate,
@@ -1310,6 +1370,7 @@ void convert_attrs(struct index_state *istate,
 	if (!check) {
 		check = attr_check_initl("crlf", "ident", "filter",
 					 "eol", "text", "working-tree-encoding",
+					 "smudge-if-size", "clean-if-size",
 					 NULL);
 		user_convert_tail = &user_convert;
 		git_config(read_convert_config, NULL);
@@ -1334,6 +1395,12 @@ void convert_attrs(struct index_state *istate,
 			ca->crlf_action = CRLF_TEXT_CRLF;
 	}
 	ca->working_tree_encoding = git_path_check_encoding(ccheck + 5);
+	ca->filter_size.smudge.enabled = git_path_check_filter_if_size(ccheck + 6,
+								       &ca->filter_size.smudge.low,
+								       &ca->filter_size.smudge.high);
+	ca->filter_size.clean.enabled = git_path_check_filter_if_size(ccheck + 7,
+								      &ca->filter_size.clean.low,
+								      &ca->filter_size.clean.high);
 
 	/* Save attr and make a decision for action */
 	ca->attr_action = ca->crlf_action;
@@ -1380,7 +1447,8 @@ int would_convert_to_git_filter_fd(struct index_state *istate, const char *path)
 	if (!ca.drv->required)
 		return 0;
 
-	return apply_filter(path, NULL, 0, -1, NULL, ca.drv, CAP_CLEAN, NULL, NULL);
+	return apply_filter(path, NULL, 0, -1, NULL, ca.drv, &ca.filter_size,
+			    CAP_CLEAN, NULL, NULL);
 }
 
 const char *get_convert_attr_ascii(struct index_state *istate, const char *path)
@@ -1418,7 +1486,8 @@ int convert_to_git(struct index_state *istate,
 
 	convert_attrs(istate, &ca, path);
 
-	ret |= apply_filter(path, src, len, -1, dst, ca.drv, CAP_CLEAN, NULL, NULL);
+	ret |= apply_filter(path, src, len, -1, dst, ca.drv, &ca.filter_size,
+			    CAP_CLEAN, NULL, NULL);
 	if (!ret && ca.drv && ca.drv->required)
 		die(_("%s: clean filter '%s' failed"), path, ca.drv->name);
 
@@ -1452,7 +1521,8 @@ void convert_to_git_filter_fd(struct index_state *istate,
 
 	assert(ca.drv);
 
-	if (!apply_filter(path, NULL, 0, fd, dst, ca.drv, CAP_CLEAN, NULL, NULL))
+	if (!apply_filter(path, NULL, 0, fd, dst, ca.drv, &ca.filter_size,
+			  CAP_CLEAN, NULL, NULL))
 		die(_("%s: clean filter '%s' failed"), path, ca.drv->name);
 
 	encode_to_git(path, dst->buf, dst->len, dst, ca.working_tree_encoding, conv_flags);
@@ -1494,7 +1564,8 @@ static int convert_to_working_tree_ca_internal(const struct conv_attrs *ca,
 	}
 
 	ret_filter = apply_filter(
-		path, src, len, -1, dst, ca->drv, CAP_SMUDGE, meta, dco);
+		path, src, len, -1, dst, ca->drv, &ca->filter_size, CAP_SMUDGE,
+		meta, dco);
 	if (!ret_filter && ca->drv && ca->drv->required)
 		die(_("%s: smudge filter %s failed"), path, ca->drv->name);
 

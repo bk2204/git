@@ -50,7 +50,7 @@ int cmd_stripspace(int argc, const char **argv, const char *prefix)
 		usage_with_options(stripspace_usage, options);
 
 	if (mode == STRIP_COMMENTS || mode == COMMENT_LINES) {
-		setup_git_directory_gently(&nongit);
+		setup_git_directory_gently(0, &nongit);
 		git_config(git_default_config, NULL);
 	}
 

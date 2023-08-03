@@ -154,7 +154,7 @@ int cmd__proc_receive(int argc, const char **argv)
 		OPT_END()
 	};
 
-	setup_git_directory_gently(&nongit_ok);
+	setup_git_directory_gently(0, &nongit_ok);
 
 	argc = parse_options(argc, argv, "test-tools", options, proc_receive_usage, 0);
 	if (argc > 0)

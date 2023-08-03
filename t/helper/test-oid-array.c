@@ -16,7 +16,7 @@ int cmd__oid_array(int argc UNUSED, const char **argv UNUSED)
 	struct strbuf line = STRBUF_INIT;
 	int nongit_ok;
 
-	setup_git_directory_gently(&nongit_ok);
+	setup_git_directory_gently(0, &nongit_ok);
 
 	while (strbuf_getline(&line, stdin) != EOF) {
 		const char *arg;

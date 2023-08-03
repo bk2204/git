@@ -42,7 +42,7 @@ static int check_ref_format_branch(const char *arg)
 	const char *name;
 	int nongit;
 
-	setup_git_directory_gently(&nongit);
+	setup_git_directory_gently(0, &nongit);
 	if (strbuf_check_branch_ref(&sb, arg) ||
 	    !skip_prefix(sb.buf, "refs/heads/", &name))
 		die("'%s' is not a valid branch name", arg);

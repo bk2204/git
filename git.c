@@ -78,7 +78,7 @@ static int list_cmds(const char *spec)
 	* Set up the repository so we can pick up any repo-level config (like
 	* completion.commands).
 	*/
-	setup_git_directory_gently(&nongit);
+	setup_git_directory_gently(0, &nongit);
 
 	while (*spec) {
 		const char *sep = strchrnul(spec, ',');
@@ -361,7 +361,7 @@ static int handle_alias(int *argcp, const char ***argv)
 			int nongit_ok;
 
 			/* Aliases expect GIT_PREFIX, GIT_DIR etc to be set */
-			setup_git_directory_gently(&nongit_ok);
+			setup_git_directory_gently(0, &nongit_ok);
 
 			commit_pager_choice();
 
@@ -441,7 +441,7 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 		prefix = setup_git_directory();
 	} else if (run_setup & RUN_SETUP_GENTLY) {
 		int nongit_ok;
-		prefix = setup_git_directory_gently(&nongit_ok);
+		prefix = setup_git_directory_gently(0, &nongit_ok);
 	} else {
 		prefix = NULL;
 	}

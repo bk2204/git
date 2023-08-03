@@ -241,6 +241,9 @@ int sane_execvp(const char *file, char * const argv[])
 	int exec_id = trace2_exec(file, (const char **)argv);
 #endif
 
+	if (!the_repository->settings.can_run_external_programs)
+		BUG("this command is not allowed to call sane_execvp");
+
 	if (!execvp(file, argv))
 		return 0; /* cannot happen ;-) */
 
@@ -664,6 +667,9 @@ int start_command(struct child_process *cmd)
 	int fdin[2], fdout[2], fderr[2];
 	int failed_errno;
 	char *str;
+
+	if (!the_repository->settings.can_run_external_programs)
+		BUG("this command is not allowed to call start_command");
 
 	/*
 	 * In case of errors we must keep the promise to close FDs

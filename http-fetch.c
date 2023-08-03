@@ -105,7 +105,7 @@ int cmd_main(int argc, const char **argv)
 	struct object_id packfile_hash;
 	struct strvec index_pack_args = STRVEC_INIT;
 
-	setup_git_directory_gently(&nongit);
+	setup_git_directory_gently(0, &nongit);
 
 	while (arg < argc && argv[arg][0] == '-') {
 		const char *p;

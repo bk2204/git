@@ -698,7 +698,7 @@ int cmd_help(int argc, const char **argv, const char *prefix)
 		return 0;
 	}
 
-	setup_git_directory_gently(&nongit);
+	setup_git_directory_gently(0, &nongit);
 	git_config(git_help_config, NULL);
 
 	if (parsed_help_format != HELP_FORMAT_NONE)

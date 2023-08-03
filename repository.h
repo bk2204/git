@@ -56,6 +56,8 @@ struct repo_settings {
 	enum fetch_negotiation_setting fetch_negotiation_algorithm;
 
 	int core_multi_pack_index;
+
+	int can_run_external_programs;
 };
 
 struct repo_path_cache {

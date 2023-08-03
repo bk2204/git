@@ -122,7 +122,7 @@ int cmd_hash_object(int argc, const char **argv, const char *prefix)
 	if (flags & HASH_WRITE_OBJECT)
 		prefix = setup_git_directory();
 	else
-		prefix = setup_git_directory_gently(&nongit);
+		prefix = setup_git_directory_gently(0, &nongit);
 
 	if (vpath && prefix) {
 		vpath_free = prefix_filename(prefix, vpath);

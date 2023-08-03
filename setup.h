@@ -52,7 +52,7 @@ void setup_work_tree(void);
  */
 int discover_git_directory(struct strbuf *commondir,
 			   struct strbuf *gitdir);
-const char *setup_git_directory_gently(int *);
+const char *setup_git_directory_gently(int restricted, int *);
 const char *setup_git_directory(void);
 char *prefix_path(const char *prefix, int len, const char *path);
 char *prefix_path_gently(const char *prefix, int len, int *remaining, const char *path);

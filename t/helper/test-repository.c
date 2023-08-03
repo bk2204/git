@@ -77,7 +77,7 @@ int cmd__repository(int argc, const char **argv)
 {
 	int nongit_ok = 0;
 
-	setup_git_directory_gently(&nongit_ok);
+	setup_git_directory_gently(0, &nongit_ok);
 
 	if (argc < 2)
 		die("must have at least 2 arguments");

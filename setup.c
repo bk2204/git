@@ -1250,6 +1250,7 @@ enum discovery_result {
 static enum discovery_result setup_git_directory_gently_1(struct strbuf *dir,
 							  struct strbuf *gitdir,
 							  struct strbuf *report,
+							  int restricted,
 							  int die_on_error)
 {
 	const char *env_ceiling_dirs = getenv(CEILING_DIRECTORIES_ENVIRONMENT);
@@ -1258,6 +1259,8 @@ static enum discovery_result setup_git_directory_gently_1(struct strbuf *dir,
 	int ceil_offset = -1, min_offset = offset_1st_component(dir->buf);
 	dev_t current_device = 0;
 	int one_filesystem = 1;
+
+	the_repository->settings.can_run_external_programs = !restricted;
 
 	/*
 	 * If GIT_DIR is set explicitly, we're not going
@@ -1337,7 +1340,8 @@ static enum discovery_result setup_git_directory_gently_1(struct strbuf *dir,
 			const char *gitdir_candidate =
 				gitdir_path ? gitdir_path : gitdirenv;
 
-			if (ensure_valid_ownership(gitfile, dir->buf,
+			if (!restricted ||
+			    ensure_valid_ownership(gitfile, dir->buf,
 						   gitdir_candidate, report)) {
 				strbuf_addstr(gitdir, gitdirenv);
 				ret = GIT_DIR_DISCOVERED;
@@ -1397,7 +1401,7 @@ int discover_git_directory(struct strbuf *commondir,
 		return -1;
 
 	cwd_len = dir.len;
-	if (setup_git_directory_gently_1(&dir, gitdir, NULL, 0) <= 0) {
+	if (setup_git_directory_gently_1(&dir, gitdir, NULL, 0, 0) <= 0) {
 		strbuf_release(&dir);
 		return -1;
 	}
@@ -1436,7 +1440,7 @@ int discover_git_directory(struct strbuf *commondir,
 	return 0;
 }
 
-const char *setup_git_directory_gently(int *nongit_ok)
+const char *setup_git_directory_gently(int restricted, int *nongit_ok)
 {
 	static struct strbuf cwd = STRBUF_INIT;
 	struct strbuf dir = STRBUF_INIT, gitdir = STRBUF_INIT, report = STRBUF_INIT;
@@ -1464,7 +1468,7 @@ const char *setup_git_directory_gently(int *nongit_ok)
 		die_errno(_("Unable to read current working directory"));
 	strbuf_addbuf(&dir, &cwd);
 
-	switch (setup_git_directory_gently_1(&dir, &gitdir, &report, 1)) {
+	switch (setup_git_directory_gently_1(&dir, &gitdir, &report, restricted, 1)) {
 	case GIT_DIR_EXPLICIT:
 		prefix = setup_explicit_git_dir(gitdir.buf, &cwd, &repo_fmt, nongit_ok);
 		break;
@@ -1672,7 +1676,7 @@ void check_repository_format(struct repository_format *fmt)
  */
 const char *setup_git_directory(void)
 {
-	return setup_git_directory_gently(NULL);
+	return setup_git_directory_gently(0, NULL);
 }
 
 const char *resolve_gitdir_gently(const char *suspect, int *return_error_code)

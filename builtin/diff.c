@@ -451,7 +451,7 @@ int cmd_diff(int argc, const char **argv, const char *prefix)
 			break;
 	}
 
-	prefix = setup_git_directory_gently(&nongit);
+	prefix = setup_git_directory_gently(0, &nongit);
 
 	if (!nongit) {
 		prepare_repo_settings(the_repository);

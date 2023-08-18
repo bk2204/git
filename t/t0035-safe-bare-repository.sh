@@ -9,7 +9,7 @@ pwd="$(pwd)"
 
 expect_accepted_implicit () {
 	test_when_finished 'rm "$pwd/trace.perf"' &&
-	GIT_TRACE2_PERF="$pwd/trace.perf" git "$@" rev-parse --git-dir &&
+	GIT_TRACE2_PERF="$pwd/trace.perf" git "$@" branch -l &&
 	# Note: we're intentionally only checking that the bare repo has a
 	# directory *prefix* of $pwd
 	grep -F "implicit-bare-repository:$pwd" "$pwd/trace.perf"
@@ -17,14 +17,14 @@ expect_accepted_implicit () {
 
 expect_accepted_explicit () {
 	test_when_finished 'rm "$pwd/trace.perf"' &&
-	GIT_DIR="$1" GIT_TRACE2_PERF="$pwd/trace.perf" git rev-parse --git-dir &&
+	GIT_DIR="$1" GIT_TRACE2_PERF="$pwd/trace.perf" git branch -l &&
 	! grep -F "implicit-bare-repository:$pwd" "$pwd/trace.perf"
 }
 
 expect_rejected () {
 	test_when_finished 'rm "$pwd/trace.perf"' &&
 	test_env GIT_TRACE2_PERF="$pwd/trace.perf" \
-		test_must_fail git "$@" rev-parse --git-dir 2>err &&
+		test_must_fail git "$@" branch -l 2>err &&
 	grep -F "cannot use bare repository" err &&
 	grep -F "implicit-bare-repository:$pwd" "$pwd/trace.perf"
 }

@@ -57,7 +57,7 @@ struct repo_settings {
 
 	int core_multi_pack_index;
 
-	int can_run_external_programs;
+	int external_programs_disabled;
 };
 
 struct repo_path_cache {

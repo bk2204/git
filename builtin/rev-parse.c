@@ -687,6 +687,8 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 	int seen_end_of_options = 0;
 	enum format_type format = FORMAT_DEFAULT;
 
+	setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1", 1);
+
 	if (argc > 1 && !strcmp("--parseopt", argv[1]))
 		return cmd_parseopt(argc - 1, argv + 1, prefix);
 
@@ -705,7 +707,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 
 	/* No options; just report on whether we're in a git repo or not. */
 	if (argc == 1) {
-		setup_git_directory();
+		setup_git_directory_gently(1, NULL);
 		git_config(git_default_config, NULL);
 		return 0;
 	}
@@ -740,7 +742,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 
 		/* The rest of the options require a git repository. */
 		if (!did_repo_setup) {
-			prefix = setup_git_directory();
+			prefix = setup_git_directory_gently(1, NULL);
 			git_config(git_default_config, NULL);
 			did_repo_setup = 1;
 

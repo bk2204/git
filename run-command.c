@@ -241,7 +241,7 @@ int sane_execvp(const char *file, char * const argv[])
 	int exec_id = trace2_exec(file, (const char **)argv);
 #endif
 
-	if (!the_repository->settings.can_run_external_programs)
+	if (the_repository->settings.external_programs_disabled)
 		BUG("this command is not allowed to call sane_execvp");
 
 	if (!execvp(file, argv))
@@ -668,7 +668,7 @@ int start_command(struct child_process *cmd)
 	int failed_errno;
 	char *str;
 
-	if (!the_repository->settings.can_run_external_programs)
+	if (the_repository->settings.external_programs_disabled)
 		BUG("this command is not allowed to call start_command");
 
 	/*

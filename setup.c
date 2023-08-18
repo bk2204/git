@@ -1260,7 +1260,7 @@ static enum discovery_result setup_git_directory_gently_1(struct strbuf *dir,
 	dev_t current_device = 0;
 	int one_filesystem = 1;
 
-	the_repository->settings.can_run_external_programs = !restricted;
+	the_repository->settings.external_programs_disabled = restricted;
 
 	/*
 	 * If GIT_DIR is set explicitly, we're not going
@@ -1340,7 +1340,7 @@ static enum discovery_result setup_git_directory_gently_1(struct strbuf *dir,
 			const char *gitdir_candidate =
 				gitdir_path ? gitdir_path : gitdirenv;
 
-			if (!restricted ||
+			if (restricted ||
 			    ensure_valid_ownership(gitfile, dir->buf,
 						   gitdir_candidate, report)) {
 				strbuf_addstr(gitdir, gitdirenv);

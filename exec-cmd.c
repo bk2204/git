@@ -342,7 +342,7 @@ int execv_git_cmd(const char **argv)
 	prepare_git_cmd(&nargv, argv);
 	trace_argv_printf(nargv.v, "trace: exec:");
 
-	if (!the_repository->settings.can_run_external_programs)
+	if (the_repository->settings.external_programs_disabled)
 		BUG("this command is not allowed to call execv_git_cmd");
 
 	/* execvp() can only ever return if it fails */

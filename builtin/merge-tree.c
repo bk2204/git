@@ -421,7 +421,8 @@ struct merge_tree_options {
 static int real_merge(struct merge_tree_options *o,
 		      const char *merge_base,
 		      const char *branch1, const char *branch2,
-		      const char *prefix)
+		      const char *prefix,
+		      const char *names[3])
 {
 	struct commit *parent1, *parent2;
 	struct commit_list *merge_bases = NULL;
@@ -442,8 +443,8 @@ static int real_merge(struct merge_tree_options *o,
 
 	opt.show_rename_progress = 0;
 
-	opt.branch1 = branch1;
-	opt.branch2 = branch2;
+	opt.branch1 = names[0] && *names[0] ? names[0] : branch1;
+	opt.branch2 = names[2] && *names[2] ? names[2] : branch2;
 
 	if (merge_base) {
 		struct commit *base_commit;
@@ -453,7 +454,7 @@ static int real_merge(struct merge_tree_options *o,
 		if (!base_commit)
 			die(_("could not lookup commit '%s'"), merge_base);
 
-		opt.ancestor = merge_base;
+		opt.ancestor = names[1] && *names[1] ? names[1]: merge_base;
 		base_tree = repo_get_commit_tree(the_repository, base_commit);
 		parent1_tree = repo_get_commit_tree(the_repository, parent1);
 		parent2_tree = repo_get_commit_tree(the_repository, parent2);
@@ -512,6 +513,19 @@ static int real_merge(struct merge_tree_options *o,
 	return !result.clean; /* result.clean < 0 handled above */
 }
 
+static int label_cb(const struct option *opt, const char *arg, int unset)
+{
+	static int label_count = 0;
+	const char **names = (const char **)opt->value;
+
+	BUG_ON_OPT_NEG(unset);
+
+	if (label_count >= 3)
+		return error("too many labels on the command line");
+	names[label_count++] = arg;
+	return 0;
+}
+
 int cmd_merge_tree(int argc, const char **argv, const char *prefix)
 {
 	struct merge_tree_options o = { .show_messages = -1 };
@@ -519,6 +533,7 @@ int cmd_merge_tree(int argc, const char **argv, const char *prefix)
 	int expected_remaining_argc;
 	int original_argc;
 	const char *merge_base = NULL;
+	const char *names[3] = { 0 };
 
 	const char * const merge_tree_usage[] = {
 		N_("git merge-tree [--write-tree] [<options>] <branch1> <branch2>"),
@@ -553,6 +568,8 @@ int cmd_merge_tree(int argc, const char **argv, const char *prefix)
 			   N_("specify a merge-base for the merge")),
 		OPT_STRVEC('X', "strategy-option", &xopts, N_("option=value"),
 			N_("option for selected merge strategy")),
+		OPT_CALLBACK('L', NULL, names, N_("name"),
+			     N_("set labels for file1/orig-file/file2"), &label_cb),
 		OPT_END()
 	};
 
@@ -598,9 +615,9 @@ int cmd_merge_tree(int argc, const char **argv, const char *prefix)
 			if (input_merge_base && split[2] && split[3] && !split[4]) {
 				strbuf_rtrim(split[2]);
 				strbuf_rtrim(split[3]);
-				result = real_merge(&o, input_merge_base, split[2]->buf, split[3]->buf, prefix);
+				result = real_merge(&o, input_merge_base, split[2]->buf, split[3]->buf, prefix, names);
 			} else if (!input_merge_base && !split[2]) {
-				result = real_merge(&o, NULL, split[0]->buf, split[1]->buf, prefix);
+				result = real_merge(&o, NULL, split[0]->buf, split[1]->buf, prefix, names);
 			} else {
 				die(_("malformed input line: '%s'."), buf.buf);
 			}
@@ -649,7 +666,7 @@ int cmd_merge_tree(int argc, const char **argv, const char *prefix)
 
 	/* Do the relevant type of merge */
 	if (o.mode == MODE_REAL)
-		return real_merge(&o, merge_base, argv[0], argv[1], prefix);
+		return real_merge(&o, merge_base, argv[0], argv[1], prefix, names);
 	else
 		return trivial_merge(argv[0], argv[1], argv[2]);
 }

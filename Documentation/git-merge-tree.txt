@@ -40,6 +40,15 @@ After the merge completes, a new toplevel tree object is created.  See
 OPTIONS
 -------
 
+-L <label>::
+	This option may be given up to three times, and specifies labels to be used
+	in place of the corresponding file names in conflict reports. The three
+	entries are ours, the ancestor, and theirs.  If the label is empty, the
+	default is used.
++
+The ancestor value is currently only honored if a merge base is provided;
+this may be fixed in a future revision.
+
 -z::
 	Do not quote filenames in the <Conflicted file info> section,
 	and end each filename with a NUL character rather than

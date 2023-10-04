@@ -102,7 +102,18 @@ test_expect_success 'Content merge and a few conflicts' '
 	git show ${expected_tree}:greeting >tmp &&
 	sed -e s/HEAD/side1/ tmp >expect &&
 	git show ${actual_tree}:greeting >actual &&
-	test_cmp expect actual
+	test_cmp expect actual &&
+	grep "<< side1" actual &&
+	grep ">> side2" actual
+'
+
+test_expect_success 'Conflicts with labels' '
+	test_expect_code 1 git merge-tree --write-tree -L file1 -L base -L file2 side1 side2 >RESULT &&
+	actual_tree=$(head -n 1 RESULT) &&
+
+	git show ${actual_tree}:greeting >actual &&
+	grep "<< file1" actual &&
+	grep ">> file2" actual
 '
 
 test_expect_success 'Auto resolve conflicts by "ours" strategy option' '

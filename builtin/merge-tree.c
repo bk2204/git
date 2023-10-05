@@ -424,22 +424,36 @@ static int real_merge(struct merge_tree_options *o,
 		      const char *prefix,
 		      const char *names[3])
 {
-	struct commit *parent1, *parent2;
+	struct commit *parent1 = NULL, *parent2 = NULL;
+	struct tree *parent1_tree = NULL, *parent2_tree = NULL;
 	struct commit_list *merge_bases = NULL;
 	struct merge_result result = { 0 };
 	int show_messages = o->show_messages;
 	struct merge_options opt;
 
 	copy_merge_options(&opt, &o->merge_options);
-	parent1 = get_merge_parent(branch1);
-	if (!parent1)
-		help_unknown_ref(branch1, "merge-tree",
-				 _("not something we can merge"));
+	if (merge_base) {
+		struct object_id oid;
+		if (!repo_get_oid_treeish(the_repository, branch1, &oid))
+			parent1_tree = parse_tree_indirect(&oid);
+		if (!repo_get_oid_treeish(the_repository, branch2, &oid))
+			parent2_tree = parse_tree_indirect(&oid);
+	} else {
+		parent1 = get_merge_parent(branch1);
+		if (parent1)
+			parent1_tree = repo_get_commit_tree(the_repository, parent1);
 
-	parent2 = get_merge_parent(branch2);
-	if (!parent2)
+		parent2 = get_merge_parent(branch2);
+		if (parent2)
+			parent2_tree = repo_get_commit_tree(the_repository, parent2);
+	}
+
+	if (!parent1_tree)
+		help_unknown_ref(branch1, "merge-tree",
+			 _("not something we can merge"));
+	if (!parent2_tree)
 		help_unknown_ref(branch2, "merge-tree",
-				 _("not something we can merge"));
+			 _("not something we can merge"));
 
 	opt.show_rename_progress = 0;
 
@@ -447,17 +461,15 @@ static int real_merge(struct merge_tree_options *o,
 	opt.branch2 = names[2] && *names[2] ? names[2] : branch2;
 
 	if (merge_base) {
-		struct commit *base_commit;
-		struct tree *base_tree, *parent1_tree, *parent2_tree;
+		struct tree *base_tree = NULL;
+		struct object_id oid;
 
-		base_commit = lookup_commit_reference_by_name(merge_base);
-		if (!base_commit)
-			die(_("could not lookup commit '%s'"), merge_base);
+		if (!repo_get_oid_treeish(the_repository, merge_base, &oid))
+			base_tree = parse_tree_indirect(&oid);
+		if (!base_tree)
+			die(_("could not lookup tree %s"), merge_base);
 
 		opt.ancestor = names[1] && *names[1] ? names[1]: merge_base;
-		base_tree = repo_get_commit_tree(the_repository, base_commit);
-		parent1_tree = repo_get_commit_tree(the_repository, parent1);
-		parent2_tree = repo_get_commit_tree(the_repository, parent2);
 		merge_incore_nonrecursive(&opt, base_tree, parent1_tree, parent2_tree, &result);
 	} else {
 		/*

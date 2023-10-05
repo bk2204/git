@@ -131,6 +131,16 @@ test_expect_success 'Auto resolve conflicts by "ours" strategy option' '
 	test_cmp expected actual
 '
 
+test_expect_success 'can merge trees identically to commits with merge base' '
+	echo "$actual_tree" >expect &&
+	merge_base=$(git merge-base side1 side2) &&
+	test_expect_code 1 git merge-tree --write-tree -L file1 -L base -L file2 \
+		--merge-base="$merge_base^{tree}" side1^{tree} side2^{tree} >RESULT &&
+	head -n 1 RESULT >actual &&
+
+	test_cmp expect actual
+'
+
 test_expect_success 'Barf on misspelled option, with exit code other than 0 or 1' '
 	# Mis-spell with single "s" instead of double "s"
 	test_expect_code 129 git merge-tree --write-tree --mesages FOOBAR side1 side2 2>expect &&

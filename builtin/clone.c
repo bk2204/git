@@ -987,12 +987,7 @@ int cmd_clone(int argc, const char **argv, const char *prefix)
 		usage_msg_opt(_("You must specify a repository to clone."),
 			builtin_clone_usage, builtin_clone_options);
 
-	xsetenv("GIT_CLONE_PROTECTION_ACTIVE", "true", 0 /* allow user override */);
 	template_dir = get_template_dir(option_template);
-	if (*template_dir && !is_absolute_path(template_dir))
-		template_dir = template_dir_dup =
-			absolute_pathdup(template_dir);
-	xsetenv("GIT_CLONE_TEMPLATE_DIR", template_dir, 1);
 
 	if (option_depth || option_since || option_not.nr)
 		deepen = 1;

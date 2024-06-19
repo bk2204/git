@@ -159,6 +159,9 @@ objectsize[:padded]::
 	It also supports a padded format of size with "%(objectsize:padded)".
 path::
 	The pathname of the object.
+eolinfo:blob::
+	The <eolinfo> (see the description of the `--eol` option of
+	linkgit:git-ls-files[1]) of the blob contents for the path.
 
 GIT
 ---

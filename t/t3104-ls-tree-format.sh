@@ -77,4 +77,17 @@ test_ls_tree_format \
 	"--full-tree" \
 	"--full-tree"
 
+test_expect_success 'ls-tree --format with %(eolinfo:blob) prints expected values' '
+	test_commit --printf binary binary "a binary\000file" &&
+	git ls-tree --format="b/%(eolinfo:blob) %(path)" HEAD >actual &&
+	cat >expected <<-EOF &&
+	b/lf .gitmodules
+	b/-text binary
+	b/ dir
+	b/ submodule
+	b/lf top-file.t
+	EOF
+	test_cmp actual expected
+'
+
 test_done

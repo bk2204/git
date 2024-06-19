@@ -134,6 +134,24 @@ static const char *gather_convert_stats_ascii(const char *data, unsigned long si
 	}
 }
 
+const char *get_blob_convert_stats_ascii(struct repository *r,
+					 const struct object_id *oid)
+{
+	const char *ret;
+	enum object_type type;
+	void *data;
+	unsigned long sz;
+
+	data = repo_read_object_file(r, oid, &type, &sz);
+	if (!data || type != OBJ_BLOB) {
+		free(data);
+		return NULL;
+	}
+	ret = gather_convert_stats_ascii(data, sz);
+	free(data);
+	return ret;
+}
+
 const char *get_cached_convert_stats_ascii(struct index_state *istate,
 					   const char *path)
 {

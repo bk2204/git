@@ -6,6 +6,7 @@
 
 #include "hash-ll.h"
 #include "string-list.h"
+#include "repository.h"
 
 struct index_state;
 struct strbuf;
@@ -93,6 +94,8 @@ void convert_attrs(struct index_state *istate,
 
 extern enum eol core_eol;
 extern char *check_roundtrip_encoding;
+const char *get_blob_convert_stats_ascii(struct repository *r,
+					 const struct object_id *oid);
 const char *get_cached_convert_stats_ascii(struct index_state *istate,
 					   const char *path);
 const char *get_wt_convert_stats_ascii(const char *path);

@@ -5,6 +5,7 @@
  */
 #include "builtin.h"
 #include "config.h"
+#include "convert.h"
 #include "gettext.h"
 #include "hex.h"
 #include "object-name.h"
@@ -127,6 +128,10 @@ static int show_tree_fmt(const struct object_id *oid, struct strbuf *base,
 			quote_c_style(name, &sb, NULL, 0);
 			strbuf_setlen(base, baselen);
 			strbuf_release(&sbuf);
+		} else if (skip_prefix(format, "(eolinfo:blob)", &format)) {
+			strbuf_addstr(&sb, type == OBJ_BLOB ?
+				      get_blob_convert_stats_ascii(the_repository,
+				      oid) : "");
 		} else
 			strbuf_expand_bad_format(format, "ls-tree");
 	}

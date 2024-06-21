@@ -306,6 +306,10 @@ newline. The available atoms are:
 	Otherwise, expands to the null OID (all zeroes). See `CAVEATS`
 	below.
 
+`eolinfo:blob`::
+	The <eolinfo> (see the description of the `--eol` option of
+	linkgit:git-ls-files[1]) of the blob contents.
+
 `rest`::
 	If this atom is used in the output string, input lines are split
 	at the first whitespace boundary. All characters before that

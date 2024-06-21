@@ -116,6 +116,7 @@ run_tests () {
     size=$3
     content=$4
     pretty_content=$5
+    eol=$6
 
     batch_output="$oid $type $size
 $content"
@@ -210,6 +211,12 @@ $content"
 	test_cmp expect actual
     '
 
+    test_expect_success "--batch-check with eolinfo ($type)" '
+	echo "$eol" >expect &&
+	echo $oid | git cat-file --batch-check="b/%(eolinfo:blob)" >actual &&
+	test_cmp expect actual
+    '
+
     test -z "$content" ||
     test_expect_success "--batch without type ($type)" '
 	{
@@ -246,7 +253,7 @@ test_expect_success "setup" '
 run_blob_tests () {
     oid=$1
 
-    run_tests 'blob' $oid $hello_size "$hello_content" "$hello_content"
+    run_tests 'blob' $oid $hello_size "$hello_content" "$hello_content" "b/none"
 
     test_expect_success '--batch-command --buffer with flush for blob info' '
 	echo "$oid blob $hello_size" >expect &&
@@ -284,8 +291,8 @@ tree_compat_size=$(($(test_oid --hash=compat rawsz) + 13))
 tree_pretty_content="100644 blob $hello_oid	hello${LF}"
 tree_compat_pretty_content="100644 blob $hello_compat_oid	hello${LF}"
 
-run_tests 'tree' $tree_oid $tree_size "" "$tree_pretty_content"
-run_tests 'tree' $tree_compat_oid $tree_compat_size "" "$tree_compat_pretty_content"
+run_tests 'tree' $tree_oid $tree_size "" "$tree_pretty_content" "b/"
+run_tests 'tree' $tree_compat_oid $tree_compat_size "" "$tree_compat_pretty_content" "b/"
 
 commit_message="Initial commit"
 commit_oid=$(echo_without_newline "$commit_message" | git commit-tree $tree_oid)
@@ -304,8 +311,8 @@ committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
 
 $commit_message"
 
-run_tests 'commit' $commit_oid $commit_size "$commit_content" "$commit_content"
-run_tests 'commit' $commit_compat_oid $commit_compat_size "$commit_compat_content" "$commit_compat_content"
+run_tests 'commit' $commit_oid $commit_size "$commit_content" "$commit_content" "b/"
+run_tests 'commit' $commit_compat_oid $commit_compat_size "$commit_compat_content" "$commit_compat_content" "b/"
 
 tag_header_without_oid="type blob
 tag hellotag
@@ -328,8 +335,8 @@ tag_size=$(strlen "$tag_content")
 tag_compat_oid=$(git rev-parse --output-object-format=$test_compat_hash_algo $tag_oid)
 tag_compat_size=$(strlen "$tag_compat_content")
 
-run_tests 'tag' $tag_oid $tag_size "$tag_content" "$tag_content"
-run_tests 'tag' $tag_compat_oid $tag_compat_size "$tag_compat_content" "$tag_compat_content"
+run_tests 'tag' $tag_oid $tag_size "$tag_content" "$tag_content" "b/"
+run_tests 'tag' $tag_compat_oid $tag_compat_size "$tag_compat_content" "$tag_compat_content" "b/"
 
 test_expect_success "Reach a blob from a tag pointing to it" '
 	echo_without_newline "$hello_content" >expect &&

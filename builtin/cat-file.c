@@ -346,6 +346,13 @@ static int expand_atom(struct strbuf *sb, const char *atom, int len,
 		else
 			strbuf_addstr(sb,
 				      oid_to_hex(&data->delta_base_oid));
+	} else if (is_atom("eolinfo:blob", atom, len)) {
+		if (data->mark_query)
+			data->info.typep = &data->type;
+		else
+			strbuf_addstr(sb, data->type == OBJ_BLOB ?
+				      get_blob_convert_stats_ascii(the_repository,
+				      &data->oid) : "");
 	} else
 		return 0;
 	return 1;

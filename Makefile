@@ -909,7 +909,7 @@ export PYTHON_PATH
 TEST_SHELL_PATH = $(SHELL_PATH)
 
 LIB_FILE = libgit.a
-XDIFF_LIB = xdiff/lib.a
+XDIFF_LIB = xdiff/libxdiff.a
 REFTABLE_LIB = reftable/libreftable.a
 
 GENERATED_H += command-list.h

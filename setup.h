@@ -227,4 +227,6 @@ struct startup_info {
 extern struct startup_info *startup_info;
 extern const char *tmp_original_cwd;
 
+int c_main(int argc, const char **argv);
+
 #endif /* SETUP_H */

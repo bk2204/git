@@ -32,6 +32,11 @@ static void restore_sigpipe_to_default(void)
 
 int main(int argc, const char **argv)
 {
+	return c_main(argc, argv);
+}
+
+int c_main(int argc, const char **argv)
+{
 	int result;
 	struct strbuf tmp = STRBUF_INIT;
 

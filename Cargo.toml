@@ -1,0 +1,54 @@
+[package]
+name = "git"
+version = "2.47.0"
+edition = "2018"
+rust-version = "1.63"
+
+[lib]
+name = "git_internal"
+path = "src/lib.rs"
+
+[[bin]]
+name = "git"
+path = "src/bin/git.rs"
+
+[[bin]]
+name = "git-daemon"
+path = "src/bin/git-daemon.rs"
+
+[[bin]]
+name = "git-http-backend"
+path = "src/bin/git-http-backend.rs"
+
+[[bin]]
+name = "git-imap-send"
+path = "src/bin/git-imap-send.rs"
+
+[[bin]]
+name = "git-sh-i18n--envsubst"
+path = "src/bin/git-sh-i18n--envsubst.rs"
+
+[[bin]]
+name = "git-shell"
+path = "src/bin/git-shell.rs"
+
+[[bin]]
+name = "git-http-fetch"
+path = "src/bin/git-http-fetch.rs"
+
+[[bin]]
+name = "git-http-push"
+path = "src/bin/git-http-push.rs"
+
+[[bin]]
+name = "git-remote-http"
+path = "src/bin/git-remote-http.rs"
+
+[[bin]]
+name = "scalar"
+path = "src/bin/scalar.rs"
+
+[dependencies]
+
+[build-dependencies]
+cc = { version = "1", features = ["parallel"] }

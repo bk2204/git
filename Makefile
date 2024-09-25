@@ -657,6 +657,7 @@ CURL_CONFIG = curl-config
 GCOV = gcov
 STRIP = strip
 SPATCH = spatch
+CARGO = cargo
 
 export TCL_PATH TCLTK_PATH
 
@@ -1320,6 +1321,10 @@ BUILTIN_OBJS += builtin/verify-pack.o
 BUILTIN_OBJS += builtin/verify-tag.o
 BUILTIN_OBJS += builtin/worktree.o
 BUILTIN_OBJS += builtin/write-tree.o
+
+BUILTIN_SRCS = $(patsubst %.o,%.c,$(BUILTIN_OBJS))
+
+export BUILTIN_SRCS
 
 # THIRD_PARTY_SOURCES is a list of patterns compatible with the
 # $(filter) and $(filter-out) family of functions. They specify source
@@ -2454,25 +2459,6 @@ strip: $(PROGRAMS) git$X
 #   dependencies here will not need to change if the force-build
 #   details change some day.
 
-git.sp git.s git.o: GIT-PREFIX
-git.sp git.s git.o: EXTRA_CPPFLAGS = \
-	'-DGIT_HTML_PATH="$(htmldir_relative_SQ)"' \
-	'-DGIT_MAN_PATH="$(mandir_relative_SQ)"' \
-	'-DGIT_INFO_PATH="$(infodir_relative_SQ)"'
-
-git$X: git.o GIT-LDFLAGS $(BUILTIN_OBJS) $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) \
-		$(filter %.o,$^) $(LIBS)
-
-help.sp help.s help.o: command-list.h
-builtin/bugreport.sp builtin/bugreport.s builtin/bugreport.o: hook-list.h
-
-builtin/help.sp builtin/help.s builtin/help.o: config-list.h GIT-PREFIX
-builtin/help.sp builtin/help.s builtin/help.o: EXTRA_CPPFLAGS = \
-	'-DGIT_HTML_PATH="$(htmldir_relative_SQ)"' \
-	'-DGIT_MAN_PATH="$(mandir_relative_SQ)"' \
-	'-DGIT_INFO_PATH="$(infodir_relative_SQ)"'
-
 PAGER_ENV_SQ = $(subst ','\'',$(PAGER_ENV))
 PAGER_ENV_CQ = "$(subst ",\",$(subst \,\\,$(PAGER_ENV)))"
 PAGER_ENV_CQ_SQ = $(subst ','\'',$(PAGER_ENV_CQ))
@@ -2486,6 +2472,37 @@ version.sp version.s version.o: EXTRA_CPPFLAGS = \
 	'-DGIT_BUILT_FROM_COMMIT="$(shell \
 		GIT_CEILING_DIRECTORIES="$(CURDIR)/.." \
 		git rev-parse -q --verify HEAD 2>/dev/null)"'
+
+
+RUST_LIBS = $(patsubst -l%,%,$(LIBS) $(EXTLIBS))
+GIT_CFLAGS = \
+	$(ALL_CFLAGS) \
+	-DGIT_HTML_PATH='"$(htmldir_relative_SQ)"' \
+	-DGIT_MAN_PATH='"$(mandir_relative_SQ)"' \
+	-DGIT_INFO_PATH='"$(infodir_relative_SQ)"' \
+	-DPAGER_ENV='$(PAGER_ENV_CQ_SQ)' \
+	-DGIT_VERSION='"$(GIT_VERSION)"' \
+	-DGIT_USER_AGENT='$(GIT_USER_AGENT_CQ_SQ)' \
+	-DGIT_BUILT_FROM_COMMIT="$(shell \
+		GIT_CEILING_DIRECTORIES="$(CURDIR)/.." \
+		git rev-parse -q --verify HEAD 2>/dev/null)"'
+
+export GIT_CFLAGS RUST_LIBS CC LIBS
+
+git.sp git.s git.o: GIT-PREFIX
+git.sp git.s git.o: EXTRA_CPPFLAGS = $(GIT_CFLAGS)
+
+git$X: GIT-LDFLAGS $(BUILTIN_OBJS) $(GITLIBS)
+	$(QUIET_LINK)LDFLAGS="$(ALL_LDFLAGS)" $(CARGO) build --release --bin $@ $(CARGOFLAGS); cp target/release/$@ $@
+
+help.sp help.s help.o: command-list.h
+builtin/bugreport.sp builtin/bugreport.s builtin/bugreport.o: hook-list.h
+
+builtin/help.sp builtin/help.s builtin/help.o: config-list.h GIT-PREFIX
+builtin/help.sp builtin/help.s builtin/help.o: EXTRA_CPPFLAGS = \
+	'-DGIT_HTML_PATH="$(htmldir_relative_SQ)"' \
+	'-DGIT_MAN_PATH="$(mandir_relative_SQ)"' \
+	'-DGIT_INFO_PATH="$(infodir_relative_SQ)"'
 
 $(BUILT_INS): git$X
 	$(QUIET_BUILT_IN)$(RM) $@ && \
@@ -2708,6 +2725,7 @@ test-objs: $(TEST_OBJS)
 GIT_OBJS += $(LIB_OBJS)
 GIT_OBJS += $(BUILTIN_OBJS)
 GIT_OBJS += common-main.o
+GIT_OBJS += c-main.o
 GIT_OBJS += git.o
 .PHONY: git-objs
 git-objs: $(GIT_OBJS)
@@ -2839,18 +2857,15 @@ headless-git$X: headless-git.o git.res GIT-LDFLAGS
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) -mwindows -o $@ $< git.res
 
 git-%$X: %.o GIT-LDFLAGS $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(LIBS)
+	$(QUIET_LINK)LDFLAGS="$(ALL_LDFLAGS)" $(CARGO) build --release --bin $@ $(CARGOFLAGS); cp target/release/$@ $@
 
 git-imap-send$X: imap-send.o $(IMAP_SEND_BUILDDEPS) GIT-LDFLAGS $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
-		$(IMAP_SEND_LDFLAGS) $(LIBS)
+	$(QUIET_LINK)LDFLAGS="$(ALL_LDFLAGS) $(IMAP_SEND_LDFLAGS)" $(CARGO) build --release --bin $@ $(CARGOFLAGS); cp target/release/$@ $@
 
 git-http-fetch$X: http.o http-walker.o http-fetch.o GIT-LDFLAGS $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
-		$(CURL_LIBCURL) $(LIBS)
+	$(QUIET_LINK)LDFLAGS="$(CURL_LIBCURL)" $(CARGO) build --release --bin $@ $(CARGOFLAGS); cp target/release/$@ $@
 git-http-push$X: http.o http-push.o GIT-LDFLAGS $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
-		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
+	$(QUIET_LINK)LDFLAGS="$(CURL_LIBCURL) $(EXPAT_LIBEXPAT)" $(CARGO) build --release --bin $@ $(CARGOFLAGS); cp target/release/$@ $@
 
 $(REMOTE_CURL_ALIASES): $(REMOTE_CURL_PRIMARY)
 	$(QUIET_LNCP)$(RM) $@ && \
@@ -2859,12 +2874,10 @@ $(REMOTE_CURL_ALIASES): $(REMOTE_CURL_PRIMARY)
 	cp $< $@
 
 $(REMOTE_CURL_PRIMARY): remote-curl.o http.o http-walker.o GIT-LDFLAGS $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) \
-		$(CURL_LIBCURL) $(EXPAT_LIBEXPAT) $(LIBS)
+	$(QUIET_LINK)LDFLAGS="$(CURL_LIBCURL) $(EXPAT_LIBEXPAT)" $(CARGO) build --release --bin $@ $(CARGOFLAGS); cp target/release/$@ $@
 
 scalar$X: scalar.o GIT-LDFLAGS $(GITLIBS)
-	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) \
-		$(filter %.o,$^) $(LIBS)
+	$(QUIET_LINK)LDFLAGS="$(ALL_LDFLAGS)" $(CARGO) build --release --bin $@ $(CARGOFLAGS); cp target/release/$@ $@
 
 $(LIB_FILE): $(LIB_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
@@ -3254,7 +3267,7 @@ perf: all
 
 t/helper/test-tool$X: $(patsubst %,t/helper/%,$(TEST_BUILTINS_OBJS)) $(UNIT_TEST_DIR)/test-lib.o
 
-t/helper/test-%$X: t/helper/test-%.o GIT-LDFLAGS $(GITLIBS)
+t/helper/test-%$X: t/helper/test-%.o GIT-LDFLAGS $(GITLIBS) c-main.o
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LIBS)
 
 check-sha1:: t/helper/test-tool$X
@@ -3860,7 +3873,7 @@ FUZZ_CXXFLAGS ?= $(ALL_CFLAGS)
 .PHONY: fuzz-all
 fuzz-all: $(FUZZ_PROGRAMS)
 
-$(FUZZ_PROGRAMS): %: %.o oss-fuzz/dummy-cmd-main.o $(GITLIBS) GIT-LDFLAGS
+$(FUZZ_PROGRAMS): %: %.o oss-fuzz/dummy-cmd-main.o $(GITLIBS) c-main.o GIT-LDFLAGS
 	$(QUIET_LINK)$(FUZZ_CXX) $(FUZZ_CXXFLAGS) -o $@ $(ALL_LDFLAGS) \
 		-Wl,--allow-multiple-definition \
 		$(filter %.o,$^) $(filter %.a,$^) $(LIBS) $(LIB_FUZZING_ENGINE)
@@ -3868,7 +3881,7 @@ $(FUZZ_PROGRAMS): %: %.o oss-fuzz/dummy-cmd-main.o $(GITLIBS) GIT-LDFLAGS
 $(UNIT_TEST_PROGS): $(UNIT_TEST_BIN)/%$X: $(UNIT_TEST_DIR)/%.o \
 	$(UNIT_TEST_DIR)/test-lib.o \
 	$(UNIT_TEST_DIR)/lib-oid.o \
-	$(GITLIBS) GIT-LDFLAGS
+	$(GITLIBS) c-main.o GIT-LDFLAGS
 	$(call mkdir_p_parent_template)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) \
 		$(filter %.o,$^) $(filter %.a,$^) $(LIBS)
@@ -3888,7 +3901,7 @@ $(UNIT_TEST_DIR)/clar.suite: $(UNIT_TEST_DIR)/clar-decls.h
 	$(QUIET_GEN)awk -f $(UNIT_TEST_DIR)/clar-generate.awk $< >$(UNIT_TEST_DIR)/clar.suite
 $(CLAR_TEST_OBJS): $(UNIT_TEST_DIR)/clar-decls.h
 $(CLAR_TEST_OBJS): EXTRA_CPPFLAGS = -I$(UNIT_TEST_DIR)
-$(CLAR_TEST_PROG): $(UNIT_TEST_DIR)/clar.suite $(CLAR_TEST_OBJS) $(GITLIBS) GIT-LDFLAGS
+$(CLAR_TEST_PROG): $(UNIT_TEST_DIR)/clar.suite $(CLAR_TEST_OBJS) $(GITLIBS) c-main.o GIT-LDFLAGS
 	$(call mkdir_p_parent_template)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(LIBS)
 

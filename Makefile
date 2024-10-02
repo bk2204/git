@@ -512,23 +512,17 @@ include shared.mak
 #
 # ==== SHA-1 implementations ====
 #
-# Define OPENSSL_SHA1 to link to the SHA-1 routines from the OpenSSL
-# library.
+# Define OPENSSL_SHA1_UNSAFE to link to the SHA-1 routines from the OpenSSL
+# library for unsafe SHA-1 hashing for non-cryptographic purposes.
 #
-# Define BLK_SHA1 to make use of optimized C SHA-1 routines bundled
-# with git (in the block-sha1/ directory).
+# Define BLK_SHA1_UNSAFE to make use of optimized C SHA-1 routines bundled
+# with git (in the block-sha1/ directory) for unsafe SHA-1 hashing.
 #
 # Define APPLE_COMMON_CRYPTO_SHA1 to use Apple's CommonCrypto for
-# SHA-1.
+# unsafe SHA-1 hashing.
 #
-# Define the same Makefile knobs as above, but suffixed with _UNSAFE to
-# use the corresponding implementations for unsafe SHA-1 hashing for
-# non-cryptographic purposes.
-#
-# If don't enable any of the *_SHA1 settings in this section, Git will
-# default to its built-in sha1collisiondetection library, which is a
-# collision-detecting sha1 This is slower, but may detect attempted
-# collision attacks.
+# Git always uses a collision-detecting SHA-1 for cryptographic purposes,
+# which is slower, but may detect attempted collision attacks.
 #
 # ==== Options for the sha1collisiondetection library ====
 #
@@ -1951,29 +1945,12 @@ ifdef NO_POSIX_GOODIES
 	BASIC_CFLAGS += -DNO_POSIX_GOODIES
 endif
 
-ifdef APPLE_COMMON_CRYPTO_SHA1
-	# Apple CommonCrypto requires chunking
-	SHA1_MAX_BLOCK_SIZE = 1024L*1024L*1024L
-endif
-
 ifdef PPC_SHA1
 $(error the PPC_SHA1 flag has been removed along with the PowerPC-specific SHA-1 implementation.)
 endif
 
-ifdef OPENSSL_SHA1
-	EXTLIBS += $(LIB_4_CRYPTO)
-	BASIC_CFLAGS += -DSHA1_OPENSSL
-else
-ifdef BLK_SHA1
-	LIB_OBJS += block-sha1/sha1.o
-	BASIC_CFLAGS += -DSHA1_BLK
-else
-ifdef APPLE_COMMON_CRYPTO_SHA1
-	COMPAT_CFLAGS += -DCOMMON_DIGEST_FOR_OPENSSL
-	BASIC_CFLAGS += -DSHA1_APPLE
-else
-	BASIC_CFLAGS += -DSHA1_DC
-	LIB_OBJS += sha1dc_git.o
+BASIC_CFLAGS += -DSHA1_DC
+LIB_OBJS += sha1dc_git.o
 ifdef DC_SHA1_EXTERNAL
         ifdef DC_SHA1_SUBMODULE
                 ifneq ($(DC_SHA1_SUBMODULE),auto)
@@ -1991,33 +1968,24 @@ else
 	LIB_OBJS += sha1dc/sha1.o
 	LIB_OBJS += sha1dc/ubc_check.o
 endif
-	BASIC_CFLAGS += \
-		-DSHA1DC_NO_STANDARD_INCLUDES \
-		-DSHA1DC_INIT_SAFE_HASH_DEFAULT=0 \
-		-DSHA1DC_CUSTOM_INCLUDE_SHA1_C="\"git-compat-util.h\"" \
-		-DSHA1DC_CUSTOM_INCLUDE_UBC_CHECK_C="\"git-compat-util.h\""
 endif
-endif
-endif
-endif
+BASIC_CFLAGS += \
+	-DSHA1DC_NO_STANDARD_INCLUDES \
+	-DSHA1DC_INIT_SAFE_HASH_DEFAULT=0 \
+	-DSHA1DC_CUSTOM_INCLUDE_SHA1_C="\"git-compat-util.h\"" \
+	-DSHA1DC_CUSTOM_INCLUDE_UBC_CHECK_C="\"git-compat-util.h\""
 
 ifdef OPENSSL_SHA1_UNSAFE
-ifndef OPENSSL_SHA1
 	EXTLIBS += $(LIB_4_CRYPTO)
 	BASIC_CFLAGS += -DSHA1_OPENSSL_UNSAFE
-endif
 else
 ifdef BLK_SHA1_UNSAFE
-ifndef BLK_SHA1
 	LIB_OBJS += block-sha1/sha1.o
 	BASIC_CFLAGS += -DSHA1_BLK_UNSAFE
-endif
 else
 ifdef APPLE_COMMON_CRYPTO_SHA1_UNSAFE
-ifndef APPLE_COMMON_CRYPTO_SHA1
 	COMPAT_CFLAGS += -DCOMMON_DIGEST_FOR_OPENSSL
 	BASIC_CFLAGS += -DSHA1_APPLE_UNSAFE
-endif
 endif
 endif
 endif

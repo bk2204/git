@@ -1,19 +1,7 @@
 #ifndef HASH_H
 #define HASH_H
 
-#if defined(SHA1_APPLE)
-#include <CommonCrypto/CommonDigest.h>
-#elif defined(SHA1_OPENSSL)
-#  include <openssl/sha.h>
-#  if defined(OPENSSL_API_LEVEL) && OPENSSL_API_LEVEL >= 3
-#    define SHA1_NEEDS_CLONE_HELPER
-#    include "sha1/openssl.h"
-#  endif
-#elif defined(SHA1_DC)
 #include "sha1dc_git.h"
-#else /* SHA1_BLK */
-#include "block-sha1/sha1.h"
-#endif
 
 #if defined(SHA1_APPLE_UNSAFE)
 #  include <CommonCrypto/CommonDigest.h>

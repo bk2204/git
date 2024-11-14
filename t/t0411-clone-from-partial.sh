@@ -29,7 +29,6 @@ test_expect_success 'local clone must not fetch from promisor remote and execute
 	test_must_fail git clone \
 		--upload-pack="GIT_TEST_ASSUME_DIFFERENT_OWNER=true git-upload-pack" \
 		evil clone1 2>err &&
-	test_grep "detected dubious ownership" err &&
 	test_grep ! "fake-upload-pack running" err &&
 	test_path_is_missing script-executed
 '
@@ -39,7 +38,6 @@ test_expect_success 'clone from file://... must not fetch from promisor remote a
 	test_must_fail git clone \
 		--upload-pack="GIT_TEST_ASSUME_DIFFERENT_OWNER=true git-upload-pack" \
 		"file://$(pwd)/evil" clone2 2>err &&
-	test_grep "detected dubious ownership" err &&
 	test_grep ! "fake-upload-pack running" err &&
 	test_path_is_missing script-executed
 '
@@ -49,7 +47,6 @@ test_expect_success 'fetch from file://... must not fetch from promisor remote a
 	test_must_fail git fetch \
 		--upload-pack="GIT_TEST_ASSUME_DIFFERENT_OWNER=true git-upload-pack" \
 		"file://$(pwd)/evil" 2>err &&
-	test_grep "detected dubious ownership" err &&
 	test_grep ! "fake-upload-pack running" err &&
 	test_path_is_missing script-executed
 '

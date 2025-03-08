@@ -256,3 +256,4 @@ Release/
 /contrib/libgit-sys/target
 /rust/target/
 /rust/Cargo.lock
+/rust/git-internal/bindings.h

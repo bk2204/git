@@ -931,15 +931,19 @@ LIB_FILE = libgit.a
 XDIFF_LIB = xdiff/lib.a
 REFTABLE_LIB = reftable/libreftable.a
 RUST_LIB = rust/target/release/libgit_internal.a
+RUST_BINDINGS_H = rust/git-internal/bindings.h
 
 GENERATED_H += command-list.h
 GENERATED_H += config-list.h
 GENERATED_H += hook-list.h
 GENERATED_H += $(UNIT_TEST_DIR)/clar-decls.h
 GENERATED_H += $(UNIT_TEST_DIR)/clar.suite
+GENERATED_H += $(RUST_BINDINGS_H)
 
 .PHONY: generated-hdrs
 generated-hdrs: $(GENERATED_H)
+
+rust-bindings.h: $(RUST_BINDINGS_H)
 
 ## Exhaustive lists of our source files, either dynamically generated,
 ## or hardcoded.
@@ -2946,6 +2950,8 @@ $(REFTABLE_LIB): $(REFTABLE_OBJS)
 
 $(RUST_LIB):
 	$(QUIET_CARGO)(cd rust && $(CARGO) build --features "$(CARGO_FEATURES)" --release)
+
+$(RUST_BINDINGS_H): $(RUST_LIB)
 
 .PHONY: $(RUST_LIB)
 

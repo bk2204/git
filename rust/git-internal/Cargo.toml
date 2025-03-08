@@ -11,5 +11,8 @@ crate-type = ["staticlib"]
 formatx = "0.2"
 gettext-rs = { version = "0.7", optional = true }
 
+[build-dependencies]
+cbindgen = "0.24"
+
 [features]
 gettext = ["dep:gettext-rs"]

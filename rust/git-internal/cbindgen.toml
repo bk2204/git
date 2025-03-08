@@ -1,0 +1,10 @@
+language = "C"
+include_guard = "RUST_BINDINGS_H"
+includes = ["../../git-compat-util.h"]
+no_includes = true
+usize_is_size_t = true
+style = "tag"
+
+[enum]
+rename_variants = "ScreamingSnakeCase"
+prefix_with_name = true

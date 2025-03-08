@@ -6,3 +6,10 @@ rust-version = "1.63.0"
 
 [lib]
 crate-type = ["staticlib"]
+
+[dependencies]
+formatx = "0.2"
+gettext-rs = { version = "0.7", optional = true }
+
+[features]
+gettext = ["dep:gettext-rs"]

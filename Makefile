@@ -1778,6 +1778,7 @@ ifdef NEEDS_LIBGEN
 	EXTLIBS += -lgen
 endif
 ifndef NO_GETTEXT
+	CARGO_FEATURES += gettext
 ifdef LIBC_CONTAINS_LIBINTL
 	GETTEXT_SYSTEM = YesPlease
 else

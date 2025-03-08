@@ -54,7 +54,7 @@ struct git_config_source {
 	enum config_scope scope;
 };
 
-enum config_origin_type {
+enum config_origin {
 	CONFIG_ORIGIN_UNKNOWN = 0,
 	CONFIG_ORIGIN_BLOB,
 	CONFIG_ORIGIN_FILE,
@@ -120,7 +120,7 @@ struct config_options {
 struct key_value_info {
 	const char *filename;
 	int linenr;
-	enum config_origin_type origin_type;
+	enum config_origin origin_type;
 	enum config_scope scope;
 	const char *path;
 };
@@ -180,7 +180,7 @@ int git_config_from_file_with_options(config_fn_t fn, const char *,
 				      void *, enum config_scope,
 				      const struct config_options *);
 int git_config_from_mem(config_fn_t fn,
-			const enum config_origin_type,
+			const enum config_origin,
 			const char *name,
 			const char *buf, size_t len,
 			void *data, enum config_scope scope,
@@ -417,7 +417,7 @@ void git_global_config_paths(char **user, char **xdg);
 
 int git_config_parse_parameter(const char *, config_fn_t fn, void *data);
 
-const char *config_origin_type_name(enum config_origin_type type);
+const char *config_origin_type_name(enum config_origin type);
 void kvi_from_param(struct key_value_info *out);
 
 /*

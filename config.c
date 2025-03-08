@@ -54,7 +54,7 @@ struct config_source {
 			size_t pos;
 		} buf;
 	} u;
-	enum config_origin_type origin_type;
+	enum config_origin origin_type;
 	const char *name;
 	const char *path;
 	enum config_error_action default_error_action;
@@ -1854,7 +1854,7 @@ static int do_config_from(struct config_source *top, config_fn_t fn,
 }
 
 static int do_config_from_file(config_fn_t fn,
-			       const enum config_origin_type origin_type,
+			       const enum config_origin origin_type,
 			       const char *name, const char *path, FILE *f,
 			       void *data, enum config_scope scope,
 			       const struct config_options *opts)
@@ -1909,7 +1909,7 @@ int git_config_from_file(config_fn_t fn, const char *filename, void *data)
 }
 
 int git_config_from_mem(config_fn_t fn,
-			const enum config_origin_type origin_type,
+			const enum config_origin origin_type,
 			const char *name, const char *buf, size_t len,
 			void *data, enum config_scope scope,
 			const struct config_options *opts)
@@ -3755,7 +3755,7 @@ int parse_config_key(const char *var,
 	return 0;
 }
 
-const char *config_origin_type_name(enum config_origin_type type)
+const char *config_origin_type_name(enum config_origin type)
 {
 	switch (type) {
 	case CONFIG_ORIGIN_BLOB:

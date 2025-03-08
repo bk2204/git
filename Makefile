@@ -445,6 +445,14 @@ include shared.mak
 # Define NO_MSGFMT_EXTENDED_OPTIONS if your implementation of msgfmt
 # doesn't support GNU extensions like --check and --statistics
 #
+# Define GETTEXT_DIR if your gettext implementation is not located in the
+# standard directory path. You can also define the next two options instead.
+#
+# Define GETTEXT_LIB_DIR to specify the directory holding libintl.
+#
+# Define GETTEXT_INCLUDE_DIR to specify the directory holding the include files
+# for gettext.
+#
 # === Optional library: libexpat ===
 #
 # Define NO_EXPAT if you do not have expat installed.  git-http-push is
@@ -1770,8 +1778,17 @@ ifdef NEEDS_LIBGEN
 	EXTLIBS += -lgen
 endif
 ifndef NO_GETTEXT
-ifndef LIBC_CONTAINS_LIBINTL
+ifdef LIBC_CONTAINS_LIBINTL
+	GETTEXT_SYSTEM = YesPlease
+else
 	EXTLIBS += -lintl
+endif
+ifndef GETTEXT_DIR
+ifndef GETTEXT_LIB_DIR
+ifndef GETTEXT_INCLUDE_DIR
+	GETTEXT_DIR = $(prefix)
+endif
+endif
 endif
 endif
 ifdef NEEDS_SOCKET
@@ -2425,6 +2442,7 @@ ALL_CFLAGS += $(BASIC_CFLAGS)
 ALL_LDFLAGS += $(BASIC_LDFLAGS)
 
 export DIFF TAR INSTALL DESTDIR SHELL_PATH
+export GETTEXT_DIR GETTEXT_SYSTEM GETTEXT_LIB_DIR GETTEXT_INCLUDE_DIR
 
 
 ### Build rules

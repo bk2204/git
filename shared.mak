@@ -70,6 +70,7 @@ ifndef V
 	QUIET_SP       = @echo '   ' SP $<;
 	QUIET_HDR      = @echo '   ' HDR $(<:hcc=h);
 	QUIET_RC       = @echo '   ' RC $@;
+	QUIET_CARGO    = @echo '   ' CARGO $@;
 
 ## Used in "Makefile": SPATCH
 	QUIET_SPATCH			= @echo '   ' SPATCH $< \>$@;

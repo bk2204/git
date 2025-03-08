@@ -663,6 +663,7 @@ STRIP = strip
 SPATCH = spatch
 LD = ld
 OBJCOPY = objcopy
+CARGO = cargo
 
 export TCL_PATH TCLTK_PATH
 
@@ -672,6 +673,7 @@ PTHREAD_LIBS = -lpthread
 # Guard against environment variables
 BUILTIN_OBJS =
 BUILT_INS =
+CARGO_FEATURES =
 COMPAT_CFLAGS =
 COMPAT_OBJS =
 XDIFF_OBJS =
@@ -920,6 +922,7 @@ TEST_SHELL_PATH = $(SHELL_PATH)
 LIB_FILE = libgit.a
 XDIFF_LIB = xdiff/lib.a
 REFTABLE_LIB = reftable/libreftable.a
+RUST_LIB = rust/target/release/libgit_internal.a
 
 GENERATED_H += command-list.h
 GENERATED_H += config-list.h
@@ -1387,7 +1390,7 @@ UNIT_TEST_OBJS += $(UNIT_TEST_DIR)/test-lib.o
 UNIT_TEST_OBJS += $(UNIT_TEST_DIR)/lib-reftable.o
 
 # xdiff and reftable libs may in turn depend on what is in libgit.a
-GITLIBS = common-main.o $(LIB_FILE) $(XDIFF_LIB) $(REFTABLE_LIB) $(LIB_FILE)
+GITLIBS = common-main.o $(LIB_FILE) $(XDIFF_LIB) $(REFTABLE_LIB) $(LIB_FILE) $(RUST_LIB)
 EXTLIBS =
 
 GIT_USER_AGENT = git/$(GIT_VERSION)
@@ -2922,6 +2925,11 @@ $(XDIFF_LIB): $(XDIFF_OBJS)
 $(REFTABLE_LIB): $(REFTABLE_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
+$(RUST_LIB):
+	$(QUIET_CARGO)(cd rust && $(CARGO) build --features "$(CARGO_FEATURES)" --release)
+
+.PHONY: $(RUST_LIB)
+
 export DEFAULT_EDITOR DEFAULT_PAGER
 
 Documentation/GIT-EXCLUDED-PROGRAMS: FORCE
@@ -3189,6 +3197,7 @@ endif
 GIT-BUILD-OPTIONS: FORCE
 	@sed \
 		-e "s!@BROKEN_PATH_FIX@!\'$(BROKEN_PATH_FIX)\'!" \
+		-e "s|@CARGO@|\'$(CARGO)\'|" \
 		-e "s|@DIFF@|\'$(DIFF)\'|" \
 		-e "s|@FSMONITOR_DAEMON_BACKEND@|\'$(FSMONITOR_DAEMON_BACKEND)\'|" \
 		-e "s|@FSMONITOR_OS_SETTINGS@|\'$(FSMONITOR_OS_SETTINGS)\'|" \
@@ -3928,10 +3937,12 @@ $(CLAR_TEST_PROG): $(UNIT_TEST_DIR)/clar.suite $(CLAR_TEST_OBJS) $(GITLIBS) GIT-
 	$(call mkdir_p_parent_template)
 	$(QUIET_LINK)$(CC) $(ALL_CFLAGS) -o $@ $(ALL_LDFLAGS) $(filter %.o,$^) $(LIBS)
 
-.PHONY: build-unit-tests unit-tests
+.PHONY: build-unit-tests unit-tests rust-unit-tests
 build-unit-tests: $(UNIT_TEST_PROGS) $(CLAR_TEST_PROG)
 unit-tests: $(UNIT_TEST_PROGS) $(CLAR_TEST_PROG) t/helper/test-tool$X
 	$(MAKE) -C t/ unit-tests
+rust-unit-tests: $(UNIT_TEST_PROGS) $(CLAR_TEST_PROG) t/helper/test-tool$X
+	$(QUIET_CARGO)(cd rust && cargo test --features "$(CARGO_FEATURES)")
 
 .PHONY: libgit-sys libgit-rs
 libgit-sys libgit-rs:

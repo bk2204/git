@@ -6,10 +6,20 @@ usize_is_size_t = true
 style = "tag"
 
 [export]
-include = ["ErrorCode"]
+include = [
+    "ConfigContext",
+    "ConfigEvent",
+    "ErrorCode",
+    "KeyValueInfo",
+]
 
 [export.rename]
-ErrorCode = "Err"
+ConfigContext = "config_context"
+ConfigEvent = "config_event"
+ConfigOrigin = "config_origin"
+ConfigScope = "config_scope"
+ErrorCode = "err"
+KeyValueInfo = "key_value_info"
 
 [enum]
 rename_variants = "ScreamingSnakeCase"

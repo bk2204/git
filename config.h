@@ -1,6 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include "rust-bindings.h"
 #include "hashmap.h"
 #include "string-list.h"
 #include "repository.h"
@@ -36,15 +37,6 @@ struct object_id;
 
 #define CONFIG_REGEX_NONE ((void *)1)
 
-enum config_scope {
-	CONFIG_SCOPE_UNKNOWN = 0,
-	CONFIG_SCOPE_SYSTEM,
-	CONFIG_SCOPE_GLOBAL,
-	CONFIG_SCOPE_LOCAL,
-	CONFIG_SCOPE_WORKTREE,
-	CONFIG_SCOPE_COMMAND,
-	CONFIG_SCOPE_SUBMODULE,
-};
 const char *config_scope_name(enum config_scope scope);
 
 struct git_config_source {
@@ -52,24 +44,6 @@ struct git_config_source {
 	const char *file;
 	const char *blob;
 	enum config_scope scope;
-};
-
-enum config_origin {
-	CONFIG_ORIGIN_UNKNOWN = 0,
-	CONFIG_ORIGIN_BLOB,
-	CONFIG_ORIGIN_FILE,
-	CONFIG_ORIGIN_STDIN,
-	CONFIG_ORIGIN_SUBMODULE_BLOB,
-	CONFIG_ORIGIN_CMDLINE
-};
-
-enum config_event {
-	CONFIG_EVENT_SECTION,
-	CONFIG_EVENT_ENTRY,
-	CONFIG_EVENT_WHITESPACE,
-	CONFIG_EVENT_COMMENT,
-	CONFIG_EVENT_EOF,
-	CONFIG_EVENT_ERROR
 };
 
 struct config_source;
@@ -116,14 +90,6 @@ struct config_options {
 	} error_action;
 };
 
-/* Config source metadata for a given config key-value pair */
-struct key_value_info {
-	const char *filename;
-	int linenr;
-	enum config_origin origin_type;
-	enum config_scope scope;
-	const char *path;
-};
 #define KVI_INIT { \
 	.filename = NULL, \
 	.linenr = -1, \
@@ -132,11 +98,6 @@ struct key_value_info {
 	.path = NULL, \
 }
 
-/* Captures additional information that a config callback can use. */
-struct config_context {
-	/* Config source metadata for key and value. */
-	const struct key_value_info *kvi;
-};
 #define CONFIG_CONTEXT_INIT { 0 }
 
 /**

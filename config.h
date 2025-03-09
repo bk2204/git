@@ -63,7 +63,7 @@ enum config_origin {
 	CONFIG_ORIGIN_CMDLINE
 };
 
-enum config_event_t {
+enum config_event {
 	CONFIG_EVENT_SECTION,
 	CONFIG_EVENT_ENTRY,
 	CONFIG_EVENT_WHITESPACE,
@@ -80,7 +80,7 @@ struct config_source;
  * Note: for CONFIG_EVENT_ENTRY (i.e. config variables), the trailing newline
  * character is considered part of the element.
  */
-typedef int (*config_parser_event_fn_t)(enum config_event_t type,
+typedef int (*config_parser_event_fn_t)(enum config_event type,
 					size_t begin_offset, size_t end_offset,
 					struct config_source *cs,
 					void *event_fn_data);

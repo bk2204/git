@@ -991,12 +991,12 @@ static int get_base_var(struct config_source *cs, struct strbuf *name)
 }
 
 struct parse_event_data {
-	enum config_event_t previous_type;
+	enum config_event previous_type;
 	size_t previous_offset;
 	const struct config_options *opts;
 };
 
-static int do_event(struct config_source *cs, enum config_event_t type,
+static int do_event(struct config_source *cs, enum config_event type,
 		    struct parse_event_data *data)
 {
 	size_t offset;
@@ -2765,7 +2765,7 @@ struct config_store_data {
 	int multi_replace;
 	struct {
 		size_t begin, end;
-		enum config_event_t type;
+		enum config_event type;
 		int is_keys_section;
 	} *parsed;
 	unsigned int parsed_nr, parsed_alloc, *seen, seen_nr, seen_alloc;
@@ -2802,7 +2802,7 @@ static int matches(const char *key, const char *value,
 		(value && !regexec(store->value_pattern, value, 0, NULL, 0));
 }
 
-static int store_aux_event(enum config_event_t type, size_t begin, size_t end,
+static int store_aux_event(enum config_event type, size_t begin, size_t end,
 			   struct config_source *cs, void *data)
 {
 	struct config_store_data *store = data;
@@ -2997,7 +2997,7 @@ static void maybe_remove_section(struct config_store_data *store,
 	 */
 	seen = *seen_ptr;
 	for (i = store->seen[seen]; i > 0; i--) {
-		enum config_event_t type = store->parsed[i - 1].type;
+		enum config_event type = store->parsed[i - 1].type;
 
 		if (type == CONFIG_EVENT_COMMENT)
 			/* There is a comment before this entry or section */
@@ -3023,7 +3023,7 @@ static void maybe_remove_section(struct config_store_data *store,
 	 * section.
 	 */
 	for (i = store->seen[seen] + 1; i < store->parsed_nr; i++) {
-		enum config_event_t type = store->parsed[i].type;
+		enum config_event type = store->parsed[i].type;
 
 		if (type == CONFIG_EVENT_COMMENT)
 			return;

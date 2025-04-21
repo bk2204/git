@@ -1,4 +1,12 @@
 #![allow(dead_code)]
+#![allow(unused_imports)]
+
+use std::ffi::CStr;
+use std::fmt;
+use std::io;
+
+use crate::convert::AsDisplayStr;
+
 #[cfg(not(feature = "gettext"))]
 pub use stubs::*;
 
@@ -21,6 +29,40 @@ mod stubs {
         } else {
             msgid_plural.into()
         }
+    }
+}
+
+pub trait AsLocalizable<'a> {
+    fn as_localizable(&'a self) -> Localizable<'a>;
+}
+
+impl<'a> AsLocalizable<'a> for &'a io::Error {
+    fn as_localizable(&'a self) -> Localizable<'a> {
+        Localizable::IoError(self)
+    }
+}
+
+pub enum Localizable<'a> {
+    IoError(&'a io::Error),
+}
+
+impl<'a> fmt::Display for Localizable<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::IoError(e) => match e.raw_os_error() {
+                Some(errno) => {
+                    let err = unsafe { CStr::from_ptr(libc::strerror(errno)) };
+                    write!(f, "{}", err.to_bytes().as_display_str())
+                }
+                None => write!(f, "{}", e),
+            },
+        }
+    }
+}
+
+impl<'a> fmt::Debug for Localizable<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        fmt::Display::fmt(self, f)
     }
 }
 

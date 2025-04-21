@@ -10,6 +10,7 @@ crate-type = ["staticlib"]
 [dependencies]
 formatx = "0.2"
 gettext-rs = { version = "0.7", optional = true }
+libc = "0.2"
 
 [build-dependencies]
 cbindgen = "0.24"

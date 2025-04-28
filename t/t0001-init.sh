@@ -571,7 +571,7 @@ test_expect_success 'init warns about invalid init.defaultObjectFormat' '
 	test_cmp expect err &&
 
 	git -C repo rev-parse --show-object-format >actual &&
-	echo $GIT_DEFAULT_HASH >expected &&
+	echo ${GIT_DEFAULT_HASH%%:*} >expected &&
 	test_cmp expected actual
 '
 

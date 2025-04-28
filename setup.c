@@ -2404,7 +2404,7 @@ static int needs_work_tree_config(const char *git_dir, const char *work_tree)
 }
 
 void initialize_repository_version(struct repository *repo,
-				   int hash_algo,
+				   int hash_algo, int compat_hash_algo,
 				   enum ref_storage_format ref_storage_format,
 				   int reinit)
 {
@@ -2420,6 +2420,7 @@ void initialize_repository_version(struct repository *repo,
 	 * the remote repository's format.
 	 */
 	if (hash_algo != GIT_HASH_SHA1_LEGACY ||
+	    compat_hash_algo != GIT_HASH_UNKNOWN ||
 	    ref_storage_format != REF_STORAGE_FORMAT_FILES ||
 	    repo->ref_storage_payload)
 		target_version = GIT_REPO_VERSION_READ;
@@ -2430,6 +2431,11 @@ void initialize_repository_version(struct repository *repo,
 	else if (reinit)
 		repo_config_set_gently(repo, "extensions.objectformat", NULL);
 
+	if (compat_hash_algo != GIT_HASH_UNKNOWN)
+		repo_config_set(repo, "extensions.compatobjectformat",
+				hash_algos[compat_hash_algo].name);
+	else if (reinit)
+		repo_config_set_gently(repo, "extensions.compatobjectformat", NULL);
 	if (repo->ref_storage_payload) {
 		struct strbuf ref_uri = STRBUF_INIT;
 
@@ -2571,7 +2577,7 @@ static int create_default_files(struct repository *repo,
 		adjust_shared_perm(repo, repo_get_git_dir(repo));
 	}
 
-	initialize_repository_version(repo, fmt->hash_algo, fmt->ref_storage_format, reinit);
+	initialize_repository_version(repo, fmt->hash_algo, fmt->compat_hash_algo, fmt->ref_storage_format, reinit);
 
 	/* Check filemode trustability */
 	repo_git_path_replace(repo, &path, "config");
@@ -2744,16 +2750,33 @@ static void repository_format_configure(struct repository *repo,
 	else if (hash != GIT_HASH_UNKNOWN)
 		repo_fmt->hash_algo = hash;
 	else if (env) {
-		int env_algo = hash_algo_by_name(env);
+		int env_algo, env_compat_algo = GIT_HASH_UNKNOWN;
+		char *s = xstrdup(env), *p;
+
+		p = strchr(s, ':');
+		if (p) {
+			*p = '\0';
+			env_algo = hash_algo_by_name(s);
+			env_compat_algo = hash_algo_by_name(p+1);
+			if (env_compat_algo == GIT_HASH_UNKNOWN)
+				die(_("unknown hash algorithm '%s'"), p+1);
+		} else {
+			env_algo = hash_algo_by_name(env);
+		}
+		free(s);
 		if (env_algo == GIT_HASH_UNKNOWN)
 			die(_("unknown hash algorithm '%s'"), env);
 		if (repo_fmt->version < 0 ||
 		    repo_fmt->hash_algo == GIT_HASH_UNKNOWN)
 			repo_fmt->hash_algo = env_algo;
+		if (repo_fmt->version < 0 ||
+		    repo_fmt->compat_hash_algo == GIT_HASH_UNKNOWN)
+			repo_fmt->compat_hash_algo = env_compat_algo;
 	} else if (cfg.hash != GIT_HASH_UNKNOWN) {
 		repo_fmt->hash_algo = cfg.hash;
 	}
 	repo_set_hash_algo(repo, repo_fmt->hash_algo);
+	repo_set_compat_hash_algo(repo, repo_fmt->compat_hash_algo);
 
 	env = getenv("GIT_DEFAULT_REF_FORMAT");
 	if (repo_fmt->version >= 0 &&

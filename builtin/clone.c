@@ -1222,7 +1222,7 @@ int cmd_clone(int argc,
 	 *
 	 * This is sufficient for Git commands to discover the Git directory.
 	 */
-	initialize_repository_version(GIT_HASH_UNKNOWN,
+	initialize_repository_version(GIT_HASH_UNKNOWN, GIT_HASH_UNKNOWN,
 				      the_repository->ref_storage_format, 1);
 
 	strbuf_addf(&buf, "%s/HEAD", git_dir);
@@ -1440,7 +1440,7 @@ int cmd_clone(int argc,
 	 * ours to the same thing.
 	 */
 	hash_algo = hash_algo_by_ptr(transport_get_hash_algo(transport));
-	initialize_repository_version(hash_algo, the_repository->ref_storage_format, 1);
+	initialize_repository_version(hash_algo, GIT_HASH_UNKNOWN, the_repository->ref_storage_format, 1);
 	repo_set_hash_algo(the_repository, hash_algo);
 	create_reference_database(the_repository->ref_storage_format, NULL, 1);
 

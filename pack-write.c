@@ -183,7 +183,7 @@ const char *write_idx_file(struct repository *repo,
 	int padding_size[2] = { 0 };
 	uint8_t zero[4] = { 0 };
 
-	index_version = opts->version;
+	index_version = compat ? 3 : opts->version;
 
 	if (nr_objects) {
 		sorted_by_sha = objects;

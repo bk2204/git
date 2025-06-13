@@ -887,7 +887,8 @@ int cmd_clone(int argc,
 	int err = 0, complete_refs_before_fetch = 1;
 	int submodule_progress;
 	int filter_submodules = 0;
-	int hash_algo;
+	const char *env;
+	int hash_algo, compat_hash_algo = GIT_HASH_UNKNOWN;
 	enum ref_storage_format ref_storage_format = REF_STORAGE_FORMAT_UNKNOWN;
 	const int do_not_override_repo_unix_permissions = -1;
 	int option_reject_shallow = -1; /* unspecified */
@@ -1440,7 +1441,11 @@ int cmd_clone(int argc,
 	 * ours to the same thing.
 	 */
 	hash_algo = hash_algo_by_ptr(transport_get_hash_algo(transport));
-	initialize_repository_version(hash_algo, GIT_HASH_UNKNOWN, the_repository->ref_storage_format, 1);
+	env = getenv(GIT_DEFAULT_HASH_ENVIRONMENT);
+	if (env && strchr(env, ':')) {
+		compat_hash_algo = 3 - hash_algo;
+	}
+	initialize_repository_version(hash_algo, compat_hash_algo, the_repository->ref_storage_format, 1);
 	repo_set_hash_algo(the_repository, hash_algo);
 	create_reference_database(the_repository->ref_storage_format, NULL, 1);
 

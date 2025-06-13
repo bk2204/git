@@ -452,7 +452,7 @@ test_expect_success 'trying to verify many non-annotated or unknown tags, should
 # creating annotated tags:
 
 get_tag_msg () {
-	git cat-file tag "$1" | sed -e "/BEGIN PGP/q"
+	git cat-file tag "$1" | sed -e "/^gpgsig/,/ -----END PGP/d" -e "/BEGIN PGP/q"
 }
 
 # run test_tick before committing always gives the time in that timezone
@@ -1488,13 +1488,19 @@ test_expect_success GPG 'git verifies tag is valid with double signature' '
 	git tag -s -m tail tag-gpg-double-sig &&
 	git cat-file tag tag-gpg-double-sig >tag &&
 	othersigheader=$(test_oid othersigheader) &&
-	sed -ne "/^\$/q;p" tag >new-tag &&
-	cat <<-EOM >>new-tag &&
-	$othersigheader -----BEGIN PGP SIGNATURE-----
-	 someinvaliddata
-	 -----END PGP SIGNATURE-----
-	EOM
-	sed -e "1,/^tagger/d" tag >>new-tag &&
+	if test -z "$test_repo_compat_hash_algo"
+	then
+		sed -ne "/^\$/q;p" tag >new-tag &&
+		cat <<-EOM >>new-tag &&
+		$othersigheader -----BEGIN PGP SIGNATURE-----
+		 someinvaliddata
+		 -----END PGP SIGNATURE-----
+		EOM
+		sed -e "1,/^tagger/d" tag >>new-tag
+	else
+		grep "^$othersigheader -----BEGIN PGP SIGNATURE-----" tag &&
+		cp tag new-tag
+	fi &&
 	new_tag=$(git hash-object -t tag -w new-tag) &&
 	git update-ref refs/tags/tag-gpg-double-sig $new_tag &&
 	git verify-tag tag-gpg-double-sig &&

@@ -4,6 +4,8 @@
 #include "refs.h"
 #include "string-list.h"
 
+#define GIT_DEFAULT_HASH_ENVIRONMENT "GIT_DEFAULT_HASH"
+
 int is_inside_git_dir(struct repository *repo);
 int is_inside_work_tree(struct repository *repo);
 int get_common_dir_noenv(struct strbuf *sb, const char *gitdir);

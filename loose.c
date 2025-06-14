@@ -236,6 +236,9 @@ int repo_add_loose_object_map(struct odb_source *source,
 	if (!should_use_loose_object_map(source->odb->repo))
 		return 0;
 
+	if (!source->loose_map)
+		loose_object_map_init(&source->loose_map);
+
 	inserted = insert_loose_map(source, oid, compat_oid);
 	if (inserted && (flags & LOOSE_WRITE))
 		return write_one_object(source, oid, compat_oid, flags);

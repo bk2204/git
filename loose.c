@@ -155,7 +155,8 @@ static int insert_cached_objects(const struct object_id *main UNUSED,
 				 uint32_t kind UNUSED,
 				 void *data)
 {
-	oidtree_insert(data, compat, NULL);
+	if (data)
+		oidtree_insert(data, compat, NULL);
 	return 0;
 }
 

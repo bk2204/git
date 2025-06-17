@@ -17,22 +17,31 @@ static int advertise_object_info = -1;
 static uint32_t client_hash_algo = GIT_HASH_SHA1_LEGACY;
 
 static int always_advertise(struct repository *r UNUSED,
-			    struct strbuf *value UNUSED)
+			    struct strbuf *value UNUSED,
+			    int count)
 {
+	if (count)
+		return 0;
 	return 1;
 }
 
 static int agent_advertise(struct repository *r UNUSED,
-			   struct strbuf *value)
+			   struct strbuf *value,
+			   int count)
 {
+	if (count)
+		return 0;
 	if (value)
 		strbuf_addstr(value, git_user_agent_sanitized());
 	return 1;
 }
 
 static int promisor_remote_advertise(struct repository *r,
-				     struct strbuf *value)
+				     struct strbuf *value,
+				     int count)
 {
+	if (count)
+		return 0;
 	if (value) {
 		char *info = promisor_remote_info(r);
 		if (!info)
@@ -51,8 +60,11 @@ static void promisor_remote_receive(struct repository *r,
 
 
 static int object_format_advertise(struct repository *r,
-				   struct strbuf *value)
+				   struct strbuf *value,
+				   int count)
 {
+	if (count)
+		return 0;
 	if (value)
 		strbuf_addstr(value, r->hash_algo->name);
 	return 1;
@@ -69,8 +81,11 @@ static void object_format_receive(struct repository *r UNUSED,
 		die("unknown object format '%s'", algo_name);
 }
 
-static int session_id_advertise(struct repository *r, struct strbuf *value)
+static int session_id_advertise(struct repository *r, struct strbuf *value,
+				int count)
 {
+	if (count)
+		return 0;
 	if (advertise_sid == -1 &&
 	    repo_config_get_bool(r, "transfer.advertisesid", &advertise_sid))
 		advertise_sid = 0;
@@ -89,7 +104,8 @@ static void session_id_receive(struct repository *r UNUSED,
 	trace2_data_string("transfer", NULL, "client-sid", client_sid);
 }
 
-static int object_info_advertise(struct repository *r, struct strbuf *value UNUSED)
+static int object_info_advertise(struct repository *r, struct strbuf *value UNUSED,
+				 int count UNUSED)
 {
 	if (advertise_object_info == -1 &&
 	    repo_config_get_bool(r, "transfer.advertiseobjectinfo",
@@ -114,7 +130,7 @@ struct protocol_capability {
 	 * If a value is added to 'value', the server will advertise this
 	 * capability as "<name>=<value>" instead of "<name>".
 	 */
-	int (*advertise)(struct repository *r, struct strbuf *value);
+	int (*advertise)(struct repository *r, struct strbuf *value, int count);
 
 	/*
 	 * Function called when a client requests the capability as a command.
@@ -194,20 +210,24 @@ void protocol_v2_advertise_capabilities(struct repository *r)
 	for (size_t i = 0; i < ARRAY_SIZE(capabilities); i++) {
 		struct protocol_capability *c = &capabilities[i];
 
-		if (c->advertise(r, &value)) {
-			strbuf_addstr(&capability, c->name);
+		for (int j = 0;; j++) {
+			if (c->advertise(r, &value, j)) {
+				strbuf_addstr(&capability, c->name);
 
-			if (value.len) {
-				strbuf_addch(&capability, '=');
-				strbuf_addbuf(&capability, &value);
+				if (value.len) {
+					strbuf_addch(&capability, '=');
+					strbuf_addbuf(&capability, &value);
+				}
+
+				strbuf_addch(&capability, '\n');
+				packet_write(1, capability.buf, capability.len);
+
+				strbuf_reset(&capability);
+				strbuf_reset(&value);
+			} else {
+				break;
 			}
-
-			strbuf_addch(&capability, '\n');
-			packet_write(1, capability.buf, capability.len);
 		}
-
-		strbuf_reset(&capability);
-		strbuf_reset(&value);
 	}
 
 	packet_flush(1);
@@ -243,7 +263,7 @@ static int receive_client_capability(struct repository *r, const char *key)
 	const char *value;
 	const struct protocol_capability *c = get_capability(key, &value);
 
-	if (!c || c->command || !c->advertise(r, NULL))
+	if (!c || c->command || !c->advertise(r, NULL, 0))
 		return 0;
 
 	if (c->receive)
@@ -262,7 +282,7 @@ static int parse_command(struct repository *r, const char *key, struct protocol_
 		if (*command)
 			die("command '%s' requested after already requesting command '%s'",
 			    out, (*command)->name);
-		if (!cmd || !cmd->advertise(r, NULL) || !cmd->command || value)
+		if (!cmd || !cmd->advertise(r, NULL, 0) || !cmd->command || value)
 			die("invalid command '%s'", out);
 
 		*command = cmd;

@@ -150,7 +150,7 @@ int fetch_bundle_list(struct repository *r,
 /**
  * API for serve.c.
  */
-int bundle_uri_advertise(struct repository *r, struct strbuf *value);
+int bundle_uri_advertise(struct repository *r, struct strbuf *value, int count);
 int bundle_uri_command(struct repository *r, struct packet_reader *request);
 
 /**

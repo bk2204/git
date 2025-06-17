@@ -2274,7 +2274,7 @@ int cmd_index_pack(int argc,
 	unsigned char pack_hash[GIT_MAX_RAWSZ];
 	unsigned foreign_nr = 1;	/* zero is a "good" value, assume bad */
 	int report_end_of_input = 0;
-	int hash_algo = 0;
+	int hash_algo = 0, compat_hash_algo = 0;
 
 	/*
 	 * index-pack never needs to fetch missing objects except when
@@ -2377,6 +2377,11 @@ int cmd_index_pack(int argc,
 				if (hash_algo == GIT_HASH_UNKNOWN)
 					die(_("unknown hash algorithm '%s'"), arg);
 				repo_set_hash_algo(the_repository, hash_algo);
+			} else if (skip_prefix(arg, "--compat-object-format=", &arg)) {
+				compat_hash_algo = hash_algo_by_name(arg);
+				if (compat_hash_algo == GIT_HASH_UNKNOWN)
+					die(_("unknown hash algorithm '%s'"), arg);
+				repo_set_compat_hash_algo(the_repository, compat_hash_algo);
 			} else if (!strcmp(arg, "--rev-index")) {
 				rev_index = 1;
 			} else if (!strcmp(arg, "--no-rev-index")) {

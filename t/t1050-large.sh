@@ -176,8 +176,13 @@ test_expect_success 'git-show a large file' '
 
 test_expect_success 'index-pack' '
 	git clone file://"$(pwd)"/.git foo &&
+	extra_arg= &&
+	if test -n "$test_repo_compat_hash_algo"
+	then
+		extra_arg="--compat-object-format=$test_repo_compat_hash_algo"
+	fi &&
 	GIT_DIR=non-existent git index-pack --object-format=$(test_oid algo) \
-		--strict --verify foo/.git/objects/pack/*.pack
+		$extra_arg --strict --verify foo/.git/objects/pack/*.pack
 '
 
 test_expect_success 'repack' '

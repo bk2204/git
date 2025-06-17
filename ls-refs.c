@@ -215,8 +215,11 @@ int ls_refs(struct repository *r, struct packet_reader *request)
 	return 0;
 }
 
-int ls_refs_advertise(struct repository *r, struct strbuf *value)
+int ls_refs_advertise(struct repository *r, struct strbuf *value, int count)
 {
+	if (count)
+		return 0;
+
 	if (value && unborn_config(r) == UNBORN_ADVERTISE)
 		strbuf_addstr(value, "unborn");
 

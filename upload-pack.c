@@ -1853,9 +1853,13 @@ int upload_pack_v2(struct repository *r, struct packet_reader *request)
 }
 
 int upload_pack_advertise(struct repository *r,
-			  struct strbuf *value)
+			  struct strbuf *value,
+			  int count)
 {
 	struct upload_pack_data data;
+
+	if (count)
+		return 0;
 
 	upload_pack_data_init(&data);
 	get_upload_pack_config(r, &data);

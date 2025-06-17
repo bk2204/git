@@ -904,9 +904,13 @@ cleanup:
  * API for serve.c.
  */
 
-int bundle_uri_advertise(struct repository *r, struct strbuf *value UNUSED)
+int bundle_uri_advertise(struct repository *r, struct strbuf *value UNUSED,
+			 int count)
 {
 	static int advertise_bundle_uri = -1;
+
+	if (count)
+		return 0;
 
 	if (advertise_bundle_uri != -1)
 		goto cached;

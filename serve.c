@@ -14,6 +14,7 @@
 
 static int advertise_sid = -1;
 static int advertise_object_info = -1;
+static int advertise_compat = 0;
 static uint32_t client_hash_algo = GIT_HASH_SHA1_LEGACY;
 
 static int always_advertise(struct repository *r UNUSED,
@@ -63,11 +64,23 @@ static int object_format_advertise(struct repository *r,
 				   struct strbuf *value,
 				   int count)
 {
-	if (count)
+
+	switch (count) {
+	case 0:
+		if (value) {
+			strbuf_addstr(value, r->hash_algo->name);
+		}
+		return 1;
+	case 1:
+		repo_config_get_bool(r, "transfer.advertisecompatobjectformat", &advertise_compat);
+		if (value && r->compat_hash_algo && advertise_compat) {
+			strbuf_addstr(value, r->compat_hash_algo->name);
+			return 1;
+		}
+		/* fallthrough */
+	default:
 		return 0;
-	if (value)
-		strbuf_addstr(value, r->hash_algo->name);
-	return 1;
+	}
 }
 
 static void object_format_receive(struct repository *r UNUSED,

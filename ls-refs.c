@@ -5,6 +5,7 @@
 #include "gettext.h"
 #include "hash.h"
 #include "hex.h"
+#include "object-file-convert.h"
 #include "repository.h"
 #include "refs.h"
 #include "strvec.h"
@@ -73,6 +74,7 @@ struct ls_refs_data {
 	struct strbuf buf;
 	struct strvec hidden_refs;
 	unsigned unborn : 1;
+	const struct git_hash_algo *hash_algo;
 };
 
 static int send_ref(const char *refname, const char *referent UNUSED, const struct object_id *oid,
@@ -80,6 +82,7 @@ static int send_ref(const char *refname, const char *referent UNUSED, const stru
 {
 	struct ls_refs_data *data = cb_data;
 	const char *refname_nons = strip_namespace(refname);
+	struct object_id advertised;
 
 	strbuf_reset(&data->buf);
 
@@ -89,10 +92,13 @@ static int send_ref(const char *refname, const char *referent UNUSED, const stru
 	if (!ref_match(&data->prefixes, refname_nons))
 		return 0;
 
-	if (oid)
-		strbuf_addf(&data->buf, "%s %s", oid_to_hex(oid), refname_nons);
-	else
+	if (oid) {
+		if (repo_oid_to_algop(the_repository, oid, data->hash_algo, &advertised))
+			die(_("cannot map object ID %s to algorithm %s"), oid_to_hex(oid), data->hash_algo->name);
+		strbuf_addf(&data->buf, "%s %s", oid_to_hex(&advertised), refname_nons);
+	} else {
 		strbuf_addf(&data->buf, "unborn %s", refname_nons);
+	}
 	if (data->symrefs && flag & REF_ISSYMREF) {
 		struct object_id unused;
 		const char *symref_target = refs_resolve_ref_unsafe(get_main_ref_store(the_repository),
@@ -160,6 +166,7 @@ int ls_refs(struct repository *r, struct packet_reader *request)
 	strvec_init(&data.hidden_refs);
 
 	repo_config(the_repository, ls_refs_config, &data);
+	data.hash_algo = request->hash_algo;
 
 	while (packet_reader_read(request) == PACKET_READ_NORMAL) {
 		const char *arg = request->line;
@@ -175,7 +182,16 @@ int ls_refs(struct repository *r, struct packet_reader *request)
 		}
 		else if (!strcmp("unborn", arg))
 			data.unborn = !!unborn_config(r);
-		else
+		else if (skip_prefix(arg, "object-format=", &out)) {
+			int hash_algo = hash_algo_by_name(out);
+			if (hash_algo != GIT_HASH_UNKNOWN &&
+			    (hash_algo == hash_algo_by_ptr(r->hash_algo) ||
+			     (r->compat_hash_algo &&
+			      hash_algo == hash_algo_by_ptr(r->compat_hash_algo))))
+				data.hash_algo = &hash_algos[hash_algo];
+			else
+				die(_("unsupported object format: '%s'"), out);
+		} else
 			die(_("unexpected line: '%s'"), arg);
 	}
 

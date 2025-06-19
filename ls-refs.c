@@ -5,6 +5,7 @@
 #include "gettext.h"
 #include "hash.h"
 #include "hex.h"
+#include "object-file-convert.h"
 #include "repository.h"
 #include "refs.h"
 #include "strvec.h"
@@ -73,12 +74,14 @@ struct ls_refs_data {
 	struct strbuf buf;
 	struct strvec hidden_refs;
 	unsigned unborn : 1;
+	const struct git_hash_algo *hash_algo;
 };
 
 static int send_ref(const struct reference *ref, void *cb_data)
 {
 	struct ls_refs_data *data = cb_data;
 	const char *refname_nons = strip_namespace(ref->name);
+	struct object_id advertised;
 
 	strbuf_reset(&data->buf);
 
@@ -88,10 +91,13 @@ static int send_ref(const struct reference *ref, void *cb_data)
 	if (!ref_match(&data->prefixes, refname_nons))
 		return 0;
 
-	if (ref->oid)
-		strbuf_addf(&data->buf, "%s %s", oid_to_hex(ref->oid), refname_nons);
-	else
+	if (ref->oid) {
+		if (repo_oid_to_algop(the_repository, ref->oid, data->hash_algo, &advertised))
+			die(_("cannot map object ID %s to algorithm %s"), oid_to_hex(ref->oid), data->hash_algo->name);
+		strbuf_addf(&data->buf, "%s %s", oid_to_hex(&advertised), refname_nons);
+	} else {
 		strbuf_addf(&data->buf, "unborn %s", refname_nons);
+	}
 	if (data->symrefs && ref->flags & REF_ISSYMREF) {
 		int unused_flag;
 		struct object_id unused;
@@ -169,6 +175,7 @@ int ls_refs(struct repository *r, struct packet_reader *request)
 	strvec_init(&data.hidden_refs);
 
 	repo_config(the_repository, ls_refs_config, &data);
+	data.hash_algo = request->hash_algo;
 
 	while (packet_reader_read(request) == PACKET_READ_NORMAL) {
 		const char *arg = request->line;
@@ -184,7 +191,16 @@ int ls_refs(struct repository *r, struct packet_reader *request)
 		}
 		else if (!strcmp("unborn", arg))
 			data.unborn = !!unborn_config(r);
-		else
+		else if (skip_prefix(arg, "object-format=", &out)) {
+			uint32_t hash_algo = hash_algo_by_name(out);
+			if (hash_algo != GIT_HASH_UNKNOWN &&
+			    (hash_algo == hash_algo_by_ptr(r->hash_algo) ||
+			     (r->compat_hash_algo &&
+			      hash_algo == hash_algo_by_ptr(r->compat_hash_algo))))
+				data.hash_algo = &hash_algos[hash_algo];
+			else
+				die(_("unsupported object format: '%s'"), out);
+		} else
 			die(_("unexpected line: '%s'"), arg);
 	}
 

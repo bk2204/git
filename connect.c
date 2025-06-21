@@ -120,8 +120,6 @@ int server_supports_feature(const char *c, const char *feature,
 		    (!*out || *(out++) == '=')) {
 			if (parse_feature_request(out, feature))
 				return 1;
-			else
-				break;
 		}
 	}
 

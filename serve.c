@@ -368,6 +368,8 @@ static int process_request(struct repository *r)
 		    r->hash_algo->name,
 		    hash_algos[client_hash_algo].name);
 
+	reader.hash_algo = &hash_algos[client_hash_algo];
+
 	command->command(r, &reader);
 
 	return 0;

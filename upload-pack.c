@@ -10,6 +10,7 @@
 #include "pkt-line.h"
 #include "sideband.h"
 #include "repository.h"
+#include "object-file-convert.h"
 #include "odb.h"
 #include "oid-array.h"
 #include "object.h"
@@ -1494,20 +1495,25 @@ void upload_pack(const int advertise_refs, const int stateless_rpc,
 }
 
 static int parse_want(struct packet_writer *writer, const char *line,
-		      struct object_array *want_obj)
+		      struct object_array *want_obj,
+		      const struct git_hash_algo *algop)
 {
 	const char *arg;
 	if (skip_prefix(line, "want ", &arg)) {
-		struct object_id oid;
+		struct object_id want, oid;
 		struct object *o;
 
-		if (get_oid_hex(arg, &oid))
+		if (get_oid_hex_algop(arg, &want, algop))
 			die("git upload-pack: protocol error, "
 			    "expected to get oid, not '%s'", line);
 
-		o = parse_object_with_flags(the_repository, &oid,
-					    PARSE_OBJECT_SKIP_HASH_CHECK |
-					    PARSE_OBJECT_DISCARD_TREE);
+		if (repo_oid_to_algop(the_repository, &want,
+				      the_repository->hash_algo, &oid))
+			o = NULL;
+		else
+			o = parse_object_with_flags(the_repository, &oid,
+						    PARSE_OBJECT_SKIP_HASH_CHECK |
+						    PARSE_OBJECT_DISCARD_TREE);
 
 		if (!o) {
 			packet_writer_error(writer,
@@ -1620,7 +1626,7 @@ static void process_args(struct packet_reader *request,
 		const char *p;
 
 		/* process want */
-		if (parse_want(&data->writer, arg, &data->want_obj))
+		if (parse_want(&data->writer, arg, &data->want_obj, request->hash_algo))
 			continue;
 		if (data->allow_ref_in_want &&
 		    parse_want_ref(&data->writer, arg, &data->wanted_refs,

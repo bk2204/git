@@ -285,6 +285,7 @@ static struct oidmap configured_exclusions;
 
 static struct oidset excluded_by_config;
 static int name_hash_version = -1;
+static const struct git_hash_algo *hash_algo;
 
 enum stdin_packs_mode {
 	STDIN_PACKS_MODE_NONE,
@@ -1333,8 +1334,8 @@ static void write_pack_file(void)
 		char *pack_tmp_name = NULL;
 
 		if (pack_to_stdout)
-			f = hashfd_throughput(the_repository->hash_algo, 1,
-					      "<stdout>", progress_state);
+			f = hashfd_throughput(hash_algo, 1, "<stdout>",
+					      progress_state);
 		else
 			f = create_tmp_packfile(the_repository, &pack_tmp_name);
 
@@ -5021,6 +5022,8 @@ int cmd_pack_objects(int argc,
 	}
 	if (pack_to_stdout != !base_name || argc)
 		usage_with_options(pack_usage, pack_objects_options);
+
+	hash_algo = the_repository->hash_algo;
 
 	if (path_walk < 0) {
 		if (use_bitmap_index > 0 ||

@@ -2139,7 +2139,7 @@ static void cleanup_preferred_base(void)
 
 /*
  * Return 1 iff the object specified by "delta" can be sent
- * literally as a delta against the base in "base_sha1". If
+ * literally as a delta against the base in "base_oid". If
  * so, then *base_out will point to the entry in our packing
  * list, or NULL if we must use the external-base list.
  *

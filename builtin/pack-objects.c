@@ -510,14 +510,14 @@ static inline int oe_size_greater_than(struct packing_data *pack,
 static unsigned long write_no_reuse_object(struct hashfile *f, struct object_entry *entry,
 					   unsigned long limit, int usable_delta)
 {
-	unsigned long size, datalen;
 	unsigned char header[MAX_PACK_OBJECT_HEADER],
 		      dheader[MAX_PACK_OBJECT_HEADER];
+	unsigned long size, datalen;
 	unsigned hdrlen;
 	enum object_type type;
 	void *buf;
 	struct git_istream *st = NULL;
-	const unsigned hashsz = the_hash_algo->rawsz;
+	const unsigned hashsz = hash_algo->rawsz;
 
 	if (!usable_delta) {
 		if (oe_type(entry) == OBJ_BLOB &&
@@ -527,9 +527,22 @@ static unsigned long write_no_reuse_object(struct hashfile *f, struct object_ent
 				       &size, NULL)) != NULL)
 			buf = NULL;
 		else {
-			buf = odb_read_object(the_repository->objects,
-					      &entry->idx.oid, &type,
-					      &size);
+			buf = repo_read_object_file(the_repository,
+						    &entry->idx.oid, &type,
+						    &size);
+			if (buf && type != OBJ_BLOB &&
+			    the_repository->hash_algo != hash_algo) {
+				struct strbuf outbuf = STRBUF_INIT;
+				size_t sz;
+
+				convert_object_file(the_repository, &outbuf,
+						    the_repository->hash_algo,
+						    hash_algo, buf, size,
+						    type, NULL, 0);
+				free(buf);
+				buf = strbuf_detach(&outbuf, &sz);
+				size = sz;
+			}
 			if (!buf)
 				die(_("unable to read %s"),
 				    oid_to_hex(&entry->idx.oid));
@@ -588,6 +601,7 @@ static unsigned long write_no_reuse_object(struct hashfile *f, struct object_ent
 		hashwrite(f, dheader + pos, sizeof(dheader) - pos);
 		hdrlen += sizeof(dheader) - pos;
 	} else if (type == OBJ_REF_DELTA) {
+		struct object_id oid;
 		/*
 		 * Deltas with a base reference contain
 		 * additional bytes for the base object ID.
@@ -598,8 +612,13 @@ static unsigned long write_no_reuse_object(struct hashfile *f, struct object_ent
 			free(buf);
 			return 0;
 		}
+		if (repo_oid_to_algop(the_repository, &DELTA(entry)->idx.oid,
+				      hash_algo, &oid))
+			die(_("cannot map %s to algorithm %s"),
+			    oid_to_hex(&DELTA(entry)->idx.oid),
+			    hash_algo->name);
 		hashwrite(f, header, hdrlen);
-		hashwrite(f, DELTA(entry)->idx.oid.hash, hashsz);
+		hashwrite(f, oid.hash, hashsz);
 		hdrlen += hashsz;
 	} else {
 		if (limit && hdrlen + datalen + hashsz >= limit) {
@@ -634,7 +653,7 @@ static off_t write_reuse_object(struct hashfile *f, struct object_entry *entry,
 	unsigned char header[MAX_PACK_OBJECT_HEADER],
 		      dheader[MAX_PACK_OBJECT_HEADER];
 	unsigned hdrlen;
-	const unsigned hashsz = the_hash_algo->rawsz;
+	const unsigned hashsz = hash_algo->rawsz;
 	unsigned long entry_size = SIZE(entry);
 
 	if (DELTA(entry))
@@ -685,12 +704,19 @@ static off_t write_reuse_object(struct hashfile *f, struct object_entry *entry,
 		hdrlen += sizeof(dheader) - pos;
 		reused_delta++;
 	} else if (type == OBJ_REF_DELTA) {
+		struct object_id oid;
+
 		if (limit && hdrlen + hashsz + datalen + hashsz >= limit) {
 			unuse_pack(&w_curs);
 			return 0;
 		}
 		hashwrite(f, header, hdrlen);
-		hashwrite(f, DELTA(entry)->idx.oid.hash, hashsz);
+		if (repo_oid_to_algop(the_repository, &DELTA(entry)->idx.oid,
+				      hash_algo, &oid))
+			die(_("cannot map %s to algorithm %s"),
+			    oid_to_hex(&DELTA(entry)->idx.oid),
+			    hash_algo->name);
+		hashwrite(f, oid.hash, hashsz);
 		hdrlen += hashsz;
 		reused_delta++;
 	} else {
@@ -750,6 +776,9 @@ static off_t write_object(struct hashfile *f,
 				/* check_object() decided it for us ... */
 		to_reuse = usable_delta;
 				/* ... but pack split may override that */
+	else if (hash_algo != the_repository->hash_algo &&
+		 oe_type(entry) != OBJ_BLOB)
+		to_reuse = 0;	/* needs a conversion to other hash */
 	else if (oe_type(entry) != entry->in_pack_type)
 		to_reuse = 0;	/* pack has delta which is unusable */
 	else if (DELTA(entry))
@@ -2150,9 +2179,17 @@ static void cleanup_preferred_base(void)
  */
 static int can_reuse_delta(const struct object_id *base_oid,
 			   struct object_entry *delta,
-			   struct object_entry **base_out)
+			   struct object_entry **base_out,
+			   enum object_type type)
 {
 	struct object_entry *base;
+
+	/*
+	 * We need to rewrite non-blob objects into the other algorithm which
+	 * produces different byte streams.
+	 */
+	if (type != OBJ_BLOB && the_repository->hash_algo != hash_algo)
+		return 0;
 
 	/*
 	 * First see if we're already sending the base (or it's explicitly in
@@ -2298,7 +2335,7 @@ static void check_object(struct object_entry *entry, uint32_t object_index)
 		}
 
 		if (have_base &&
-		    can_reuse_delta(&base_ref, entry, &base_entry)) {
+		    can_reuse_delta(&base_ref, entry, &base_entry, type)) {
 			oe_set_type(entry, entry->in_pack_type);
 			SET_SIZE(entry, in_pack_size); /* delta size */
 			SET_DELTA_SIZE(entry, in_pack_size);
@@ -2753,6 +2790,9 @@ static int try_delta(struct unpacked *trg, struct unpacked *src,
 	if (oe_type(trg_entry) != oe_type(src_entry))
 		return -1;
 
+	if (trg_entry->no_try_delta || src_entry->no_try_delta)
+		return -1;
+
 	/*
 	 * We do not bother to try a delta that we discarded on an
 	 * earlier try, but only when reusing delta data.  Note that
@@ -2797,26 +2837,68 @@ static int try_delta(struct unpacked *trg, struct unpacked *src,
 
 	/* Load data if not already done */
 	if (!trg->data) {
+		int err = 0;
 		packing_data_lock(&to_pack);
 		trg->data = odb_read_object(the_repository->objects,
 					    &trg_entry->idx.oid, &type,
 					    &sz);
+		if (type != OBJ_BLOB &&
+		    the_repository->hash_algo != hash_algo) {
+			struct strbuf outbuf = STRBUF_INIT;
+			size_t size;
+			convert_object_file(the_repository, &outbuf,
+					    the_repository->hash_algo,
+					    hash_algo, trg->data, sz,
+					    type, NULL, 0);
+			free(trg->data);
+			trg->data = strbuf_detach(&outbuf, &size);
+			sz = size;
+			if (sz >= to_pack.oe_size_limit) {
+				FREE_AND_NULL(trg->data);
+				trg_entry->no_try_delta = 1;
+				err = -1;
+			}
+		}
 		packing_data_unlock(&to_pack);
+		if (err)
+			return err;
 		if (!trg->data)
 			die(_("object %s cannot be read"),
 			    oid_to_hex(&trg_entry->idx.oid));
-		if (sz != trg_size)
+		if (sz != trg_size && the_repository->hash_algo == hash_algo)
 			die(_("object %s inconsistent object length (%"PRIuMAX" vs %"PRIuMAX")"),
 			    oid_to_hex(&trg_entry->idx.oid), (uintmax_t)sz,
 			    (uintmax_t)trg_size);
 		*mem_usage += sz;
+		trg_size = sz;
+		SET_SIZE(trg_entry, sz);
 	}
 	if (!src->data) {
+		int err = 0;
 		packing_data_lock(&to_pack);
 		src->data = odb_read_object(the_repository->objects,
 					    &src_entry->idx.oid, &type,
 					    &sz);
+		if (type != OBJ_BLOB &&
+		    the_repository->hash_algo != hash_algo) {
+			struct strbuf outbuf = STRBUF_INIT;
+			size_t size;
+			convert_object_file(the_repository, &outbuf,
+					    the_repository->hash_algo,
+					    hash_algo, src->data, sz,
+					    type, NULL, 0);
+			free(src->data);
+			src->data = strbuf_detach(&outbuf, &size);
+			sz = size;
+			if (size >= to_pack.oe_size_limit) {
+				FREE_AND_NULL(src->data);
+				src_entry->no_try_delta = 1;
+				err = -1;
+			}
+		}
 		packing_data_unlock(&to_pack);
+		if (err)
+			return err;
 		if (!src->data) {
 			if (src_entry->preferred_base) {
 				static int warned = 0;
@@ -2834,11 +2916,13 @@ static int try_delta(struct unpacked *trg, struct unpacked *src,
 			die(_("object %s cannot be read"),
 			    oid_to_hex(&src_entry->idx.oid));
 		}
-		if (sz != src_size)
+		if (sz != src_size && the_repository->hash_algo == hash_algo)
 			die(_("object %s inconsistent object length (%"PRIuMAX" vs %"PRIuMAX")"),
 			    oid_to_hex(&src_entry->idx.oid), (uintmax_t)sz,
 			    (uintmax_t)src_size);
 		*mem_usage += sz;
+		src_size = sz;
+		SET_SIZE(src_entry, sz);
 	}
 	if (!src->index) {
 		src->index = create_delta_index(src->data, src_size);
@@ -4877,6 +4961,7 @@ int cmd_pack_objects(int argc,
 	struct string_list keep_pack_list = STRING_LIST_INIT_NODUP;
 	struct list_objects_filter_options filter_options =
 		LIST_OBJECTS_FILTER_INIT;
+	const char *hash_algo_name = NULL;
 
 	struct option pack_objects_options[] = {
 		OPT_CALLBACK_F('q', "quiet", &progress, NULL,
@@ -4989,6 +5074,8 @@ int cmd_pack_objects(int argc,
 				N_("exclude any configured uploadpack.blobpackfileuri with this protocol")),
 		OPT_INTEGER(0, "name-hash-version", &name_hash_version,
 			 N_("use the specified name-hash function to group similar objects")),
+		OPT_STRING(0, "object-format", &hash_algo_name, N_("hash"),
+			   N_("create a pack using this hash algorithm")),
 		OPT_END(),
 	};
 
@@ -5024,6 +5111,22 @@ int cmd_pack_objects(int argc,
 		usage_with_options(pack_usage, pack_objects_options);
 
 	hash_algo = the_repository->hash_algo;
+	if (hash_algo_name) {
+		int algo = hash_algo_by_name(hash_algo_name);
+		if (algo == GIT_HASH_UNKNOWN) {
+			die(_("unknown hash algorithm '%s'"), hash_algo_name);
+		} else if (the_repository->compat_hash_algo &&
+			 algo == hash_algo_by_ptr(the_repository->compat_hash_algo)) {
+			if (pack_to_stdout)
+				hash_algo = &hash_algos[algo];
+			else
+				die(_("can only pack to standard out with compat hash algorithm"));
+		} else if (algo != hash_algo_by_ptr(the_repository->hash_algo)) {
+			die(_("unsupported hash algorithm '%s'"), hash_algo_name);
+		} else {
+			hash_algo = &hash_algos[algo];
+		}
+	}
 
 	if (path_walk < 0) {
 		if (use_bitmap_index > 0 ||

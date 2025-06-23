@@ -1475,6 +1475,8 @@ void upload_pack(const int advertise_refs, const int stateless_rpc,
 				   PACKET_READ_CHOMP_NEWLINE |
 				   PACKET_READ_DIE_ON_ERR_PACKET);
 
+		reader.hash_algo = the_repository->hash_algo;
+
 		receive_needs(&data, &reader);
 
 		/*

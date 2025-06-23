@@ -376,7 +376,9 @@ static int process_request(struct repository *r)
 	if (!command)
 		die("no command requested");
 
-	if (client_hash_algo != hash_algo_by_ptr(r->hash_algo))
+	if (client_hash_algo != hash_algo_by_ptr(r->hash_algo) &&
+	    (client_hash_algo != hash_algo_by_ptr(r->compat_hash_algo) ||
+	     !advertise_compat))
 		die("mismatched object format: server %s; client %s",
 		    r->hash_algo->name,
 		    hash_algos[client_hash_algo].name);

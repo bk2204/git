@@ -505,10 +505,14 @@ static int do_got_oid(struct upload_pack_data *data, const struct object_id *oid
 }
 
 static int got_oid(struct upload_pack_data *data,
-		   const char *hex, struct object_id *oid)
+		   const char *hex, struct object_id *oid,
+		   const struct git_hash_algo *algop)
 {
-	if (get_oid_hex(hex, oid))
+	if (get_oid_hex_algop(hex, oid, algop))
 		die("git upload-pack: expected SHA1 object, got '%s'", hex);
+	if (repo_oid_to_algop(the_repository, oid, the_repository->hash_algo,
+			      oid))
+		return -1;
 	if (!odb_has_object(the_repository->objects, oid, 0))
 		return -1;
 	return do_got_oid(data, oid);
@@ -562,7 +566,7 @@ static int get_common_commits(struct upload_pack_data *data,
 			continue;
 		}
 		if (skip_prefix(reader->line, "have ", &arg)) {
-			switch (got_oid(data, arg, &oid)) {
+			switch (got_oid(data, arg, &oid, reader->hash_algo)) {
 			case -1: /* they have what we do not */
 				got_other = 1;
 				if (data->multi_ack
@@ -1569,13 +1573,14 @@ static int parse_want_ref(struct packet_writer *writer, const char *line,
 	return 0;
 }
 
-static int parse_have(const char *line, struct upload_pack_data *data)
+static int parse_have(const char *line, struct upload_pack_data *data,
+		      const struct git_hash_algo *algop)
 {
 	const char *arg;
 	if (skip_prefix(line, "have ", &arg)) {
 		struct object_id oid;
 
-		got_oid(data, arg, &oid);
+		got_oid(data, arg, &oid, algop);
 		data->seen_haves = 1;
 		return 1;
 	}
@@ -1622,7 +1627,7 @@ static void process_args(struct packet_reader *request,
 				   &data->hidden_refs, &data->want_obj))
 			continue;
 		/* process have line */
-		if (parse_have(arg, data))
+		if (parse_have(arg, data, request->hash_algo))
 			continue;
 
 		/* process args like thin-pack */

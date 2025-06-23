@@ -299,7 +299,8 @@ static int relay_pack_data(int pack_objects_out, struct output_state *os,
 }
 
 static void create_pack_file(struct upload_pack_data *pack_data,
-			     const struct string_list *uri_protocols)
+			     const struct string_list *uri_protocols,
+			     const struct git_hash_algo *hash_algo)
 {
 	struct child_process pack_objects = CHILD_PROCESS_INIT;
 	struct output_state *output_state = xcalloc(1, sizeof(struct output_state));
@@ -329,6 +330,7 @@ static void create_pack_file(struct upload_pack_data *pack_data,
 		strvec_push(&pack_objects.args, "--thin");
 
 	strvec_push(&pack_objects.args, "--stdout");
+	strvec_pushf(&pack_objects.args, "--object-format=%s", hash_algo->name);
 	if (pack_data->shallow_nr)
 		strvec_push(&pack_objects.args, "--shallow");
 	if (!pack_data->no_progress)
@@ -1467,7 +1469,7 @@ void upload_pack(const int advertise_refs, const int stateless_rpc,
 		    packet_reader_peek(&reader) != PACKET_READ_EOF) {
 			reader.options &= ~PACKET_READ_GENTLE_ON_EOF;
 			get_common_commits(&data, &reader);
-			create_pack_file(&data, NULL);
+			create_pack_file(&data, NULL, reader.hash_algo);
 		}
 	}
 
@@ -1827,10 +1829,12 @@ int upload_pack_v2(struct repository *r, struct packet_reader *request)
 			send_shallow_info(&data);
 
 			if (data.uri_protocols.nr) {
-				create_pack_file(&data, &data.uri_protocols);
+				create_pack_file(&data, &data.uri_protocols,
+						 request->hash_algo);
 			} else {
 				packet_writer_write(&data.writer, "packfile\n");
-				create_pack_file(&data, NULL);
+				create_pack_file(&data, NULL,
+						 request->hash_algo);
 			}
 			state = UPLOAD_DONE;
 			break;

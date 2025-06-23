@@ -116,6 +116,11 @@ transfer.advertiseSID::
 	Boolean. When true, client and server processes will advertise their
 	unique session IDs to their remote counterpart. Defaults to false.
 
+transfer.advertiseCompatObjectFormat::
+	Boolean. When true, client and server processes will advertise multiple
+	object formats to their remote counterpart, allowing fetches and pushes in
+	either hash algorithm. Defaults to false.
+
 transfer.bundleURI::
 	When `true`, local `git clone` commands will request bundle
 	information from the remote server (if advertised) and download

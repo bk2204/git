@@ -493,7 +493,11 @@ static void send_capabilities(int fd_out, struct packet_reader *reader)
 	if (server_supports_v2("agent"))
 		packet_write_fmt(fd_out, "agent=%s", git_user_agent_sanitized());
 
-	if (server_feature_v2("object-format", &hash_name)) {
+	if (the_repository->hash_algo &&
+	    server_supports_feature("object-format", the_repository->hash_algo->name, 0)) {
+		reader->hash_algo = the_repository->hash_algo;
+		packet_write_fmt(fd_out, "object-format=%s", reader->hash_algo->name);
+	} else if (server_feature_v2("object-format", &hash_name)) {
 		int hash_algo = hash_algo_by_name(hash_name);
 		if (hash_algo == GIT_HASH_UNKNOWN)
 			die(_("unknown object format '%s' specified by server"), hash_name);

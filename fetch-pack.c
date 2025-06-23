@@ -1377,7 +1377,8 @@ static int add_haves(struct fetch_negotiator *negotiator,
 }
 
 static void write_fetch_command_and_capabilities(struct strbuf *req_buf,
-						 const struct string_list *server_options)
+						 const struct string_list *server_options,
+						 const struct git_hash_algo **algo)
 {
 	const char *hash_name;
 
@@ -1395,7 +1396,10 @@ static void write_fetch_command_and_capabilities(struct strbuf *req_buf,
 					 server_options->items[i].string);
 	}
 
-	if (server_feature_v2("object-format", &hash_name)) {
+	if (server_supports_feature("object-format", the_repository->hash_algo->name, 0)) {
+		*algo = the_repository->hash_algo;
+		packet_buf_write(req_buf, "object-format=%s", (*algo)->name);
+	} else if (server_feature_v2("object-format", &hash_name)) {
 		int hash_algo = hash_algo_by_name(hash_name);
 		if (hash_algo_by_ptr(the_hash_algo) != hash_algo)
 			die(_("mismatched algorithms: client %s; server %s"),
@@ -1413,13 +1417,14 @@ static int send_fetch_request(struct fetch_negotiator *negotiator, int fd_out,
 			      const struct ref *wants, struct oidset *common,
 			      int *haves_to_send, int *in_vain,
 			      int sideband_all, int seen_ack,
-			      struct oidset *negotiation_include_oids)
+			      struct oidset *negotiation_include_oids,
+			      const struct git_hash_algo **hash_algo)
 {
 	int haves_added;
 	int done_sent = 0;
 	struct strbuf req_buf = STRBUF_INIT;
 
-	write_fetch_command_and_capabilities(&req_buf, args->server_options);
+	write_fetch_command_and_capabilities(&req_buf, args->server_options, hash_algo);
 
 	if (args->use_thin_pack)
 		packet_buf_write(&req_buf, "thin-pack");
@@ -1810,7 +1815,8 @@ static struct ref *do_fetch_pack_v2(struct fetch_pack_args *args,
 					       &haves_to_send, &in_vain,
 					       reader.use_sideband,
 					       seen_ack,
-					       &negotiation_include_oids)) {
+					       &negotiation_include_oids,
+					       &reader.hash_algo)) {
 				trace2_region_leave_printf("negotiation_v2", "round",
 							   the_repository, "%d",
 							   negotiation_round);
@@ -2287,7 +2293,7 @@ void negotiate_using_fetch(const struct oid_array *negotiation_restrict_tips,
 					   the_repository, "%d",
 					   negotiation_round);
 		strbuf_reset(&req_buf);
-		write_fetch_command_and_capabilities(&req_buf, server_options);
+		write_fetch_command_and_capabilities(&req_buf, server_options, &reader.hash_algo);
 
 		packet_buf_write(&req_buf, "wait-for-done");
 

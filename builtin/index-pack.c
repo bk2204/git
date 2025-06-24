@@ -1598,12 +1598,43 @@ static void *resolve_delta_recursively(struct pack_ctx *c,
 	return delta;
 }
 
+static void fix_unresolved_deltas(struct hashfile *f);
+static void conclude_thin_pack(const char *curr_pack, unsigned char *pack_hash,
+			       struct pack_ctx_reader *c)
+{
+	struct hashfile *f;
+	unsigned char read_hash[GIT_MAX_RAWSZ], tail_hash[GIT_MAX_RAWSZ];
+	struct strbuf msg = STRBUF_INIT;
+	int nr_unresolved = nr_ofs_deltas + nr_ref_deltas - nr_resolved_deltas;
+	int nr_objects_initial = nr_objects;
+	if (nr_unresolved <= 0)
+		die(_("confusion beyond insanity"));
+	REALLOC_ARRAY(objects, nr_objects + nr_unresolved + 1);
+	memset(objects + nr_objects + 1, 0,
+	       nr_unresolved * sizeof(*objects));
+	f = hashfd(the_repository->hash_algo, c->output_fd, curr_pack);
+	fix_unresolved_deltas(f);
+	strbuf_addf(&msg, Q_("completed with %d local object",
+			     "completed with %d local objects",
+			     nr_objects - nr_objects_initial),
+		    nr_objects - nr_objects_initial);
+	stop_progress_msg(&progress, msg.buf);
+	strbuf_release(&msg);
+	finalize_hashfile(f, tail_hash, FSYNC_COMPONENT_PACK, 0);
+	hashcpy(read_hash, pack_hash, the_repository->hash_algo);
+	fixup_pack_header_footer(the_hash_algo, c->output_fd, pack_hash,
+				 curr_pack, nr_objects,
+				 read_hash, c->consumed_bytes-the_hash_algo->rawsz);
+	if (!hasheq(read_hash, tail_hash, the_repository->hash_algo))
+		die(_("Unexpected tail checksum for %s "
+		      "(disk corruption?)"), curr_pack);
+}
+
 /*
  * Third pass:
  * - append objects to convert thin pack to full pack if required
  * - write the final pack hash
  */
-static void fix_unresolved_deltas(struct hashfile *f);
 static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned char *pack_hash,
 			  struct pack_ctx_reader *c)
 {
@@ -1614,34 +1645,8 @@ static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned cha
 		return;
 	}
 
-	if (fix_thin_pack) {
-		struct hashfile *f;
-		unsigned char read_hash[GIT_MAX_RAWSZ], tail_hash[GIT_MAX_RAWSZ];
-		struct strbuf msg = STRBUF_INIT;
-		int nr_unresolved = nr_ofs_deltas + nr_ref_deltas - nr_resolved_deltas;
-		int nr_objects_initial = nr_objects;
-		if (nr_unresolved <= 0)
-			die(_("confusion beyond insanity"));
-		REALLOC_ARRAY(objects, nr_objects + nr_unresolved + 1);
-		memset(objects + nr_objects + 1, 0,
-		       nr_unresolved * sizeof(*objects));
-		f = hashfd(the_repository->hash_algo, c->output_fd, curr_pack);
-		fix_unresolved_deltas(f);
-		strbuf_addf(&msg, Q_("completed with %d local object",
-				     "completed with %d local objects",
-				     nr_objects - nr_objects_initial),
-			    nr_objects - nr_objects_initial);
-		stop_progress_msg(&progress, msg.buf);
-		strbuf_release(&msg);
-		finalize_hashfile(f, tail_hash, FSYNC_COMPONENT_PACK, 0);
-		hashcpy(read_hash, pack_hash, the_repository->hash_algo);
-		fixup_pack_header_footer(the_hash_algo, c->output_fd, pack_hash,
-					 curr_pack, nr_objects,
-					 read_hash, c->consumed_bytes-the_hash_algo->rawsz);
-		if (!hasheq(read_hash, tail_hash, the_repository->hash_algo))
-			die(_("Unexpected tail checksum for %s "
-			      "(disk corruption?)"), curr_pack);
-	}
+	if (fix_thin_pack)
+		conclude_thin_pack(curr_pack, pack_hash, c);
 	if (nr_ofs_deltas + nr_ref_deltas != nr_resolved_deltas)
 		die(Q_("pack has %d unresolved delta",
 		       "pack has %d unresolved deltas",

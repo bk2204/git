@@ -439,7 +439,7 @@ static int process_ref_v2(struct packet_reader *reader, struct ref ***list,
 
 	ref = alloc_ref(line_sections.items[i++].string);
 
-	memcpy(ref->old_oid.hash, old_oid.hash, reader->hash_algo->rawsz);
+	oidcpy(&ref->old_oid, &old_oid);
 	**list = ref;
 	*list = &ref->next;
 
@@ -461,8 +461,7 @@ static int process_ref_v2(struct packet_reader *reader, struct ref ***list,
 			peeled_name = xstrfmt("%s^{}", ref->name);
 			peeled = alloc_ref(peeled_name);
 
-			memcpy(peeled->old_oid.hash, peeled_oid.hash,
-			       reader->hash_algo->rawsz);
+			oidcpy(&peeled->old_oid, &peeled_oid);
 			**list = peeled;
 			*list = &peeled->next;
 

@@ -136,6 +136,8 @@ struct pack_ctx_reader {
 struct pack_ctx {
 	struct pack_ctx_reader rdr;
 	unsigned deepest_delta;
+	const struct git_hash_algo *src_algo, *dest_algo, *dest_compat_algo,
+				   *compat_algo;
 };
 static struct pack_ctx pack_ctx;
 static off_t max_input_size;
@@ -2362,11 +2364,14 @@ int cmd_index_pack(int argc,
 				hash_algo = hash_algo_by_name(arg);
 				if (hash_algo == GIT_HASH_UNKNOWN)
 					die(_("unknown hash algorithm '%s'"), arg);
-				repo_set_hash_algo(the_repository, hash_algo);
+				if (!the_repository->hash_algo)
+					repo_set_hash_algo(the_repository, hash_algo);
+				pack_ctx.src_algo = &hash_algos[hash_algo];
 			} else if (skip_prefix(arg, "--compat-object-format=", &arg)) {
 				compat_hash_algo = hash_algo_by_name(arg);
 				if (compat_hash_algo == GIT_HASH_UNKNOWN)
 					die(_("unknown hash algorithm '%s'"), arg);
+				pack_ctx.dest_compat_algo = &hash_algos[compat_hash_algo];
 				repo_set_compat_hash_algo(the_repository, compat_hash_algo);
 			} else if (!strcmp(arg, "--rev-index")) {
 				rev_index = 1;
@@ -2403,6 +2408,18 @@ int cmd_index_pack(int argc,
 	 */
 	if (!the_repository->hash_algo)
 		repo_set_hash_algo(the_repository, GIT_HASH_DEFAULT);
+
+	/*
+	 * If we're packing from standard input, we're in a repository and we
+	 * need to use the standard algorithms if we're writing there.  If not,
+	 * we're probably verifying the index and we'll honor the value set with
+	 * the command line options above.
+	 */
+	pack_ctx.dest_algo = the_repository->hash_algo;
+	if (startup_info->have_repository && the_repository->compat_hash_algo)
+		pack_ctx.dest_compat_algo = the_repository->compat_hash_algo;
+	pack_ctx.compat_algo = pack_ctx.src_algo == pack_ctx.dest_algo ?
+		pack_ctx.dest_compat_algo : pack_ctx.dest_algo;
 
 	opts.flags &= ~(WRITE_REV | WRITE_REV_VERIFY);
 	if (rev_index) {

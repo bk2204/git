@@ -80,8 +80,10 @@ struct pack_idx_entry {
 	struct object_id oid;
 	struct object_id compat_oid;
 	uint32_t crc32;
+	uint32_t dest_crc32;
 	uint32_t idx;
 	off_t offset;
+	off_t dest_offset;
 };
 
 

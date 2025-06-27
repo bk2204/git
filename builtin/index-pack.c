@@ -1681,11 +1681,16 @@ static int write_compressed(struct hashfile *f, void *in, unsigned int size)
 }
 
 static struct object_entry *append_obj_to_pack(struct hashfile *f,
-			       const unsigned char *sha1, void *buf,
-			       unsigned long size, enum object_type type)
+			       struct object_entry *obj,
+			       const struct object_id *oid,
+			       void *prefix, unsigned long prefixlen,
+			       void *buf, unsigned long size,
+			       unsigned long objsize,
+			       enum object_type type,
+			       enum object_type real_type, int destination)
 {
-	struct object_entry *obj = &objects[nr_objects++];
 	unsigned char header[10];
+	off_t *off0, *off1;
 	unsigned long s = size;
 	int n = 0;
 	unsigned char c = (type << 4) | (s & 15);
@@ -1698,15 +1703,31 @@ static struct object_entry *append_obj_to_pack(struct hashfile *f,
 	header[n++] = c;
 	crc32_begin(f);
 	hashwrite(f, header, n);
-	obj[0].size = size;
-	obj[0].hdr_size = n;
+	if (prefix && prefixlen)
+		hashwrite(f, prefix, prefixlen);
 	obj[0].type = type;
-	obj[0].real_type = type;
-	obj[1].idx.offset = obj[0].idx.offset + n;
-	obj[1].idx.offset += write_compressed(f, buf, size);
-	obj[0].idx.crc32 = crc32_end(f);
+	obj[0].real_type = real_type;
+	if (destination) {
+		off0 = &obj[0].idx.dest_offset;
+		off1 = &obj[1].idx.dest_offset;
+		obj[0].dest_size = objsize;
+		obj[0].dest_hdr_size = n;
+	} else {
+		off0 = &obj[0].idx.offset;
+		off1 = &obj[1].idx.offset;
+		obj[0].size = objsize;
+		obj[0].hdr_size = n;
+	}
+	*off1 = *off0 + n + prefixlen;
+	*off1 += write_compressed(f, buf, size);
+	if (destination)
+		obj[0].idx.dest_crc32 = crc32_end(f);
+	else
+		obj[0].idx.crc32 = crc32_end(f);
 	hashflush(f);
-	oidread(&obj->idx.oid, sha1, the_repository->hash_algo);
+	/* Don't memcpy over ourselves, since that's undefined behavior. */
+	if (&obj->idx.oid != oid)
+		oidcpy(&obj->idx.oid, oid);
 	return obj;
 }
 
@@ -1777,7 +1798,8 @@ static void fix_unresolved_deltas(struct hashfile *f)
 		 * threaded_second_pass() (which will pick up the added
 		 * object).
 		 */
-		append_obj_to_pack(f, d->oid.hash, data, size, type);
+		append_obj_to_pack(f, &objects[nr_objects++], &d->oid, NULL, 0,
+				   data, size, size, type, type, 0);
 		free(data);
 		threaded_second_pass(NULL);
 

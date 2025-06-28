@@ -8,6 +8,7 @@
 #include "hex.h"
 #include "object-name.h"
 #include "object-file.h"
+#include "object-file-convert.h"
 #include "odb.h"
 #include "oidset.h"
 #include "tag.h"
@@ -2225,6 +2226,10 @@ static int handle_revision_arg_1(const char *arg_, struct rev_info *revs, int fl
 	 * `--missing=print` should be able to report missing oids.
 	 */
 	if (get_oid_with_context(revs->repo, arg, get_sha1_flags, &oid, &oc)) {
+		ret = revs->ignore_missing ? 0 : -1;
+		goto out;
+	}
+	if (repo_oid_to_algop(revs->repo, &oid, revs->repo->hash_algo, &oid)) {
 		ret = revs->ignore_missing ? 0 : -1;
 		goto out;
 	}

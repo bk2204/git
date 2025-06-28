@@ -295,7 +295,8 @@ struct object *parse_object_with_flags(struct repository *r,
 				       const struct object_id *oid,
 				       enum parse_object_flags flags)
 {
-	int skip_hash = !!(flags & PARSE_OBJECT_SKIP_HASH_CHECK);
+	int skip_hash = !!((flags & PARSE_OBJECT_SKIP_HASH_CHECK) ||
+			   oid->algo != hash_algo_by_ptr(r->hash_algo));
 	int discard_tree = !!(flags & PARSE_OBJECT_DISCARD_TREE);
 	unsigned long size;
 	enum object_type type;

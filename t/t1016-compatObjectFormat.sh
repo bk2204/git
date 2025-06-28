@@ -196,12 +196,29 @@ compare_oids () {
 
 	test_expect_success $PREREQ "Verify ${type} ${name}'s sha1 oid" '
 		git --git-dir=repo-sha256/.git rev-parse --output-object-format=sha1 ${sha256_oid} >${name}_sha1 &&
-		test_cmp ${name}_sha1 ${name}_sha1_expected
+		test_cmp ${name}_sha1 ${name}_sha1_expected &&
+		if test "$type" = commit
+		then
+			git --git-dir=repo-sha1/.git rev-list -1 ${sha256_oid}^{sha256} >${name}_sha1 &&
+			test_cmp ${name}_sha1 ${name}_sha1_expected
+		fi
 	'
 
 	test_expect_success $PREREQ "Verify ${type} ${name}'s sha256 oid" '
 		git --git-dir=repo-sha1/.git rev-parse --output-object-format=sha256 ${sha1_oid} >${name}_sha256 &&
-		test_cmp ${name}_sha256 ${name}_sha256_expected
+		test_cmp ${name}_sha256 ${name}_sha256_expected &&
+		if test "$type" = commit
+		then
+			git --git-dir=repo-sha256/.git rev-list -1 ${sha1_oid}^{sha1} >${name}_sha256 &&
+			test_cmp ${name}_sha256 ${name}_sha256_expected
+		fi
+	'
+
+	test_expect_success $PREREQ "Reject ${type} ${name} trying to parse with dual hashes" '
+		test_must_fail git --git-dir=repo-sha256/.git rev-parse ${sha1_oid}^{sha1}^{sha256} &&
+		test_must_fail git --git-dir=repo-sha256/.git rev-parse ${sha256_oid}^{sha1}^{sha256} &&
+		test_must_fail git --git-dir=repo-sha1/.git rev-parse ${sha1_oid}^{sha256}^{sha1} &&
+		test_must_fail git --git-dir=repo-sha1/.git rev-parse ${sha256_oid}^{sha256}^{sha1}
 	'
 
 	test_expect_success $PREREQ "Verify ${name}'s sha1 type" '

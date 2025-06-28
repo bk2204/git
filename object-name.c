@@ -588,8 +588,15 @@ static enum get_oid_result get_short_oid(struct repository *r,
 	int quietly = !!(flags & GET_OID_QUIETLY);
 	const struct git_hash_algo *algo = r->hash_algo;
 
+	if (HAS_MULTI_BITS(flags & GET_OID_HASH_DISAMBIGUATORS))
+		BUG("multiple get_short_oid hash disambiguator flags");
+
 	if (flags & GET_OID_HASH_ANY)
 		algo = NULL;
+	else if (flags & GET_OID_HASH_SHA1)
+		algo = &hash_algos[GIT_HASH_SHA1];
+	else if (flags & GET_OID_HASH_SHA256)
+		algo = &hash_algos[GIT_HASH_SHA256];
 
 	if (init_object_disambiguation(r, name, len, algo, &ds) < 0)
 		return -1;
@@ -992,8 +999,14 @@ static int get_oid_basic(struct repository *r, const char *str, int len,
 	int refs_found = 0;
 	int at, reflog_len, nth_prior = 0;
 	int fatal = !(flags & GET_OID_QUIETLY);
+	const struct git_hash_algo *hash_algo = r->hash_algo;
 
-	if (len == r->hash_algo->hexsz && !get_oid_hex(str, oid)) {
+	if (flags & GET_OID_HASH_SHA1)
+		hash_algo = &hash_algos[GIT_HASH_SHA1];
+	else if (flags & GET_OID_HASH_SHA256)
+		hash_algo = &hash_algos[GIT_HASH_SHA256];
+
+	if (len == hash_algo->hexsz && !get_oid_hex_algop(str, oid, hash_algo)) {
 		if (!(flags & GET_OID_SKIP_AMBIGUITY_CHECK) &&
 		    repo_settings_get_warn_ambiguous_refs(r) &&
 		    warn_on_object_refname_ambiguity) {
@@ -1218,6 +1231,7 @@ static int peel_onion(struct repository *r, const char *name, int len,
 	struct object_id outer;
 	const char *sp;
 	unsigned int expected_type = 0;
+	int resolving_algo = 0;
 	struct object *o;
 
 	/*
@@ -1250,11 +1264,20 @@ static int peel_onion(struct repository *r, const char *name, int len,
 		expected_type = OBJ_BLOB;
 	else if (starts_with(sp, "object}"))
 		expected_type = OBJ_ANY;
-	else if (sp[0] == '}')
+	else if (starts_with(sp, "sha1}")) {
+		lookup_flags |= GET_OID_HASH_SHA1;
+		resolving_algo = 1;
+	} else if (starts_with(sp, "sha256}")) {
+		lookup_flags |= GET_OID_HASH_SHA256;
+		resolving_algo = 1;
+	} else if (sp[0] == '}')
 		expected_type = OBJ_NONE;
 	else if (sp[0] == '/')
 		expected_type = OBJ_COMMIT;
 	else
+		return -1;
+
+	if (HAS_MULTI_BITS(lookup_flags & GET_OID_HASH_DISAMBIGUATORS))
 		return -1;
 
 	lookup_flags &= ~GET_OID_DISAMBIGUATORS;
@@ -1265,6 +1288,11 @@ static int peel_onion(struct repository *r, const char *name, int len,
 
 	if (get_oid_1(r, name, sp - name - 2, &outer, lookup_flags))
 		return -1;
+
+	if (resolving_algo) {
+		oidcpy(oid, &outer);
+		return 0;
+	}
 
 	o = parse_object(r, &outer);
 	if (!o)

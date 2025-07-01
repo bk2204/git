@@ -123,15 +123,19 @@ struct ref_delta_entry {
 	int obj_no;
 };
 
-struct pack_ctx {
+struct pack_ctx_reader {
 	/* We always read in 4kB chunks. */
 	unsigned char input_buffer[DEFAULT_IO_BUFFER_SIZE];
 	unsigned int input_offset, input_len;
 	off_t consumed_bytes;
-	unsigned deepest_delta;
-	struct git_hash_ctx input_ctx;
-	uint32_t input_crc32;
 	int input_fd, output_fd;
+	uint32_t input_crc32;
+	struct git_hash_ctx input_ctx;
+};
+
+struct pack_ctx {
+	struct pack_ctx_reader rdr;
+	unsigned deepest_delta;
 };
 static struct pack_ctx pack_ctx;
 static off_t max_input_size;
@@ -309,7 +313,7 @@ static unsigned check_objects(void)
 
 
 /* Discard current buffer used content. */
-static void flush(struct pack_ctx *c)
+static void flush(struct pack_ctx_reader *c)
 {
 	if (c->input_offset) {
 		if (c->output_fd >= 0)
@@ -324,7 +328,7 @@ static void flush(struct pack_ctx *c)
  * Make sure at least "min" bytes are available in the buffer, and
  * return the pointer to the buffer.
  */
-static void *fill(struct pack_ctx *c, int min)
+static void *fill(struct pack_ctx_reader *c, int min)
 {
 	if (min <= c->input_len)
 		return c->input_buffer + c->input_offset;
@@ -349,7 +353,7 @@ static void *fill(struct pack_ctx *c, int min)
 	return c->input_buffer;
 }
 
-static void use(struct pack_ctx *c, int bytes)
+static void use(struct pack_ctx_reader *c, int bytes)
 {
 	if (bytes > c->input_len)
 		die(_("used more bytes than were available"));
@@ -372,26 +376,26 @@ static void use(struct pack_ctx *c, int bytes)
 static const char *open_pack_file(struct pack_ctx *c, const char *pack_name)
 {
 	if (from_stdin) {
-		c->input_fd = 0;
+		c->rdr.input_fd = 0;
 		if (!pack_name) {
 			struct strbuf tmp_file = STRBUF_INIT;
-			c->output_fd = odb_mkstemp(the_repository->objects, &tmp_file,
+			c->rdr.output_fd = odb_mkstemp(the_repository->objects, &tmp_file,
 						"pack/tmp_pack_XXXXXX");
 			pack_name = strbuf_detach(&tmp_file, NULL);
 		} else {
-			c->output_fd = xopen(pack_name, O_CREAT|O_EXCL|O_RDWR, 0600);
+			c->rdr.output_fd = xopen(pack_name, O_CREAT|O_EXCL|O_RDWR, 0600);
 		}
-		nothread_data.pack_fd = c->output_fd;
+		nothread_data.pack_fd = c->rdr.output_fd;
 	} else {
-		c->input_fd = xopen(pack_name, O_RDONLY);
-		c->output_fd = -1;
-		nothread_data.pack_fd = c->input_fd;
+		c->rdr.input_fd = xopen(pack_name, O_RDONLY);
+		c->rdr.output_fd = -1;
+		nothread_data.pack_fd = c->rdr.input_fd;
 	}
-	the_hash_algo->init_fn(&c->input_ctx);
+	the_hash_algo->init_fn(&c->rdr.input_ctx);
 	return pack_name;
 }
 
-static void parse_pack_header(struct pack_ctx *c)
+static void parse_pack_header(struct pack_ctx_reader *c)
 {
 	unsigned char *hdr = fill(c, sizeof(struct pack_header));
 
@@ -484,7 +488,7 @@ static int is_delta_type(enum object_type type)
 static void *unpack_entry_data(off_t offset, size_t size,
 			       enum object_type type, struct object_id *oid,
 			       struct object_id *compat_oid,
-			       struct pack_ctx *ctx)
+			       struct pack_ctx_reader *ctx)
 {
 	static char fixed_buf[8192];
 	int status;
@@ -576,7 +580,7 @@ static void *unpack_raw_entry(struct object_entry *obj,
 			      struct object_id *ref_oid,
 			      struct object_id *oid,
 			      struct object_id *compat_oid,
-			      struct pack_ctx *ctx)
+			      struct pack_ctx_reader *ctx)
 {
 	unsigned char *p;
 	size_t size, c;
@@ -1363,7 +1367,7 @@ static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 		void *data = unpack_raw_entry(obj, &ofs_delta->offset,
 					      &ref_delta_oid,
 					      &obj->idx.oid,
-					      &obj->idx.compat_oid, c);
+					      &obj->idx.compat_oid, &c->rdr);
 		obj->real_type = obj->type;
 		if (obj->type == OBJ_OFS_DELTA) {
 			nr_ofs_deltas++;
@@ -1384,23 +1388,23 @@ static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 		free(data);
 		display_progress(progress, i+1);
 	}
-	objects[i].idx.offset = c->consumed_bytes;
+	objects[i].idx.offset = c->rdr.consumed_bytes;
 	stop_progress(&progress);
 
 	/* Check pack integrity */
-	flush(c);
+	flush(&c->rdr);
 	the_hash_algo->init_fn(&tmp_ctx);
-	git_hash_clone(&tmp_ctx, &c->input_ctx);
+	git_hash_clone(&tmp_ctx, &c->rdr.input_ctx);
 	git_hash_final(hash, &tmp_ctx);
-	if (!hasheq(fill(c, the_hash_algo->rawsz), hash, the_repository->hash_algo))
+	if (!hasheq(fill(&c->rdr, the_hash_algo->rawsz), hash, the_repository->hash_algo))
 		die(_("pack is corrupted (SHA1 mismatch)"));
-	use(c, the_hash_algo->rawsz);
+	use(&c->rdr, the_hash_algo->rawsz);
 
 	/* If input_fd is a file, we should have reached its end now. */
-	if (fstat(c->input_fd, &st))
+	if (fstat(c->rdr.input_fd, &st))
 		die_errno(_("cannot fstat packfile"));
 	if (S_ISREG(st.st_mode) &&
-			lseek(c->input_fd, 0, SEEK_CUR) - c->input_len != st.st_size)
+			lseek(c->rdr.input_fd, 0, SEEK_CUR) - c->rdr.input_len != st.st_size)
 		die(_("pack has junk at the end"));
 
 	for (i = 0; i < nr_objects; i++) {
@@ -1466,7 +1470,7 @@ static void resolve_deltas(struct pack_idx_option *opts)
  */
 static void fix_unresolved_deltas(struct hashfile *f);
 static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned char *pack_hash,
-			  struct pack_ctx *c)
+			  struct pack_ctx_reader *c)
 {
 	if (nr_ref_deltas + nr_ofs_deltas == nr_resolved_deltas) {
 		stop_progress(&progress);
@@ -1712,7 +1716,7 @@ static void final(const char *final_pack_name, const char *curr_pack_name,
 	struct strbuf pack_name = STRBUF_INIT;
 	struct strbuf index_name = STRBUF_INIT;
 	struct strbuf rev_index_name = STRBUF_INIT;
-	struct pack_ctx *c = &pack_ctx;
+	struct pack_ctx_reader *c = &pack_ctx.rdr;
 
 	if (!from_stdin) {
 		close(c->input_fd);
@@ -2065,8 +2069,8 @@ int cmd_index_pack(int argc,
 				}
 			} else if (skip_prefix(arg, "--pack_header=", &arg)) {
 				if (parse_pack_header_option(arg,
-							     pack_ctx.input_buffer,
-							     &pack_ctx.input_len) < 0)
+							     pack_ctx.rdr.input_buffer,
+							     &pack_ctx.rdr.input_len) < 0)
 					die(_("bad --pack_header: %s"), arg);
 			} else if (!strcmp(arg, "-v")) {
 				verbose = 1;
@@ -2173,7 +2177,7 @@ int cmd_index_pack(int argc,
 	}
 
 	curr_pack = open_pack_file(&pack_ctx, pack_name);
-	parse_pack_header(&pack_ctx);
+	parse_pack_header(&pack_ctx.rdr);
 	CALLOC_ARRAY(objects, st_add(nr_objects, 1));
 	if (show_stat)
 		CALLOC_ARRAY(obj_stat, st_add(nr_objects, 1));
@@ -2182,7 +2186,7 @@ int cmd_index_pack(int argc,
 	if (report_end_of_input)
 		write_in_full(2, "\0", 1);
 	resolve_deltas(&opts);
-	conclude_pack(fix_thin_pack, curr_pack, pack_hash, &pack_ctx);
+	conclude_pack(fix_thin_pack, curr_pack, pack_hash, &pack_ctx.rdr);
 	free(ofs_deltas);
 	free(ref_deltas);
 	if (strict)
@@ -2209,7 +2213,7 @@ int cmd_index_pack(int argc,
 		      keep_msg, promisor_msg,
 		      pack_hash);
 	else
-		close(pack_ctx.input_fd);
+		close(pack_ctx.rdr.input_fd);
 
 	if (do_fsck_object) {
 		/*

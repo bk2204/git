@@ -13,6 +13,7 @@
 #include "hex.h"
 #include "refs.h"
 #include "refspec.h"
+#include "object-file-convert.h"
 #include "object-name.h"
 #include "odb.h"
 #include "oidset.h"
@@ -639,7 +640,9 @@ static struct ref *get_ref_map(struct remote *remote,
 }
 
 static int s_update_ref(const char *action,
-			struct ref *ref,
+			const char *name,
+			const struct object_id *old_oid,
+			const struct object_id *new_oid,
 			struct ref_transaction *transaction,
 			int check_old)
 {
@@ -654,8 +657,8 @@ static int s_update_ref(const char *action,
 		rla = default_rla.buf;
 	msg = xstrfmt("%s: %s", rla, action);
 
-	ret = ref_transaction_update(transaction, ref->name, &ref->new_oid,
-				     check_old ? &ref->old_oid : NULL,
+	ret = ref_transaction_update(transaction, name, new_oid,
+				     check_old ? old_oid : NULL,
 				     NULL, NULL, 0, msg, &err);
 
 	if (ret)
@@ -945,8 +948,20 @@ static int update_local_ref(struct ref *ref,
 {
 	struct commit *current = NULL, *updated;
 	int fast_forward = 0;
+	struct object_id old_oid, new_oid;
 
-	if (!odb_has_object(the_repository->objects, &ref->new_oid,
+	if (repo_oid_to_algop(the_repository, &ref->old_oid,
+			      the_repository->hash_algo, &old_oid) ||
+	    repo_oid_to_algop(the_repository, &ref->new_oid,
+			      the_repository->hash_algo, &new_oid)) {
+		ref_update_display_info_append(display_array, '!', '!', _("[failed]"),
+					       _("unable to update convert ref"),
+					       NULL, ref->name, remote_ref->name,
+					       &old_oid, &new_oid);
+		return 1;
+	}
+
+	if (!odb_has_object(the_repository->objects, &new_oid,
 			    ODB_HAS_OBJECT_RECHECK_PACKED | ODB_HAS_OBJECT_FETCH_PROMISOR))
 		die(_("object %s not found"), oid_to_hex(&ref->new_oid));
 
@@ -955,13 +970,13 @@ static int update_local_ref(struct ref *ref,
 			ref_update_display_info_append(display_array, '=', '=',
 						       _("[up to date]"), NULL,
 						       NULL, ref->name,
-						       remote_ref->name, &ref->old_oid,
-						       &ref->new_oid);
+						       remote_ref->name, &old_oid,
+						       &new_oid);
 		return 0;
 	}
 
 	if (!update_head_ok &&
-	    !is_null_oid(&ref->old_oid) &&
+	    !is_null_oid(&old_oid) &&
 	    branch_checked_out(ref->name)) {
 		struct ref_update_display_info *info;
 		/*
@@ -972,25 +987,26 @@ static int update_local_ref(struct ref *ref,
 						      _("[rejected]"), NULL,
 						      _("can't fetch into checked-out branch"),
 						      ref->name, remote_ref->name,
-						      &ref->old_oid, &ref->new_oid);
+						      &old_oid, &new_oid);
 		ref_update_display_info_set_failed(info);
 		return 1;
 	}
 
-	if (!is_null_oid(&ref->old_oid) &&
+	if (!is_null_oid(&old_oid) &&
 	    starts_with(ref->name, "refs/tags/")) {
 		struct ref_update_display_info *info;
 
 		if (force || ref->force) {
 			int r;
 
-			r = s_update_ref("updating tag", ref, transaction, 0);
+			r = s_update_ref("updating tag", ref->name, &old_oid,
+					 &new_oid, transaction, 0);
 
 			info = ref_update_display_info_append(display_array, 't', '!',
 							      _("[tag update]"), NULL,
 							      _("unable to update local ref"),
 							      ref->name, remote_ref->name,
-							      &ref->old_oid, &ref->new_oid);
+							      &old_oid, &new_oid);
 			if (r)
 				ref_update_display_info_set_failed(info);
 
@@ -1000,16 +1016,16 @@ static int update_local_ref(struct ref *ref,
 							      _("[rejected]"), NULL,
 							      _("would clobber existing tag"),
 							      ref->name, remote_ref->name,
-							      &ref->old_oid, &ref->new_oid);
+							      &old_oid, &new_oid);
 			ref_update_display_info_set_failed(info);
 			return 1;
 		}
 	}
 
 	current = lookup_commit_reference_gently(the_repository,
-						 &ref->old_oid, 1);
+						 &old_oid, 1);
 	updated = lookup_commit_reference_gently(the_repository,
-						 &ref->new_oid, 1);
+						 &new_oid, 1);
 	if (!current || !updated) {
 		struct ref_update_display_info *info;
 		const char *msg;
@@ -1031,13 +1047,14 @@ static int update_local_ref(struct ref *ref,
 			what = _("[new ref]");
 		}
 
-		r = s_update_ref(msg, ref, transaction, 0);
+		r = s_update_ref(msg, ref->name, &old_oid, &new_oid,
+				 transaction, 0);
 
 		info = ref_update_display_info_append(display_array, '*', '!',
 						      what, NULL,
 						      _("unable to update local ref"),
 						      ref->name, remote_ref->name,
-						      &ref->old_oid, &ref->new_oid);
+						      &old_oid, &new_oid);
 		if (r)
 			ref_update_display_info_set_failed(info);
 
@@ -1063,13 +1080,14 @@ static int update_local_ref(struct ref *ref,
 		strbuf_add_unique_abbrev(&quickref, &current->object.oid, DEFAULT_ABBREV);
 		strbuf_addstr(&quickref, "..");
 		strbuf_add_unique_abbrev(&quickref, &ref->new_oid, DEFAULT_ABBREV);
-		r = s_update_ref("fast-forward", ref, transaction, 1);
+		r = s_update_ref("fast-forward", ref->name, &old_oid, &new_oid,
+				 transaction, 1);
 
 		info = ref_update_display_info_append(display_array, ' ', '!',
 						      quickref.buf, NULL,
 						      _("unable to update local ref"),
 						      ref->name, remote_ref->name,
-						      &ref->old_oid, &ref->new_oid);
+						      &old_oid, &new_oid);
 		if (r)
 			ref_update_display_info_set_failed(info);
 
@@ -1083,13 +1101,14 @@ static int update_local_ref(struct ref *ref,
 		strbuf_add_unique_abbrev(&quickref, &current->object.oid, DEFAULT_ABBREV);
 		strbuf_addstr(&quickref, "...");
 		strbuf_add_unique_abbrev(&quickref, &ref->new_oid, DEFAULT_ABBREV);
-		r = s_update_ref("forced-update", ref, transaction, 1);
+		r = s_update_ref("forced-update", ref->name, &old_oid, &new_oid,
+				 transaction, 1);
 
 		info = ref_update_display_info_append(display_array, '+', '!',
 						      quickref.buf, _("forced update"),
 						      _("unable to update local ref"),
 						      ref->name, remote_ref->name,
-						      &ref->old_oid, &ref->new_oid);
+						      &old_oid, &new_oid);
 
 		if (r)
 			ref_update_display_info_set_failed(info);
@@ -1102,7 +1121,7 @@ static int update_local_ref(struct ref *ref,
 						      _("[rejected]"), NULL,
 						      _("non-fast-forward"),
 						      ref->name, remote_ref->name,
-						      &ref->old_oid, &ref->new_oid);
+						      &old_oid, &new_oid);
 		ref_update_display_info_set_failed(info);
 		return 1;
 	}
@@ -1267,6 +1286,15 @@ static int store_updated_refs(struct display_state *display_state,
 			 */
 			if (fetch_head->fp) {
 				struct commit *commit = NULL;
+				struct object_id old_oid;
+
+				if (repo_oid_to_algop(the_repository,
+						      &rm->old_oid,
+						      the_repository->hash_algo,
+						      &old_oid)) {
+					/* We'll print an error elsewhere. */
+					oidcpy(&old_oid, &rm->old_oid);
+				}
 
 				/*
 				 * References in "refs/tags/" are often going to point
@@ -1277,10 +1305,10 @@ static int store_updated_refs(struct display_state *display_state,
 				 * annotated tags.
 				 */
 				if (!starts_with(rm->name, "refs/tags/"))
-					commit = lookup_commit_in_graph(the_repository, &rm->old_oid);
+					commit = lookup_commit_in_graph(the_repository, &old_oid);
 				if (!commit) {
 					commit = lookup_commit_reference_gently(the_repository,
-										&rm->old_oid,
+										&old_oid,
 										1);
 					if (!commit)
 						rm->fetch_head_status = FETCH_HEAD_NOT_FOR_MERGE;

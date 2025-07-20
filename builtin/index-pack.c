@@ -40,7 +40,9 @@ static const char index_pack_usage[] =
 struct object_entry {
 	struct pack_idx_entry idx;
 	size_t size;
+	size_t dest_size;
 	unsigned char hdr_size;
+	unsigned char dest_hdr_size;
 	signed char type;
 	signed char real_type;
 };

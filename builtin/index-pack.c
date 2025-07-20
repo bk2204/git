@@ -1420,6 +1420,28 @@ static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 		die(_("confusion beyond insanity in parse_pack_objects()"));
 }
 
+static void init_reader_at_offset(struct pack_ctx_reader *rdr,
+				  const struct git_hash_algo *algo,
+				  int input_fd, int output_fd, off_t offset)
+{
+	memset(rdr, 0, sizeof(*rdr));
+
+	rdr->input_fd = input_fd;
+	rdr->output_fd = output_fd;
+	rdr->input_offset = 0;
+	rdr->input_len = 0;
+	rdr->consumed_bytes = offset;
+
+	/*
+	 * We don't use the result, but some functions we call need it to be
+	 * initialized.
+	 */
+	algo->init_fn(&rdr->input_ctx);
+
+	if (lseek(rdr->input_fd, offset, SEEK_SET) < 0)
+		die(_("cannot seek while processing object"));
+}
+
 /*
  * Second pass:
  * - for all non-delta objects, look if it is used as a base for

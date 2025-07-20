@@ -395,7 +395,7 @@ static const char *open_pack_file(struct pack_ctx *c, const char *pack_name)
 		c->rdr.output_fd = -1;
 		nothread_data.pack_fd = c->rdr.input_fd;
 	}
-	the_hash_algo->init_fn(&c->rdr.input_ctx);
+	c->src_algo->init_fn(&c->rdr.input_ctx);
 	return pack_name;
 }
 
@@ -492,20 +492,21 @@ static int is_delta_type(enum object_type type)
 static void *unpack_entry_data(off_t offset, size_t size,
 			       enum object_type type, struct object_id *oid,
 			       struct object_id *compat_oid,
-			       struct pack_ctx_reader *ctx)
+			       struct pack_ctx *ctx,
+			       struct pack_ctx_reader *rdr)
 {
 	static char fixed_buf[8192];
 	int status;
 	git_zstream stream;
 	void *buf;
 	struct git_hash_ctx c, c_compat;
-	const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+	const struct git_hash_algo *compat = ctx->compat_algo;
 	char hdr[32];
 	int hdrlen;
 
 	if (!is_delta_type(type)) {
 		hdrlen = format_object_header(hdr, sizeof(hdr), type, size);
-		the_hash_algo->init_fn(&c);
+		ctx->src_algo->init_fn(&c);
 		git_hash_update(&c, hdr, hdrlen);
 		if (compat && compat_oid) {
 			compat->init_fn(&c_compat);
@@ -529,10 +530,10 @@ static void *unpack_entry_data(off_t offset, size_t size,
 
 	do {
 		unsigned char *last_out = stream.next_out;
-		stream.next_in = fill(ctx, 1);
-		stream.avail_in = ctx->input_len;
+		stream.next_in = fill(rdr, 1);
+		stream.avail_in = rdr->input_len;
 		status = git_inflate(&stream, 0);
-		use(ctx, ctx->input_len - stream.avail_in);
+		use(rdr, rdr->input_len - stream.avail_in);
 		if (oid)
 			git_hash_update(&c, last_out, stream.next_out - last_out);
 		if (compat && compat_oid && type == OBJ_BLOB)
@@ -558,8 +559,8 @@ static void *unpack_entry_data(off_t offset, size_t size,
 			int ret;
 			repo_lock();
 			ret = convert_object_file(the_repository, &outbuf,
-						  the_repository->hash_algo,
-						  compat,
+						  ctx->src_algo,
+						  ctx->compat_algo,
 						  buf, size, type, &missing, 1);
 			repo_unlock();
 			/* If we have a missing object, we'll get to it later. */
@@ -579,7 +580,7 @@ static void *unpack_entry_data(off_t offset, size_t size,
 		}
 		git_hash_final_oid(compat_oid, &c_compat);
 		repo_lock();
-		repo_add_loose_object_map(the_repository->objects->sources, oid, compat_oid, 0);
+		repo_add_loose_object_map(the_repository->objects->sources, oid, compat_oid, LOOSE_TYPE_LOOSE);
 		repo_unlock();
 	}
 	return buf == fixed_buf ? NULL : buf;
@@ -590,7 +591,8 @@ static void *unpack_raw_entry(struct object_entry *obj,
 			      struct object_id *ref_oid,
 			      struct object_id *oid,
 			      struct object_id *compat_oid,
-			      struct pack_ctx_reader *ctx)
+			      struct pack_ctx *ctx,
+			      struct pack_ctx_reader *rdr)
 {
 	unsigned char *p;
 	size_t size, c;
@@ -598,21 +600,21 @@ static void *unpack_raw_entry(struct object_entry *obj,
 	unsigned shift;
 	void *data;
 
-	obj->idx.offset = ctx->consumed_bytes;
-	ctx->input_crc32 = crc32(0, NULL, 0);
+	obj->idx.offset = rdr->consumed_bytes;
+	rdr->input_crc32 = crc32(0, NULL, 0);
 
-	p = fill(ctx, 1);
+	p = fill(rdr, 1);
 	c = *p;
-	use(ctx, 1);
+	use(rdr, 1);
 	obj->type = (c >> 4) & 7;
 	size = (c & 15);
 	shift = 4;
 	while (c & 0x80) {
 		if ((bitsizeof(size_t) - 7) < shift)
 			die(_("object size too large for this platform"));
-		p = fill(ctx, 1);
+		p = fill(rdr, 1);
 		c = *p;
-		use(ctx, 1);
+		use(rdr, 1);
 		size += (c & 0x7f) << shift;
 		shift += 7;
 	}
@@ -620,22 +622,22 @@ static void *unpack_raw_entry(struct object_entry *obj,
 
 	switch (obj->type) {
 	case OBJ_REF_DELTA:
-		oidread(ref_oid, fill(ctx, the_hash_algo->rawsz),
-			the_repository->hash_algo);
-		use(ctx, the_hash_algo->rawsz);
+		oidread(ref_oid, fill(rdr, ctx->src_algo->rawsz),
+			ctx->src_algo);
+		use(rdr, ctx->src_algo->rawsz);
 		break;
 	case OBJ_OFS_DELTA:
-		p = fill(ctx, 1);
+		p = fill(rdr, 1);
 		c = *p;
-		use(ctx, 1);
+		use(rdr, 1);
 		base_offset = c & 127;
 		while (c & 128) {
 			base_offset += 1;
 			if (!base_offset || MSB(base_offset, 7))
 				bad_object(obj->idx.offset, _("offset value overflow for delta base object"));
-			p = fill(ctx, 1);
+			p = fill(rdr, 1);
 			c = *p;
-			use(ctx, 1);
+			use(rdr, 1);
 			base_offset = (base_offset << 7) + (c & 127);
 		}
 		*ofs_offset = obj->idx.offset - base_offset;
@@ -650,10 +652,10 @@ static void *unpack_raw_entry(struct object_entry *obj,
 	default:
 		bad_object(obj->idx.offset, _("unknown object type %d"), obj->type);
 	}
-	obj->hdr_size = ctx->consumed_bytes - obj->idx.offset;
+	obj->hdr_size = rdr->consumed_bytes - obj->idx.offset;
 
-	data = unpack_entry_data(obj->idx.offset, obj->size, obj->type, oid, compat_oid, ctx);
-	obj->idx.crc32 = ctx->input_crc32;
+	data = unpack_entry_data(obj->idx.offset, obj->size, obj->type, oid, compat_oid, ctx, rdr);
+	obj->idx.crc32 = rdr->input_crc32;
 	return data;
 }
 
@@ -1138,9 +1140,9 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 	free(delta_data);
 	if (!result_data)
 		bad_object(delta_obj->idx.offset, _("failed to apply delta"));
-	hash_object_file(the_hash_algo, result_data, result_size,
+	hash_object_file(c->src_algo, result_data, result_size,
 			 delta_obj->real_type, &delta_obj->idx.oid);
-	if (the_repository->compat_hash_algo) {
+	if (c->compat_algo) {
 		struct strbuf outbuf = STRBUF_INIT;
 		int ret = 0;
 		char *buf;
@@ -1150,8 +1152,8 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 		if (delta_obj->real_type != OBJ_BLOB) {
 			repo_lock();
 			ret = convert_object_file(the_repository, &outbuf,
-						  the_repository->hash_algo,
-						  the_repository->compat_hash_algo,
+						  c->src_algo,
+						  c->compat_algo,
 						  result_data, result_size,
 						  delta_obj->real_type, &missing, 1);
 			repo_unlock();
@@ -1169,7 +1171,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 			bad_object(delta_obj->idx.offset,
 				   _("could not convert object from delta"));
 
-		hash_object_file(the_repository->compat_hash_algo, buf, len,
+		hash_object_file(c->compat_algo, buf, len,
 				 delta_obj->real_type, &delta_obj->idx.compat_oid);
 		/*
 		 * We add this entry to the loose object map but do not write it
@@ -1383,7 +1385,7 @@ static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 		void *data = unpack_raw_entry(obj, &ofs_delta->offset,
 					      &ref_delta_oid,
 					      &obj->idx.oid,
-					      &obj->idx.compat_oid, &c->rdr);
+					      &obj->idx.compat_oid, c, &c->rdr);
 		obj->real_type = obj->type;
 		if (obj->type == OBJ_OFS_DELTA) {
 			nr_ofs_deltas++;
@@ -1409,12 +1411,12 @@ static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 
 	/* Check pack integrity */
 	flush(&c->rdr);
-	the_hash_algo->init_fn(&tmp_ctx);
+	c->src_algo->init_fn(&tmp_ctx);
 	git_hash_clone(&tmp_ctx, &c->rdr.input_ctx);
 	git_hash_final(hash, &tmp_ctx);
-	if (!hasheq(fill(&c->rdr, the_hash_algo->rawsz), hash, the_repository->hash_algo))
+	if (!hasheq(fill(&c->rdr, c->src_algo->rawsz), hash, c->src_algo))
 		die(_("pack is corrupted (SHA1 mismatch)"));
-	use(&c->rdr, the_hash_algo->rawsz);
+	use(&c->rdr, c->src_algo->rawsz);
 
 	/* If input_fd is a file, we should have reached its end now. */
 	if (fstat(c->rdr.input_fd, &st))
@@ -1535,9 +1537,9 @@ static void *resolve_delta_recursively(struct pack_ctx *c,
 	size_t basesz;
 	unsigned long deltasz;
 
-	init_reader_at_offset(&rdr, the_repository->hash_algo, c->rdr.input_fd,
+	init_reader_at_offset(&rdr, c->dest_algo, c->rdr.input_fd,
 			      -1, obj->idx.offset);
-	data = unpack_raw_entry(obj, &ofs_offset, &ref_oid, NULL, NULL, &rdr);
+	data = unpack_raw_entry(obj, &ofs_offset, &ref_oid, NULL, NULL, c, &rdr);
 
 	if (obj->type == obj->real_type) {
 		*sizep = obj->size;
@@ -1566,7 +1568,7 @@ static void *resolve_delta_recursively(struct pack_ctx *c,
 			 * unpack the object.
 			 */
 			if (repo_oid_to_algop(the_repository, &ref_oid,
-					      the_repository->hash_algo, &ref_oid))
+					      c->dest_algo, &ref_oid))
 				goto out;
 			base = odb_read_object(the_repository->objects,
 					       &ref_oid, &type, &size);
@@ -1612,7 +1614,8 @@ out:
 
 static void fix_unresolved_deltas(struct hashfile *f);
 static void conclude_thin_pack(const char *curr_pack, unsigned char *pack_hash,
-			       struct pack_ctx_reader *c)
+			       struct pack_ctx *c,
+			       struct pack_ctx_reader *rdr)
 {
 	struct hashfile *f;
 	unsigned char read_hash[GIT_MAX_RAWSZ], tail_hash[GIT_MAX_RAWSZ];
@@ -1624,7 +1627,7 @@ static void conclude_thin_pack(const char *curr_pack, unsigned char *pack_hash,
 	REALLOC_ARRAY(objects, nr_objects + nr_unresolved + 1);
 	memset(objects + nr_objects + 1, 0,
 	       nr_unresolved * sizeof(*objects));
-	f = hashfd(the_repository->hash_algo, c->output_fd, curr_pack);
+	f = hashfd(c->src_algo, rdr->output_fd, curr_pack);
 	fix_unresolved_deltas(f);
 	strbuf_addf(&msg, Q_("completed with %d local object",
 			     "completed with %d local objects",
@@ -1633,11 +1636,11 @@ static void conclude_thin_pack(const char *curr_pack, unsigned char *pack_hash,
 	stop_progress_msg(&progress, msg.buf);
 	strbuf_release(&msg);
 	finalize_hashfile(f, tail_hash, FSYNC_COMPONENT_PACK, 0);
-	hashcpy(read_hash, pack_hash, the_repository->hash_algo);
-	fixup_pack_header_footer(the_hash_algo, c->output_fd, pack_hash,
+	hashcpy(read_hash, pack_hash, c->src_algo);
+	fixup_pack_header_footer(c->src_algo, rdr->output_fd, pack_hash,
 				 curr_pack, nr_objects,
-				 read_hash, c->consumed_bytes-the_hash_algo->rawsz);
-	if (!hasheq(read_hash, tail_hash, the_repository->hash_algo))
+				 read_hash, rdr->consumed_bytes-c->src_algo->rawsz);
+	if (!hasheq(read_hash, tail_hash, c->src_algo))
 		die(_("Unexpected tail checksum for %s "
 		      "(disk corruption?)"), curr_pack);
 }
@@ -1648,17 +1651,18 @@ static void conclude_thin_pack(const char *curr_pack, unsigned char *pack_hash,
  * - write the final pack hash
  */
 static void conclude_pack(int fix_thin_pack, const char *curr_pack, unsigned char *pack_hash,
-			  struct pack_ctx_reader *c)
+			  struct pack_ctx *c,
+			  struct pack_ctx_reader *rdr)
 {
 	if (nr_ref_deltas + nr_ofs_deltas == nr_resolved_deltas) {
 		stop_progress(&progress);
 		/* Flush remaining pack final hash. */
-		flush(c);
+		flush(rdr);
 		return;
 	}
 
 	if (fix_thin_pack)
-		conclude_thin_pack(curr_pack, pack_hash, c);
+		conclude_thin_pack(curr_pack, pack_hash, c, rdr);
 	if (nr_ofs_deltas + nr_ref_deltas != nr_resolved_deltas)
 		die(Q_("pack has %d unresolved delta",
 		       "pack has %d unresolved deltas",
@@ -2168,7 +2172,7 @@ static void map_one_object(struct pack_ctx *c,
 	struct git_hash_ctx ctx;
 	char hdr[32];
 	int ret;
-	const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+
 
 	/* Already done. */
 	if (!is_null_oid(&obj->idx.compat_oid)) {
@@ -2178,7 +2182,7 @@ static void map_one_object(struct pack_ctx *c,
 		return;
 	}
 
-	oidclr(&last_oid, compat);
+	oidclr(&last_oid, c->compat_algo);
 
 	if (obj->type != obj->real_type) {
 		buf = resolve_delta_recursively(c, obj, sorted_objects, objects,
@@ -2202,7 +2206,7 @@ static void map_one_object(struct pack_ctx *c,
 			ret = 0;
 		} else {
 			ret = convert_object_file(the_repository, &outbuf,
-						  the_repository->hash_algo, compat,
+						  c->src_algo, c->compat_algo,
 						  buf, size, obj->real_type,
 						  &missing, 1);
 			cvtbuf = outbuf.buf;
@@ -2226,14 +2230,14 @@ static void map_one_object(struct pack_ctx *c,
 		}
 		if (ret < 0)
 			goto err;
-		compat->init_fn(&ctx);
+		c->compat_algo->init_fn(&ctx);
 
 		hdrlen = xsnprintf(hdr, sizeof(hdr), "%s %"PRIuMAX,
 				   type_name(obj->real_type),(uintmax_t)outbuf.len) + 1;
 
-		compat->update_fn(&ctx, hdr, hdrlen);
-		compat->update_fn(&ctx, cvtbuf, cvtsz);
-		compat->final_oid_fn(&obj->idx.compat_oid, &ctx);
+		c->compat_algo->update_fn(&ctx, hdr, hdrlen);
+		c->compat_algo->update_fn(&ctx, cvtbuf, cvtsz);
+		c->compat_algo->final_oid_fn(&obj->idx.compat_oid, &ctx);
 		repo_add_loose_object_map(the_repository->objects->sources,
 					  &obj->idx.oid, &obj->idx.compat_oid,
 					  LOOSE_TYPE_LOOSE);
@@ -2262,11 +2266,16 @@ static void compute_compat_hashes(struct pack_ctx *orig)
 		c.rdr.input_fd = orig->rdr.input_fd;
 	c.rdr.output_fd = -1;
 
+	c.src_algo = orig->src_algo;
+	c.dest_algo = orig->dest_algo;
+	c.dest_compat_algo = orig->dest_compat_algo;
+	c.compat_algo = orig->compat_algo;
+
 	/*
 	 * This is not actually used, but it is called from some of the delta
 	 * unpacking functions, so it must be initialized.
 	 */
-	the_hash_algo->init_fn(&c.rdr.input_ctx);
+	c.src_algo->init_fn(&c.rdr.input_ctx);
 
 	if (verbose)
 		progress = start_progress(the_repository, _("Mapping objects"), nr_objects);
@@ -2281,7 +2290,7 @@ static void compute_compat_hashes(struct pack_ctx *orig)
 		display_progress(progress, i + 1);
 	}
 
-	the_hash_algo->final_fn(unused, &c.rdr.input_ctx);
+	c.src_algo->final_fn(unused, &c.rdr.input_ctx);
 	free(sorted_objects);
 
 	stop_progress(&progress);
@@ -2512,7 +2521,7 @@ int cmd_index_pack(int argc,
 	if (report_end_of_input)
 		write_in_full(2, "\0", 1);
 	resolve_deltas(&opts);
-	conclude_pack(fix_thin_pack, curr_pack, pack_hash, &pack_ctx.rdr);
+	conclude_pack(fix_thin_pack, curr_pack, pack_hash, &pack_ctx, &pack_ctx.rdr);
 	if (the_repository->compat_hash_algo)
 		compute_compat_hashes(&pack_ctx);
 	free(ofs_deltas);

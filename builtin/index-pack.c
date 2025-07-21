@@ -1527,7 +1527,8 @@ static void *resolve_delta_recursively(struct pack_ctx *c,
 				       struct object_id *baseoid,
 				       size_t *baseoffset,
 				       void **base_data,
-				       size_t *basesizep)
+				       size_t *basesizep,
+				       bool destination)
 {
 	void *data, *base = NULL, *delta = NULL;
 	struct pack_ctx_reader rdr;
@@ -1579,7 +1580,7 @@ static void *resolve_delta_recursively(struct pack_ctx *c,
 	}
 	if (p) {
 		oidcpy(baseoid, &p->idx.compat_oid);
-		boffset = p->idx.offset;
+		boffset = destination ? p->idx.dest_offset : p->idx.offset;
 	} else {
 		boffset = 0;
 	}
@@ -1593,7 +1594,8 @@ static void *resolve_delta_recursively(struct pack_ctx *c,
 			goto out;
 		base = resolve_delta_recursively(c, p, sorted_objects, objects,
 						 &basesz, baseoid, baseoffset,
-						 base_data, basesizep);
+						 base_data, basesizep,
+						 destination);
 		if (*base_data) {
 			FREE_AND_NULL(*base_data);
 			*basesizep = 0;
@@ -1613,6 +1615,15 @@ out:
 }
 
 static void fix_unresolved_deltas(struct hashfile *f);
+static struct object_entry *append_obj_to_pack(struct hashfile *f,
+			       struct object_entry *obj,
+			       const struct object_id *oid,
+			       void *prefix, unsigned long prefixlen,
+			       void *buf, unsigned long size,
+			       unsigned long objsize,
+			       enum object_type type,
+			       enum object_type real_type, int destination);
+
 static void conclude_thin_pack(const char *curr_pack, unsigned char *pack_hash,
 			       struct pack_ctx *c,
 			       struct pack_ctx_reader *rdr)
@@ -1643,6 +1654,224 @@ static void conclude_thin_pack(const char *curr_pack, unsigned char *pack_hash,
 	if (!hasheq(read_hash, tail_hash, c->src_algo))
 		die(_("Unexpected tail checksum for %s "
 		      "(disk corruption?)"), curr_pack);
+}
+
+static void write_one_deltified(struct pack_ctx *c,
+				struct hashfile *f,
+				struct object_entry **sorted_objects,
+				struct object_entry *objects,
+				struct object_entry *obj)
+{
+	struct strbuf outbuf = STRBUF_INIT, basebuf = STRBUF_INIT;
+	void *data = NULL, *base = NULL, *cvtbuf, *delta = NULL, *to_free = NULL;
+	size_t cvtsz, basesz, base_offset;
+	unsigned long deltasz;
+	struct object_id delta_base;
+
+	if (obj->type != obj->real_type) {
+		/*
+		 * This is a delta, so resolve the delta and leave us
+		 * with the full base object, size, and object entry,
+		 * plus those of the final object.
+		 */
+		size_t datasz;
+
+		data = resolve_delta_recursively(c, obj, sorted_objects,
+						 objects, &datasz,
+						 &delta_base,
+						 &base_offset,
+						 &base, &basesz, true);
+		if (!data)
+			die(_("cannot resolve deltas for %s"), oid_to_hex(&obj->idx.compat_oid));
+		if (obj->real_type == OBJ_BLOB) {
+			cvtbuf = data;
+			cvtsz = datasz;
+			to_free = base;
+		} else {
+			convert_object_file(the_repository, &outbuf,
+					    c->src_algo, c->dest_algo,
+					    data, datasz, obj->real_type,
+					    NULL, 0);
+			cvtbuf = outbuf.buf;
+			cvtsz = outbuf.len;
+			FREE_AND_NULL(data);
+
+			convert_object_file(the_repository, &basebuf,
+					    c->src_algo, c->dest_algo,
+					    base, basesz, obj->real_type,
+					    NULL, 0);
+			FREE_AND_NULL(base);
+			base = basebuf.buf;
+			basesz = basebuf.len;
+		}
+	} else {
+		data = get_data_from_pack(obj);
+		if (!data)
+			die(_("cannot look up data for object %s"), oid_to_hex(&obj->idx.oid));
+		if (obj->type == OBJ_BLOB) {
+			cvtbuf = data;
+			cvtsz = obj->size;
+		} else {
+			convert_object_file(the_repository, &outbuf,
+					    c->src_algo, c->dest_algo,
+					    data, obj->size, obj->type,
+					    NULL, 0);
+			cvtbuf = outbuf.buf;
+			cvtsz = outbuf.len;
+			FREE_AND_NULL(data);
+		}
+	}
+
+	sha1_object(cvtbuf, NULL, cvtsz, obj->real_type,
+		    &obj->idx.oid);
+
+	/*
+	 * Now we have this particular entry in memory.  We're going to find its base
+	 * object in the source algorithm and deltify against that same object
+	 * in the destination algorithm.  That may not produce the best possible
+	 * delta, but it will produce a reasonably good one.
+	 */
+	if (obj->type == OBJ_OFS_DELTA) {
+		unsigned char dheader[MAX_PACK_OBJECT_HEADER];
+		unsigned pos = sizeof(dheader) - 1;
+		off_t ofs;
+		struct object_id base_oid;
+
+		hash_object_file(c->dest_algo, base, basesz, obj->real_type, &base_oid);
+
+		ofs = obj->idx.dest_offset - base_offset;
+		dheader[pos] = ofs & 127;
+		while (ofs >>= 7)
+			dheader[--pos] = 128 | (--ofs & 127);
+
+		delta = diff_delta(base, basesz, cvtbuf, cvtsz, &deltasz, 0);
+		if (!delta)
+			die(_("cannot create delta for object %s"), oid_to_hex(&obj->idx.oid));
+		append_obj_to_pack(f, obj, &obj->idx.oid, dheader + pos,
+				   sizeof(dheader) - pos, delta, deltasz,
+				   obj->size, obj->type, obj->real_type, 1);
+	} else if (obj->type == OBJ_REF_DELTA) {
+		if (repo_oid_to_algop(the_repository, &delta_base,
+				      c->dest_algo, &delta_base))
+			die(_("cannot convert delta base for object %s"),
+			    oid_to_hex(&delta_base));
+		delta = diff_delta(base, basesz, cvtbuf, cvtsz, &deltasz, 0);
+		append_obj_to_pack(f, obj, &obj->idx.oid, delta_base.hash,
+				   c->dest_algo->rawsz, delta, deltasz,
+				   obj->size, obj->type, obj->real_type, 1);
+	} else {
+		/*
+		 * This is an undeltified object, so we just have to hash it and
+		 * write it.
+		 */
+		append_obj_to_pack(f, obj, &obj->idx.oid, NULL, 0, cvtbuf,
+				   cvtsz, cvtsz, obj->real_type, obj->real_type,
+				   1);
+	}
+
+	strbuf_release(&basebuf);
+	strbuf_release(&outbuf);
+	free(to_free);
+	free(data);
+	free(delta);
+}
+
+static void write_destination_pack(struct pack_ctx *orig,
+				   const char **dest_pack,
+				   unsigned char *pack_hash)
+{
+	unsigned long i;
+	struct object_entry **sorted_objects;
+	struct pack_ctx c;
+	unsigned char tail_hash[GIT_MAX_RAWSZ], unused[GIT_MAX_RAWSZ];
+	struct hashfile *f;
+	struct pack_header hdr = {
+		.hdr_signature = htonl(PACK_SIGNATURE),
+		.hdr_version = htonl(PACK_VERSION),
+		.hdr_entries = htonl(nr_objects),
+	};
+	int src_algo = hash_algo_by_ptr(orig->src_algo),
+	    dest_algo = hash_algo_by_ptr(orig->dest_algo);
+	int fd;
+
+
+	memset(&c, 0, sizeof(c));
+
+	c.src_algo = orig->src_algo;
+	c.dest_algo = orig->dest_algo;
+	c.dest_compat_algo = orig->dest_compat_algo;
+	c.compat_algo = orig->compat_algo;
+
+	fd = orig->rdr.output_fd;
+
+	*dest_pack = open_pack_file(&c, NULL);
+
+	c.rdr.input_fd = fd;
+	get_thread_data()->pack_fd = fd;
+
+	c.dest_algo->init_fn(&c.rdr.input_ctx);
+
+	f = hashfd(c.dest_algo, c.rdr.output_fd, *dest_pack);
+	hashwrite(f, &hdr, sizeof(hdr));
+
+	if (verbose)
+		progress = start_progress(the_repository, _("Converting objects"), nr_objects);
+
+	ALLOC_ARRAY(sorted_objects, nr_objects);
+	for (i = 0; i < nr_objects; i++) {
+		struct object_id tmp_oid;
+		struct object_entry *obj = objects + i;
+
+		/*
+		 * Before this point, oid was the source algorithm (what we got
+		 * over the wire) and compat_oid was the destination algorithm
+		 * (what we want to write into the repository).  However, when
+		 * actually writing the index, we want the repository's main
+		 * algorithm first and the repository's compatibility algorithm
+		 * second in the index data, so swap them now.
+		 */
+		oidcpy(&tmp_oid, &obj->idx.oid);
+		oidcpy(&obj->idx.oid, &obj->idx.compat_oid);
+		oidcpy(&obj->idx.compat_oid, &tmp_oid);
+
+		if (obj->idx.compat_oid.algo != src_algo ||
+		    obj->idx.oid.algo != dest_algo)
+			BUG("improper mapping of objects");
+
+		sorted_objects[i] = objects + i;
+	}
+	QSORT(sorted_objects, nr_objects, compare_array_objects_by_compat_oid);
+
+	if (nr_objects)
+		objects[0].idx.dest_offset = 4 * 3;
+
+	for (i = 0; i < nr_objects; i++) {
+		write_one_deltified(&c, f, sorted_objects, objects,
+				    &objects[i]);
+		display_progress(progress, i + 1);
+	}
+	finalize_hashfile(f, tail_hash, FSYNC_COMPONENT_PACK, 0);
+	fixup_pack_header_footer(c.dest_algo, c.rdr.output_fd, tail_hash,
+				 *dest_pack, nr_objects,
+				 NULL, 0);
+	hashcpy(pack_hash, tail_hash, c.dest_algo);
+	close(c.rdr.output_fd);
+
+	/*
+	 * Now that we're done reading the original pack and no longer need the
+	 * offset and crc32 fields, replace them with the destination values so
+	 * that we write the correct entries into the index.
+	 */
+	for (i = 0; i < nr_objects; i++) {
+		objects[i].idx.offset = objects[i].idx.dest_offset;
+		objects[i].idx.crc32 = objects[i].idx.dest_crc32;
+		objects[i].size = objects[i].dest_size;
+	}
+
+	c.dest_algo->final_fn(unused, &c.rdr.input_ctx);
+	free(sorted_objects);
+
+	stop_progress(&progress);
 }
 
 /*
@@ -2187,7 +2416,7 @@ static void map_one_object(struct pack_ctx *c,
 	if (obj->type != obj->real_type) {
 		buf = resolve_delta_recursively(c, obj, sorted_objects, objects,
 						&size, &base_oid, &base_unused,
-						&base, &basesize);
+						&base, &basesize, false);
 		free(base);
 	} else {
 		buf = get_data_from_pack(obj);
@@ -2307,6 +2536,7 @@ int cmd_index_pack(int argc,
 	const char *index_name = NULL, *pack_name = NULL, *rev_index_name = NULL;
 	const char *keep_msg = NULL;
 	const char *promisor_msg = NULL;
+	const char *dest_pack = NULL;
 	struct strbuf index_name_buf = STRBUF_INIT;
 	struct strbuf rev_index_name_buf = STRBUF_INIT;
 	struct pack_idx_entry **idx_objects;
@@ -2447,8 +2677,6 @@ int cmd_index_pack(int argc,
 		die(_("--promisor cannot be used with a pack name"));
 	if (from_stdin && !startup_info->have_repository)
 		die(_("--stdin requires a git repository"));
-	if (from_stdin && hash_algo)
-		die(_("options '%s' and '%s' cannot be used together"), "--object-format", "--stdin");
 	if (!index_name && pack_name)
 		index_name = derive_filename(pack_name, "pack", "idx", &index_name_buf);
 
@@ -2467,6 +2695,8 @@ int cmd_index_pack(int argc,
 	 * we're probably verifying the index and we'll honor the value set with
 	 * the command line options above.
 	 */
+	if (!pack_ctx.src_algo)
+		pack_ctx.src_algo = the_repository->hash_algo;
 	pack_ctx.dest_algo = the_repository->hash_algo;
 	if (startup_info->have_repository && the_repository->compat_hash_algo)
 		pack_ctx.dest_compat_algo = the_repository->compat_hash_algo;
@@ -2524,6 +2754,8 @@ int cmd_index_pack(int argc,
 	conclude_pack(fix_thin_pack, curr_pack, pack_hash, &pack_ctx, &pack_ctx.rdr);
 	if (the_repository->compat_hash_algo)
 		compute_compat_hashes(&pack_ctx);
+	if (pack_ctx.src_algo != pack_ctx.dest_algo)
+		write_destination_pack(&pack_ctx, &dest_pack, pack_hash);
 	free(ofs_deltas);
 	free(ref_deltas);
 	if (strict)
@@ -2544,13 +2776,16 @@ int cmd_index_pack(int argc,
 	free(idx_objects);
 
 	if (!verify)
-		final(pack_name, curr_pack,
+		final(pack_name, dest_pack ? dest_pack : curr_pack,
 		      index_name, curr_index,
 		      rev_index_name, curr_rev_index,
 		      keep_msg, promisor_msg,
 		      pack_hash);
 	else
 		close(pack_ctx.rdr.input_fd);
+
+	if (dest_pack)
+		remove(curr_pack);
 
 	if (do_fsck_object) {
 		/*
@@ -2572,6 +2807,7 @@ int cmd_index_pack(int argc,
 
 	free(opts.anomaly);
 	free(objects);
+	free((void *)dest_pack);
 	strbuf_release(&index_name_buf);
 	strbuf_release(&rev_index_name_buf);
 	if (!pack_name)

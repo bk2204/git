@@ -2582,36 +2582,62 @@ static int for_each_prefixed_object_in_pack(
 	int len = opts->prefix_hex_len > p->repo->hash_algo->hexsz ?
 		p->repo->hash_algo->hexsz : opts->prefix_hex_len;
 	int ret;
+	struct object_id wanted;
 
 	num = p->num_objects;
-	bsearch_pack(opts->prefix, p, &first);
 
-	/*
-	 * At this point, "first" is the location of the lowest object
-	 * with an object name that could match "bin_pfx".  See if we have
-	 * 0, 1 or more objects that actually match(es).
-	 */
-	for (i = first; i < num; i++) {
-		struct object_id oid;
+	for (int algo = 1; algo < GIT_HASH_NALGOS; algo++) {
+		const struct git_hash_algo *algop = &hash_algos[algo];
 
-		nth_packed_object_id(&oid, p, i);
-		if (!match_hash(len, opts->prefix->hash, oid.hash))
-			break;
+		/*
+		 * Skip this algorithm unless it's the desired one or we've
+		 * asked for any algorithm.
+		 */
+		if (opts->prefix->algo != GIT_HASH_UNKNOWN &&
+		    opts->prefix->algo != algo)
+			continue;
 
-		if (data->request) {
-			struct object_info oi = *data->request;
+		/*
+		 * Skip this algorithm unless it's the main algorithm or we have
+		 * a compatibility algorithm and it's that algorithm.
+		 */
+		if (algop != p->repo->hash_algo &&
+		    (!p->repo->compat_hash_algo ||
+		     algop != p->repo->compat_hash_algo))
+			continue;
 
-			ret = packfile_store_read_object_info(store, &oid, &oi, 0);
-			if (ret)
-				goto out;
+		oidcpy(&wanted, opts->prefix);
+		wanted.algo = algo;
 
-			ret = data->cb(&oid, &oi, data->cb_data);
-			if (ret)
-				goto out;
-		} else {
-			ret = data->cb(&oid, NULL, data->cb_data);
-			if (ret)
-				goto out;
+		bsearch_pack(&wanted, p, &first);
+
+		/*
+		 * At this point, "first" is the location of the lowest object
+		 * with an object name that could match "bin_pfx".  See if we have
+		 * 0, 1 or more objects that actually match(es).
+		 */
+		for (i = first; i < num; i++) {
+			struct object_id oid;
+
+			nth_packed_object_id_algop(&oid, p, i, algop, algop);
+			if (!match_hash(len, opts->prefix->hash, oid.hash))
+				break;
+
+			if (data->request) {
+				struct object_info oi = *data->request;
+
+				ret = packfile_store_read_object_info(store, &oid, &oi, 0);
+				if (ret)
+					goto out;
+
+				ret = data->cb(&oid, &oi, data->cb_data);
+				if (ret)
+					goto out;
+			} else {
+				ret = data->cb(&oid, NULL, data->cb_data);
+				if (ret)
+					goto out;
+			}
 		}
 	}
 

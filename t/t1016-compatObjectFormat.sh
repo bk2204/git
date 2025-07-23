@@ -191,11 +191,12 @@ done
 cd "$base"
 
 compare_oids () {
-	test "$#" = 5 && { local PREREQ="$1"; shift; } || PREREQ=
-	local type="$1"
-	local name="$2"
-	local sha1_oid="$3"
-	local sha256_oid="$4"
+	test "$#" = 6 && { local PREREQ="$1"; shift; } || PREREQ=
+	local format="$1"
+	local type="$2"
+	local name="$3"
+	local sha1_oid="$4"
+	local sha256_oid="$5"
 
 	echo ${sha1_oid} >${name}_sha1_expected
 	echo ${sha256_oid} >${name}_sha256_expected
@@ -206,7 +207,7 @@ compare_oids () {
 	local sha1_sha256_oid="$(cat ${name}_sha1_sha256_found)"
 	local sha256_sha1_oid="$(cat ${name}_sha256_sha1_found)"
 
-	test_expect_success $PREREQ "Verify ${type} ${name}'s sha1 oid" '
+	test_expect_success $PREREQ "Verify ${type} ${name}'s sha1 oid when ${format}" '
 		git --git-dir=repo-sha256/.git rev-parse --output-object-format=sha1 ${sha256_oid} >${name}_sha1 &&
 		test_cmp ${name}_sha1 ${name}_sha1_expected &&
 		if test "$type" = commit
@@ -216,7 +217,7 @@ compare_oids () {
 		fi
 	'
 
-	test_expect_success $PREREQ "Verify ${type} ${name}'s sha256 oid" '
+	test_expect_success $PREREQ "Verify ${type} ${name}'s sha256 oid when ${format}" '
 		git --git-dir=repo-sha1/.git rev-parse --output-object-format=sha256 ${sha1_oid} >${name}_sha256 &&
 		test_cmp ${name}_sha256 ${name}_sha256_expected &&
 		if test "$type" = commit
@@ -226,82 +227,89 @@ compare_oids () {
 		fi
 	'
 
-	test_expect_success $PREREQ "Reject ${type} ${name} trying to parse with dual hashes" '
+	test_expect_success $PREREQ "Reject ${type} ${name} trying to parse with dual hashes when ${format}" '
 		test_must_fail git --git-dir=repo-sha256/.git rev-parse ${sha1_oid}^{sha1}^{sha256} &&
 		test_must_fail git --git-dir=repo-sha256/.git rev-parse ${sha256_oid}^{sha1}^{sha256} &&
 		test_must_fail git --git-dir=repo-sha1/.git rev-parse ${sha1_oid}^{sha256}^{sha1} &&
 		test_must_fail git --git-dir=repo-sha1/.git rev-parse ${sha256_oid}^{sha256}^{sha1}
 	'
 
-	test_expect_success $PREREQ "Verify ${name}'s sha1 type" '
+	test_expect_success $PREREQ "Verify ${name}'s sha1 type when ${format}" '
 		git --git-dir=repo-sha1/.git cat-file -t ${sha1_oid} >${name}_type1 &&
 		git --git-dir=repo-sha256/.git cat-file -t ${sha256_sha1_oid} >${name}_type2 &&
 		test_cmp ${name}_type1 ${name}_type2 &&
 		test_cmp ${name}_type1 ${name}_type_expected
 	'
 
-	test_expect_success $PREREQ "Verify ${name}'s sha256 type" '
+	test_expect_success $PREREQ "Verify ${name}'s sha256 type when ${format}" '
 		git --git-dir=repo-sha256/.git cat-file -t ${sha256_oid} >${name}_type3 &&
 		git --git-dir=repo-sha1/.git cat-file -t ${sha1_sha256_oid} >${name}_type4 &&
 		test_cmp ${name}_type3 ${name}_type4 &&
 		test_cmp ${name}_type3 ${name}_type_expected
 	'
 
-	test_expect_success $PREREQ "Verify ${name}'s sha1 size" '
+	test_expect_success $PREREQ "Verify ${name}'s sha1 size when ${format}" '
 		git --git-dir=repo-sha1/.git cat-file -s ${sha1_oid} >${name}_size1 &&
 		git --git-dir=repo-sha256/.git cat-file -s ${sha256_sha1_oid} >${name}_size2 &&
 		test_cmp ${name}_size1 ${name}_size2
 	'
 
-	test_expect_success $PREREQ "Verify ${name}'s sha256 size" '
+	test_expect_success $PREREQ "Verify ${name}'s sha256 size when ${format}" '
 		git --git-dir=repo-sha256/.git cat-file -s ${sha256_oid} >${name}_size3 &&
 		git --git-dir=repo-sha1/.git cat-file -s ${sha1_sha256_oid} >${name}_size4 &&
 		test_cmp ${name}_size3 ${name}_size4
 	'
 
-	test_expect_success $PREREQ "Verify ${name}'s sha1 pretty content" '
+	test_expect_success $PREREQ "Verify ${name}'s sha1 pretty content when ${format}" '
 		git --git-dir=repo-sha1/.git cat-file -p ${sha1_oid} >${name}_content1 &&
 		git --git-dir=repo-sha256/.git cat-file -p ${sha256_sha1_oid} >${name}_content2 &&
 		test_cmp ${name}_content1 ${name}_content2
 	'
 
-	test_expect_success $PREREQ "Verify ${name}'s sha256 pretty content" '
+	test_expect_success $PREREQ "Verify ${name}'s sha256 pretty content when ${format}" '
 		git --git-dir=repo-sha256/.git cat-file -p ${sha256_oid} >${name}_content3 &&
 		git --git-dir=repo-sha1/.git cat-file -p ${sha1_sha256_oid} >${name}_content4 &&
 		test_cmp ${name}_content3 ${name}_content4
 	'
 
-	test_expect_success $PREREQ "Verify ${name}'s sha1 content" '
+	test_expect_success $PREREQ "Verify ${name}'s sha1 content when ${format}" '
 		git --git-dir=repo-sha1/.git cat-file ${type} ${sha1_oid} >${name}_content5 &&
 		git --git-dir=repo-sha256/.git cat-file ${type} ${sha256_sha1_oid} >${name}_content6 &&
 		test_cmp ${name}_content5 ${name}_content6
 	'
 
-	test_expect_success $PREREQ "Verify ${name}'s sha256 content" '
+	test_expect_success $PREREQ "Verify ${name}'s sha256 content when ${format}" '
 		git --git-dir=repo-sha256/.git cat-file ${type} ${sha256_oid} >${name}_content7 &&
 		git --git-dir=repo-sha1/.git cat-file ${type} ${sha1_sha256_oid} >${name}_content8 &&
 		test_cmp ${name}_content7 ${name}_content8
 	'
 }
 
-compare_oids 'blob' hello "$hello_sha1_oid" "$hello_sha256_oid"
-compare_oids 'tree' tree "$tree_sha1_oid" "$tree_sha256_oid"
-compare_oids 'commit' commit "$commit_sha1_oid" "$commit_sha256_oid"
-compare_oids GPG2 'commit' signedcommit "$signedcommit_sha1_oid" "$signedcommit_sha256_oid"
-compare_oids 'tag' hellotag "$hellotag_sha1_oid" "$hellotag_sha256_oid"
-compare_oids 'tag' treetag "$treetag_sha1_oid" "$treetag_sha256_oid"
-compare_oids 'tag' committag "$committag_sha1_oid" "$committag_sha256_oid"
-compare_oids GPG2 'tag' signedtag "$signedtag_sha1_oid" "$signedtag_sha256_oid"
+for format in loose packed
+do
+	compare_oids "$format" 'blob' hello "$hello_sha1_oid" "$hello_sha256_oid"
+	compare_oids "$format" 'tree' tree "$tree_sha1_oid" "$tree_sha256_oid"
+	compare_oids "$format" 'commit' commit "$commit_sha1_oid" "$commit_sha256_oid"
+	compare_oids GPG2 "$format" 'commit' signedcommit "$signedcommit_sha1_oid" "$signedcommit_sha256_oid"
+	compare_oids "$format" 'tag' hellotag "$hellotag_sha1_oid" "$hellotag_sha256_oid"
+	compare_oids "$format" 'tag' treetag "$treetag_sha1_oid" "$treetag_sha256_oid"
+	compare_oids "$format" 'tag' committag "$committag_sha1_oid" "$committag_sha256_oid"
+	compare_oids GPG2 "$format" 'tag' signedtag "$signedtag_sha1_oid" "$signedtag_sha256_oid"
 
-compare_oids 'blob' more "$more_sha1_oid" "$more_sha256_oid"
-compare_oids 'blob' another "$another_sha1_oid" "$another_sha256_oid"
-compare_oids 'tree' tree2 "$tree2_sha1_oid" "$tree2_sha256_oid"
-compare_oids 'commit' commit2 "$commit2_sha1_oid" "$commit2_sha256_oid"
-compare_oids GPG2 'tag' signedtag2 "$signedtag2_sha1_oid" "$signedtag2_sha256_oid"
-compare_oids GPG2 'commit' signedcommit2 "$signedcommit2_sha1_oid" "$signedcommit2_sha256_oid"
-compare_oids GPG2 'commit' signedcommit3 "$signedcommit3_sha1_oid" "$signedcommit3_sha256_oid"
-compare_oids GPG2 'commit' signedcommit4 "$signedcommit4_sha1_oid" "$signedcommit4_sha256_oid"
-compare_oids GPG2 'tag' signedtag3 "$signedtag3_sha1_oid" "$signedtag3_sha256_oid"
-compare_oids GPG2 'tag' signedtag4 "$signedtag4_sha1_oid" "$signedtag4_sha256_oid"
+	compare_oids "$format" 'blob' more "$more_sha1_oid" "$more_sha256_oid"
+	compare_oids "$format" 'blob' another "$another_sha1_oid" "$another_sha256_oid"
+	compare_oids "$format" 'tree' tree2 "$tree2_sha1_oid" "$tree2_sha256_oid"
+	compare_oids "$format" 'commit' commit2 "$commit2_sha1_oid" "$commit2_sha256_oid"
+	compare_oids GPG2 "$format" 'tag' signedtag2 "$signedtag2_sha1_oid" "$signedtag2_sha256_oid"
+	compare_oids GPG2 "$format" 'commit' signedcommit2 "$signedcommit2_sha1_oid" "$signedcommit2_sha256_oid"
+	compare_oids GPG2 "$format" 'commit' signedcommit3 "$signedcommit3_sha1_oid" "$signedcommit3_sha256_oid"
+	compare_oids GPG2 "$format" 'commit' signedcommit4 "$signedcommit4_sha1_oid" "$signedcommit4_sha256_oid"
+	compare_oids GPG2 "$format" 'tag' signedtag3 "$signedtag3_sha1_oid" "$signedtag3_sha256_oid"
+	compare_oids GPG2 "$format" 'tag' signedtag4 "$signedtag4_sha1_oid" "$signedtag4_sha256_oid"
+
+	test_expect_success 'Verify objects are packed' '
+		git repack -a
+	'
+done
 
 test_done

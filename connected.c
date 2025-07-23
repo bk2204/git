@@ -148,7 +148,8 @@ no_promisor_pack_found:
 		if (new_pack && find_pack_entry_one(oid, new_pack))
 			continue;
 
-		if (fprintf(rev_list_in, "%s\n", oid_to_hex(oid)) < 0)
+		if (fprintf(rev_list_in, "%s^{%s}\n", oid_to_hex(oid),
+			    hash_algos[oid->algo].name) < 0)
 			break;
 	} while ((oid = fn(cb_data)) != NULL);
 

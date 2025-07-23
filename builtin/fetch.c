@@ -1058,6 +1058,7 @@ static void append_fetch_head(struct fetch_head *fetch_head,
 	char old_oid_hex[GIT_MAX_HEXSZ + 1];
 	const char *merge_status_marker;
 	size_t i;
+	struct object_id mapped;
 
 	if (!fetch_head->fp)
 		return;
@@ -1074,8 +1075,12 @@ static void append_fetch_head(struct fetch_head *fetch_head,
 		return;
 	}
 
+	if (repo_oid_to_algop(the_repository, old_oid,
+			      the_repository->hash_algo, &mapped))
+		die(_("cannot resolve object ID when writing heads"));
+
 	strbuf_addf(&fetch_head->buf, "%s\t%s\t%s",
-		    oid_to_hex_r(old_oid_hex, old_oid), merge_status_marker, note);
+		    oid_to_hex_r(old_oid_hex, &mapped), merge_status_marker, note);
 	for (i = 0; i < url_len; ++i)
 		if ('\n' == url[i])
 			strbuf_addstr(&fetch_head->buf, "\\n");

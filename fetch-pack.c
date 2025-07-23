@@ -971,10 +971,11 @@ static int get_pack(struct fetch_pack_args *args,
 		    int xd[2], struct string_list *pack_lockfiles,
 		    struct strvec *index_pack_args,
 		    struct ref **sought, int nr_sought,
-		    struct oidset *gitmodules_oids)
+		    struct oidset *gitmodules_oids,
+		    const struct git_hash_algo *hash_algo)
 {
 	struct async demux;
-	int do_keep = args->keep_pack;
+	int do_keep = args->keep_pack || hash_algo != the_repository->hash_algo;
 	const char *cmd_name;
 	struct pack_header header;
 	int pass_header = 0;
@@ -998,7 +999,7 @@ static int get_pack(struct fetch_pack_args *args,
 	else
 		demux.out = xd[0];
 
-	if (!args->keep_pack && unpack_limit && !index_pack_args) {
+	if (!do_keep && unpack_limit && !index_pack_args) {
 
 		if (read_pack_header(demux.out, &header))
 			die(_("protocol error: bad pack header"));
@@ -1022,6 +1023,8 @@ static int get_pack(struct fetch_pack_args *args,
 		cmd_name = "index-pack";
 		strvec_push(&cmd.args, cmd_name);
 		strvec_push(&cmd.args, "--stdin");
+		if (hash_algo != the_repository->hash_algo)
+			strvec_pushf(&cmd.args, "--object-format=%s", hash_algo->name);
 		if (!args->quiet && !args->no_progress)
 			strvec_push(&cmd.args, "-v");
 		if (args->use_thin_pack)
@@ -1278,7 +1281,8 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 
 	fsck_options_init(&fsck_options, the_repository, FSCK_OPTIONS_MISSING_GITMODULES);
 	if (get_pack(args, fd, pack_lockfiles, NULL, sought, nr_sought,
-		     &fsck_options.gitmodules_found))
+		     &fsck_options.gitmodules_found,
+		     the_repository->hash_algo))
 		die(_("git fetch-pack: fetch failed."));
 	if (fsck_finish(&fsck_options))
 		die("fsck failed");
@@ -1319,6 +1323,7 @@ static void add_wants(const struct ref *wants, struct strbuf *req_buf)
 	for ( ; wants ; wants = wants->next) {
 		const struct object_id *remote = &wants->old_oid;
 		struct object *o;
+
 
 		/*
 		 * If that object is complete (i.e. it is an ancestor of a
@@ -1413,10 +1418,12 @@ static void write_fetch_command_and_capabilities(struct strbuf *req_buf,
 		packet_buf_write(req_buf, "object-format=%s", (*algo)->name);
 	} else if (server_feature_v2("object-format", &hash_name)) {
 		int hash_algo = hash_algo_by_name(hash_name);
-		if (hash_algo_by_ptr(the_hash_algo) != hash_algo)
+		if (hash_algo_by_ptr(the_repository->hash_algo) != hash_algo &&
+		    hash_algo_by_ptr(the_repository->compat_hash_algo) != hash_algo)
 			die(_("mismatched algorithms: client %s; server %s"),
 			    the_hash_algo->name, hash_name);
-		packet_buf_write(req_buf, "object-format=%s", the_hash_algo->name);
+		*algo = &hash_algos[hash_algo];
+		packet_buf_write(req_buf, "object-format=%s", (*algo)->name);
 	} else if (hash_algo_by_ptr(the_hash_algo) != GIT_HASH_SHA1_LEGACY) {
 		die(_("the server does not support algorithm '%s'"),
 		    the_hash_algo->name);
@@ -1893,7 +1900,8 @@ static struct ref *do_fetch_pack_v2(struct fetch_pack_args *args,
 
 			if (get_pack(args, fd, pack_lockfiles,
 				     packfile_uris.nr ? &index_pack_args : NULL,
-				     sought, nr_sought, &fsck_options.gitmodules_found))
+				     sought, nr_sought, &fsck_options.gitmodules_found,
+				     reader.hash_algo))
 				die(_("git fetch-pack: fetch failed."));
 			do_check_stateless_delimiter(args->stateless_rpc, &reader);
 

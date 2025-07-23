@@ -173,6 +173,7 @@ static void unique_in_pack(struct packed_git *p,
 	uint32_t num, i, first = 0;
 	int len = ds->len > ds->repo->hash_algo->hexsz ?
 		ds->repo->hash_algo->hexsz : ds->len;
+	struct object_id wanted;
 
 	if (p->multi_pack_index)
 		return;
@@ -181,19 +182,42 @@ static void unique_in_pack(struct packed_git *p,
 		return;
 
 	num = p->num_objects;
-	bsearch_pack(&ds->bin_pfx, p, &first);
 
-	/*
-	 * At this point, "first" is the location of the lowest object
-	 * with an object name that could match "bin_pfx".  See if we have
-	 * 0, 1 or more objects that actually match(es).
-	 */
-	for (i = first; i < num && !ds->ambiguous; i++) {
-		struct object_id oid;
-		nth_packed_object_id(&oid, p, i);
-		if (!match_hash(len, ds->bin_pfx.hash, oid.hash))
-			break;
-		update_candidates(ds, &oid);
+	for (int algo = 1; algo < GIT_HASH_NALGOS; algo++) {
+		/*
+		 * Skip this algorithm unless it's the desired one or we've
+		 * asked for any algorithm.
+		 */
+		if (ds->bin_pfx.algo != GIT_HASH_UNKNOWN &&
+		    ds->bin_pfx.algo != algo)
+			continue;
+
+		/*
+		 * Skip this algorithm unless it's the main algorithm or we have
+		 * a compatibility algorithm and it's that algorithm.
+		 */
+		if (&hash_algos[algo] != ds->repo->hash_algo &&
+		    (!ds->repo->compat_hash_algo ||
+		     &hash_algos[algo] != ds->repo->compat_hash_algo))
+			continue;
+
+		oidcpy(&wanted, &ds->bin_pfx);
+		wanted.algo = algo;
+
+		bsearch_pack(&wanted, p, &first);
+
+		/*
+		 * At this point, "first" is the location of the lowest object
+		 * with an object name that could match "bin_pfx".  See if we have
+		 * 0, 1 or more objects that actually match(es).
+		 */
+		for (i = first; i < num && !ds->ambiguous; i++) {
+			struct object_id oid;
+			nth_packed_object_id_algop(&oid, p, i, &hash_algos[algo]);
+			if (!match_hash(len, ds->bin_pfx.hash, oid.hash))
+				break;
+			update_candidates(ds, &oid);
+		}
 	}
 }
 

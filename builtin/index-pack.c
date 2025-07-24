@@ -958,6 +958,7 @@ static void do_record_outgoing_links(struct object *obj)
 
 static void sha1_object(const void *data, struct object_entry *obj_entry,
 			unsigned long size, enum object_type type,
+			struct pack_ctx *ctx, bool compat,
 			const struct object_id *oid)
 {
 	void *new_data = NULL;
@@ -1001,7 +1002,8 @@ static void sha1_object(const void *data, struct object_entry *obj_entry,
 		free(has_data);
 	}
 
-	if (strict || do_fsck_object || record_outgoing_links) {
+	if ((strict || do_fsck_object || record_outgoing_links) &&
+	    (ctx->dest_algo == ctx->src_algo || compat)) {
 		read_lock();
 		if (type == OBJ_BLOB) {
 			struct blob *blob = lookup_blob(the_repository, oid);
@@ -1199,7 +1201,7 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 	}
 finish:
 	sha1_object(result_data, NULL, result_size, delta_obj->real_type,
-		    &delta_obj->idx.oid);
+		    c, false, &delta_obj->idx.oid);
 
 	result = make_base(delta_obj, base);
 	result->data = result_data;
@@ -1413,7 +1415,7 @@ static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 			nr_delays++;
 		} else
 			sha1_object(data, NULL, obj->size, obj->type,
-				    &obj->idx.oid);
+				    c, false, &obj->idx.oid);
 		free(data);
 		display_progress(progress, i+1);
 	}
@@ -1442,7 +1444,7 @@ static void parse_pack_objects(struct pack_ctx *c, unsigned char *hash)
 			continue;
 		obj->real_type = obj->type;
 		sha1_object(NULL, obj, obj->size, obj->type,
-			    &obj->idx.oid);
+			    c, false, &obj->idx.oid);
 		nr_delays--;
 	}
 	if (nr_delays)
@@ -1723,7 +1725,7 @@ static void write_one_deltified(struct pack_ctx *c,
 	}
 
 	sha1_object(cvtbuf, NULL, cvtsz, obj->real_type,
-		    &obj->idx.oid);
+		    c, true, &obj->idx.oid);
 
 	/*
 	 * Now we have this particular entry in memory.  We're going to find its base

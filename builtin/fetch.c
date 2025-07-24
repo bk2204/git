@@ -336,6 +336,7 @@ static void find_non_local_tags(const struct ref *refs,
 	struct string_list_item *remote_ref_item;
 	const struct ref *ref;
 	struct refname_hash_entry *item = NULL;
+	struct object_id old_oid, item_oid;
 
 	refname_hash_init(&existing_refs);
 	refname_hash_init(&remote_refs);
@@ -357,6 +358,15 @@ static void find_non_local_tags(const struct ref *refs,
 		if (!starts_with(ref->name, "refs/tags/"))
 			continue;
 
+		if (repo_oid_to_algop(the_repository, &ref->old_oid,
+				      the_repository->hash_algo,
+				      &old_oid))
+			oidclr(&old_oid, the_repository->hash_algo);
+		if (!item || repo_oid_to_algop(the_repository, &item->oid,
+					       the_repository->hash_algo,
+					       &item_oid))
+			oidclr(&item_oid, the_repository->hash_algo);
+
 		/*
 		 * The peeled ref always follows the matching base
 		 * ref, so if we see a peeled ref that we don't want
@@ -365,9 +375,9 @@ static void find_non_local_tags(const struct ref *refs,
 		 */
 		if (ends_with(ref->name, "^{}")) {
 			if (item &&
-			    !odb_has_object(the_repository->objects, &ref->old_oid, 0) &&
+			    !odb_has_object(the_repository->objects, &old_oid, 0) &&
 			    !oidset_contains(&fetch_oids, &ref->old_oid) &&
-			    !odb_has_object(the_repository->objects, &item->oid, 0) &&
+			    !odb_has_object(the_repository->objects, &item_oid, 0) &&
 			    !oidset_contains(&fetch_oids, &item->oid))
 				clear_item(item);
 			item = NULL;
@@ -381,7 +391,7 @@ static void find_non_local_tags(const struct ref *refs,
 		 * fetch.
 		 */
 		if (item &&
-		    !odb_has_object(the_repository->objects, &item->oid, 0) &&
+		    !odb_has_object(the_repository->objects, &item_oid, 0) &&
 		    !oidset_contains(&fetch_oids, &item->oid))
 			clear_item(item);
 
@@ -397,12 +407,17 @@ static void find_non_local_tags(const struct ref *refs,
 	}
 	hashmap_clear_and_free(&existing_refs, struct refname_hash_entry, ent);
 
+	if (!item || repo_oid_to_algop(the_repository, &item->oid,
+				       the_repository->hash_algo,
+				       &item_oid))
+		oidclr(&item_oid, the_repository->hash_algo);
+
 	/*
 	 * We may have a final lightweight tag that needs to be
 	 * checked to see if it needs fetching.
 	 */
 	if (item &&
-	    !odb_has_object(the_repository->objects, &item->oid, 0) &&
+	    !odb_has_object(the_repository->objects, &item_oid, 0) &&
 	    !oidset_contains(&fetch_oids, &item->oid))
 		clear_item(item);
 

@@ -35,6 +35,7 @@
 #include "commit-graph.h"
 #include "sigchain.h"
 #include "mergesort.h"
+#include "object-file-convert.h"
 #include "prio-queue.h"
 #include "promisor-remote.h"
 
@@ -134,12 +135,18 @@ static void die_in_commit_graph_only(const struct object_id *oid)
 	      oid_to_hex(oid));
 }
 
-static struct commit *deref_without_lazy_fetch(const struct object_id *oid,
+static struct commit *deref_without_lazy_fetch(const struct object_id *orig_oid,
 					       int mark_tags_complete_and_check_obj_db)
 {
 	enum object_type type;
 	struct object_info info = { .typep = &type };
 	struct commit *commit;
+	struct object_id mapped, *oid;
+
+	if (repo_oid_to_algop(the_repository, orig_oid,
+			      the_repository->hash_algo, &mapped))
+		return NULL;
+	oid = &mapped;
 
 	commit = lookup_commit_in_graph(the_repository, oid);
 	if (commit) {
@@ -804,14 +811,19 @@ static void mark_complete_and_common_ref(struct fetch_negotiator *negotiator,
 	trace2_region_enter("fetch-pack", "parse_remote_refs_and_find_cutoff", NULL);
 	for (ref = *refs; ref; ref = ref->next) {
 		struct commit *commit;
+		struct object_id old_oid;
 
-		commit = lookup_commit_in_graph(the_repository, &ref->old_oid);
+		if (repo_oid_to_algop(the_repository, &ref->old_oid,
+				      the_repository->hash_algo, &old_oid))
+			continue;
+
+		commit = lookup_commit_in_graph(the_repository, &old_oid);
 		if (!commit) {
 			struct object *o;
 
-			if (!odb_has_object(the_repository->objects, &ref->old_oid, 0))
+			if (!odb_has_object(the_repository->objects, &old_oid, 0))
 				continue;
-			o = parse_object(the_repository, &ref->old_oid);
+			o = parse_object(the_repository, &old_oid);
 			if (!o || o->type != OBJ_COMMIT)
 				continue;
 

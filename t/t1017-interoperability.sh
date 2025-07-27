@@ -165,5 +165,6 @@ test_fetch sha1-to-sha1 sha1: sha1: --fsck
 test_fetch sha256-to-sha256 sha256: sha256: --fsck
 test_fetch sha256-to-sha256-fancy sha256: sha256: --fsck --large-blob 512 --protocol 0
 test_fetch sha1-to-sha256-main sha1: sha256:sha1
+test_fetch sha1-to-sha256-main-fancy sha1: sha256:sha1 --fsck --large-blob 512 --protocol 0
 
 test_done

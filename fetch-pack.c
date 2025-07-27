@@ -1157,6 +1157,9 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 	size_t agent_len;
 	struct fetch_negotiator negotiator_alloc;
 	struct fetch_negotiator *negotiator;
+	const struct git_hash_algo *algo = NULL, *candidates[2] = {
+		the_repository->hash_algo, the_repository->compat_hash_algo,
+	};
 
 	negotiator = &negotiator_alloc;
 	if (args->refetch) {
@@ -1251,7 +1254,14 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 		print_verbose(args, _("Server supports %s"), "deepen-relative");
 	else if (args->deepen_relative)
 		die(_("Server does not support --deepen"));
-	if (!server_supports_hash(the_hash_algo->name, NULL))
+
+	for (size_t i = 0; i < ARRAY_SIZE(candidates); i++)
+		if (candidates[i] &&
+		    server_supports_hash(candidates[i]->name, NULL)) {
+			algo = candidates[i];
+			break;
+		}
+	if (!algo)
 		die(_("Server does not support this repository's object format"));
 
 	mark_complete_and_common_ref(negotiator, args, &ref);
@@ -1281,8 +1291,7 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 
 	fsck_options_init(&fsck_options, the_repository, FSCK_OPTIONS_MISSING_GITMODULES);
 	if (get_pack(args, fd, pack_lockfiles, NULL, sought, nr_sought,
-		     &fsck_options.gitmodules_found,
-		     the_repository->hash_algo))
+		     &fsck_options.gitmodules_found, algo))
 		die(_("git fetch-pack: fetch failed."));
 	if (fsck_finish(&fsck_options))
 		die("fsck failed");

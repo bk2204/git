@@ -4,6 +4,7 @@
 #include "date.h"
 #include "gettext.h"
 #include "hex.h"
+#include "object-file-convert.h"
 #include "odb.h"
 #include "pkt-line.h"
 #include "sideband.h"
@@ -45,12 +46,16 @@ int option_parse_push_signed(const struct option *opt,
 static void feed_object(struct repository *r,
 			const struct object_id *oid, FILE *fh, int negative)
 {
-	if (negative && !odb_has_object(r->objects, oid, 0))
+	struct object_id mapped;
+
+	if (repo_oid_to_algop(r, oid, r->hash_algo, &mapped))
+		return;
+	if (negative && !odb_has_object(r->objects, &mapped, 0))
 		return;
 
 	if (negative)
 		putc('^', fh);
-	fputs(oid_to_hex(oid), fh);
+	fputs(oid_to_hex(&mapped), fh);
 	putc('\n', fh);
 }
 

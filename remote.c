@@ -26,6 +26,7 @@
 #include "connect.h"
 #include "parse-options.h"
 #include "transport.h"
+#include "object-file-convert.h"
 
 enum map_direction { FROM_SRC, FROM_DST };
 
@@ -1389,10 +1390,14 @@ struct tips {
 static void add_to_tips(struct tips *tips, const struct object_id *oid)
 {
 	struct commit *commit;
+	struct object_id mapped;
 
 	if (is_null_oid(oid))
 		return;
-	commit = lookup_commit_reference_gently(the_repository, oid, 1);
+	if (repo_oid_to_algop(the_repository, oid, the_repository->hash_algo,
+			      &mapped))
+		return;
+	commit = lookup_commit_reference_gently(the_repository, &mapped, 1);
 	if (!commit || (commit->object.flags & TMP_MARK))
 		return;
 	commit->object.flags |= TMP_MARK;
@@ -1428,12 +1433,16 @@ static void add_missing_tags(struct ref *src, struct ref **dst, struct ref ***ds
 
 	/* Collect tags they do not have. */
 	for (ref = src; ref; ref = ref->next) {
+		struct object_id oid;
 		if (!starts_with(ref->name, "refs/tags/"))
 			continue; /* not a tag */
 		if (string_list_has_string(&dst_tag, ref->name))
 			continue; /* they already have it */
+		if (repo_oid_to_algop(the_repository, &ref->new_oid,
+				      the_repository->hash_algo, &oid))
+			continue;
 		if (odb_read_object_info(the_repository->objects,
-					 &ref->new_oid, NULL) != OBJ_TAG)
+					 &oid, NULL) != OBJ_TAG)
 			continue; /* be conservative */
 		item = string_list_append(&src_tag, ref->name);
 		item->util = ref;
@@ -1457,12 +1466,15 @@ static void add_missing_tags(struct ref *src, struct ref **dst, struct ref ***ds
 		for_each_string_list_item(item, &src_tag) {
 			struct ref *ref = item->util;
 			struct commit *commit;
+			struct object_id oid;
 
 			if (is_null_oid(&ref->new_oid))
 				continue;
+			if (repo_oid_to_algop(the_repository, &ref->new_oid,
+					      the_repository->hash_algo, &oid))
+				continue;
 			commit = lookup_commit_reference_gently(the_repository,
-								&ref->new_oid,
-								1);
+								&oid, 1);
 			if (!commit)
 				/* not pushing a commit, which is not an error */
 				continue;
@@ -1479,12 +1491,15 @@ static void add_missing_tags(struct ref *src, struct ref **dst, struct ref ***ds
 			struct ref *dst_ref;
 			struct ref *ref = item->util;
 			struct commit *commit;
+			struct object_id oid;
 
 			if (is_null_oid(&ref->new_oid))
 				continue;
+			if (repo_oid_to_algop(the_repository, &ref->new_oid,
+					      the_repository->hash_algo, &oid))
+				continue;
 			commit = lookup_commit_reference_gently(the_repository,
-								&ref->new_oid,
-								1);
+								&oid, 1);
 			if (!commit)
 				/* not pushing a commit, which is not an error */
 				continue;
@@ -1654,6 +1669,7 @@ void set_ref_status_for_push(struct ref *remote_refs, int send_mirror,
 			     int force_update)
 {
 	struct ref *ref;
+	struct object_id old_oid, new_oid;
 
 	for (ref = remote_refs; ref; ref = ref->next) {
 		int force_ref_update = ref->force || force_update;
@@ -1725,10 +1741,14 @@ void set_ref_status_for_push(struct ref *remote_refs, int send_mirror,
 				reject_reason = REF_STATUS_REJECT_ALREADY_EXISTS;
 			else if (!odb_has_object(the_repository->objects, &ref->old_oid, HAS_OBJECT_RECHECK_PACKED))
 				reject_reason = REF_STATUS_REJECT_FETCH_FIRST;
-			else if (!lookup_commit_reference_gently(the_repository, &ref->old_oid, 1) ||
-				 !lookup_commit_reference_gently(the_repository, &ref->new_oid, 1))
+			else if (repo_oid_to_algop(the_repository, &ref->old_oid,
+						   the_repository->hash_algo, &old_oid) ||
+				 repo_oid_to_algop(the_repository, &ref->new_oid,
+						   the_repository->hash_algo, &new_oid) ||
+				 !lookup_commit_reference_gently(the_repository, &old_oid, 1) ||
+				 !lookup_commit_reference_gently(the_repository, &new_oid, 1))
 				reject_reason = REF_STATUS_REJECT_NEEDS_FORCE;
-			else if (!ref_newer(&ref->new_oid, &ref->old_oid))
+			else if (!ref_newer(&new_oid, &old_oid))
 				reject_reason = REF_STATUS_REJECT_NONFASTFORWARD;
 		}
 
@@ -2642,8 +2662,12 @@ static int is_reachable_in_reflog(const char *local, const struct ref *remote)
 	struct reflog_commit_array arr = REFLOG_COMMIT_ARRAY_INIT;
 	size_t size = 0;
 	int ret = 0;
+	struct object_id oid;
 
-	commit = lookup_commit_reference(the_repository, &remote->old_oid);
+	if (repo_oid_to_algop(the_repository, &remote->old_oid,
+			      the_repository->hash_algo, &oid))
+		goto cleanup_return;
+	commit = lookup_commit_reference(the_repository, &oid);
 	if (!commit)
 		goto cleanup_return;
 

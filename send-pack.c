@@ -65,7 +65,8 @@ static void feed_object(struct repository *r,
 static int pack_objects(struct repository *r,
 			int fd, struct ref *refs, struct oid_array *advertised,
 			struct oid_array *negotiated,
-			struct send_pack_args *args)
+			struct send_pack_args *args,
+			const struct git_hash_algo *algo)
 {
 	/*
 	 * The child becomes pack-objects --revs; we feed
@@ -81,6 +82,8 @@ static int pack_objects(struct repository *r,
 	strvec_push(&po.args, "--all-progress-implied");
 	strvec_push(&po.args, "--revs");
 	strvec_push(&po.args, "--stdout");
+	if (algo != r->hash_algo)
+		strvec_pushf(&po.args, "--object-format=%s", algo->name);
 	if (args->use_thin_pack)
 		strvec_push(&po.args, "--thin");
 	if (args->use_ofs_delta)
@@ -522,6 +525,9 @@ int send_pack(struct repository *r,
 	char *push_cert_nonce = NULL;
 	struct packet_reader reader;
 	int use_bitmaps;
+	const struct git_hash_algo *algo = NULL, *candidates[2] = {
+		r->hash_algo, r->compat_hash_algo,
+	};
 
 	if (!remote_refs) {
 		fprintf(stderr, "No refs in common and none specified; doing nothing.\n"
@@ -566,7 +572,14 @@ int send_pack(struct repository *r,
 	if (server_supports("push-options"))
 		push_options_supported = 1;
 
-	if (!server_supports_hash(r->hash_algo->name, &object_format_supported))
+	for (size_t i = 0; i < ARRAY_SIZE(candidates); i++)
+		if (candidates[i] &&
+		    server_supports_hash(candidates[i]->name,
+					 &object_format_supported)) {
+			algo = candidates[i];
+			break;
+		}
+	if (!algo)
 		die(_("the receiving end does not support this repository's hash algorithm"));
 
 	if (args->push_cert != SEND_PACK_PUSH_CERT_NEVER) {
@@ -608,7 +621,7 @@ int send_pack(struct repository *r,
 	if (use_push_options)
 		strbuf_addstr(&cap_buf, " push-options");
 	if (object_format_supported)
-		strbuf_addf(&cap_buf, " object-format=%s", r->hash_algo->name);
+		strbuf_addf(&cap_buf, " object-format=%s", algo->name);
 	if (agent_supported)
 		strbuf_addf(&cap_buf, " agent=%s", git_user_agent_sanitized());
 	if (advertise_sid)
@@ -671,12 +684,21 @@ int send_pack(struct repository *r,
 	} else if (!args->dry_run) {
 		for (ref = remote_refs; ref; ref = ref->next) {
 			char *old_hex, *new_hex;
+			struct ref this;
 
-			if (check_to_send_update(ref, args) < 0)
+			memcpy(&this, ref, sizeof(*ref));
+
+			if (repo_oid_to_algop(r, &ref->old_oid, algo,
+					      &this.old_oid) ||
+			    repo_oid_to_algop(r, &ref->new_oid, algo,
+					      &this.new_oid))
 				continue;
 
-			old_hex = oid_to_hex(&ref->old_oid);
-			new_hex = oid_to_hex(&ref->new_oid);
+			if (check_to_send_update(&this, args) < 0)
+				continue;
+
+			old_hex = oid_to_hex(&this.old_oid);
+			new_hex = oid_to_hex(&this.new_oid);
 			if (!cmds_sent) {
 				packet_buf_write(&req_buf,
 						 "%s %s %s%c%s",
@@ -724,7 +746,7 @@ int send_pack(struct repository *r,
 			   PACKET_READ_DIE_ON_ERR_PACKET);
 
 	if (need_pack_data && cmds_sent) {
-		if (pack_objects(r, out, remote_refs, extra_have, &commons, args) < 0) {
+		if (pack_objects(r, out, remote_refs, extra_have, &commons, args, algo) < 0) {
 			if (args->stateless_rpc)
 				close(out);
 			if (git_connection_is_socket(conn))

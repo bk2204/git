@@ -26,7 +26,7 @@ create_blob () {
 	echo "$body" >>"$name"
 }
 
-fetch_verify_oids () {
+verify_oids () {
 	local algo="$1"
 	local i oid wanted
 
@@ -35,18 +35,33 @@ fetch_verify_oids () {
 		return
 	fi &&
 
-	for i in "A tagA" \
-		"dev1 tagdev1" \
-		"dev1^{} commitdev1" \
-		"main2 tagmain2" \
-		"main2^{} commitmain2" \
-		"main2:ghi.txt blobghi" \
-		"HEAD commitmain2"
+	shift
+
+	for i in "$@"
 	do
 		wanted=$(test_oid --hash="$algo" "${i##* }") &&
 		oid=$(git rev-parse --output-object-format="$algo" "${i%% *}") &&
 		test "$wanted" = "$oid" || return 1
 	done
+}
+
+fetch_verify_oids () {
+	verify_oids "$1" "A tagA" \
+		"dev1 tagdev1" \
+		"dev1^{} commitdev1" \
+		"main2 tagmain2" \
+		"main2^{} commitmain2" \
+		"main2:ghi.txt blobghi"
+}
+
+push_verify_oids () {
+	fetch_verify_oids "$1" &&
+	verify_oids "$1" "latest latest" \
+		"latest^{} commitlatest" \
+		"new commitlatest" \
+		"mno mno" \
+		"mno^{} commitmno" \
+		"dev commitjkl"
 }
 
 set_config () {
@@ -61,7 +76,7 @@ set_config () {
 	done
 }
 
-test_fetch () {
+test_fetch_push () {
 	local desc="$1"
 	local source_algo="${2%%:*}"
 	local source_compat_algo="${2##*:}"
@@ -134,6 +149,16 @@ test_fetch () {
 		commitmain2 sha256:818f622b2306b7438c623ff54f94761f70f731c0b146177a139a2f6d40c03899
 		blobghi sha1:6633368e305a8d228cc9b068ba0933a3806af129
 		blobghi sha256:2239363ba3c3edddb1578724cf10ac8602837b2ca2cbdf2b83a06eb1ab4078e2
+		latest sha1:23c522c7fcb1bb9a2fc8b102691c9b26a3540f52
+		latest sha256:35942891caf8b3abe8a68be01426e30af17b5a1352d57cb820fbe2e5fdce77e1
+		commitlatest sha1:8a4955326f7287254bd37d524feb0b1d4bf1d9dd
+		commitlatest sha256:36bf30a321a13f2d8ec0d8ead6c6f06ba4806a49a1c5721aa6cbd0c9d4f4bfca
+		mno sha1:738a4611019ae7c85d153ecc9024c319cd2340c3
+		mno sha256:819c23402dc0bfdf1f3e78fec94385f08506d6ee8b28da7bf260c816701bc852
+		commitmno sha1:677eaa8bdc7efa7795935bf4a44e4ec6dafac205
+		commitmno sha256:d724eb0be0e19448e6f1995a1dfc02f45037c43f2d162bbe15d142d51c1f4bba
+		commitjkl sha1:5dce1d8f80fcbf314deccef2b9491229d800f47f
+		commitjkl sha256:b8370f6805640ef3c423768beb896f01ba03f38b2ccf18ccfb0f1a1f3d0ff606
 		EOF
 		(
 			cd source &&
@@ -151,7 +176,7 @@ test_fetch () {
 				git config extensions.compatobjectformat "$dest_compat_algo"
 			fi &&
 			set_config "$fsck" "$large_blob" "$protocol" &&
-			git fetch ../source dev:dev 2>err &&
+			git fetch ../source dev:dev dev:other 2>err &&
 			! grep -E "error|fatal" err &&
 			git pull ../source main:main 2>err &&
 			! grep -E "error|fatal" err &&
@@ -159,12 +184,53 @@ test_fetch () {
 			fetch_verify_oids "$dest_compat_algo"
 		)
 	'
+
+	test_expect_success "$desc: push to remote" '
+		git init --bare --object-format=$source_algo other &&
+		(
+			cd other &&
+			if [ -n "$source_compat_algo" ]
+			then
+				git config extensions.compatobjectformat "$source_compat_algo"
+			fi
+		) &&
+		(
+			cd dest &&
+			git checkout dev &&
+			create_blob jkl.txt jkl &&
+			test_commit --annotate jkl &&
+			git checkout main &&
+			create_blob mno.txt mno &&
+			test_commit --annotate mno &&
+			git checkout other &&
+			git reset --hard HEAD^ &&
+			create_blob pqr.txt pqr &&
+			git checkout main &&
+			git merge dev &&
+			test_commit --annotate latest &&
+			git for-each-ref &&
+			# Test pushing into an existing repository.
+			git push --follow-tags ../source main:new dev +other &&
+			# Test pushing into an empty repository.
+			git push --follow-tags ../other main:main main:new dev other
+		) &&
+		(
+			cd source &&
+			push_verify_oids "$source_algo" &&
+			push_verify_oids "$source_compat_algo"
+		) &&
+		(
+			cd other &&
+			push_verify_oids "$source_algo" &&
+			push_verify_oids "$source_compat_algo"
+		)
+	'
 }
 
-test_fetch sha1-to-sha1 sha1: sha1: --fsck
-test_fetch sha256-to-sha256 sha256: sha256: --fsck
-test_fetch sha256-to-sha256-fancy sha256: sha256: --fsck --large-blob 512 --protocol 0
-test_fetch sha1-to-sha256-main sha1: sha256:sha1
-test_fetch sha1-to-sha256-main-fancy sha1: sha256:sha1 --fsck --large-blob 512 --protocol 0
+test_fetch_push sha1-to-sha1 sha1: sha1: --fsck
+test_fetch_push sha256-to-sha256 sha256: sha256: --fsck
+test_fetch_push sha256-to-sha256-fancy sha256: sha256: --fsck --large-blob 512 --protocol 0
+test_fetch_push sha1-to-sha256-main sha1: sha256:sha1
+test_fetch_push sha1-to-sha256-main-fancy sha1: sha256:sha1 --fsck --large-blob 512 --protocol 0
 
 test_done

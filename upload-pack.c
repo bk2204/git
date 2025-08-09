@@ -81,6 +81,9 @@ struct upload_pack_data {
 	int shallow_nr;
 	timestamp_t oldest_have;
 
+	struct oid_array shallow_response;
+	struct oid_array unshallow_response;
+
 	unsigned int timeout;					/* v0 only */
 	enum {
 		NO_MULTI_ACK = 0,
@@ -829,14 +832,13 @@ error:
 	}
 }
 
-static void send_shallow(struct upload_pack_data *data,
-			 struct commit_list *result)
+static void add_shallow(struct upload_pack_data *data,
+			struct commit_list *result)
 {
 	while (result) {
 		struct object *object = &result->item->object;
 		if (!(object->flags & (CLIENT_SHALLOW|NOT_SHALLOW))) {
-			packet_writer_write(&data->writer, "shallow %s",
-					    oid_to_hex(&object->oid));
+			oid_array_append(&data->shallow_response, &object->oid);
 			register_shallow(the_repository, &object->oid);
 			data->shallow_nr++;
 		}
@@ -844,7 +846,7 @@ static void send_shallow(struct upload_pack_data *data,
 	}
 }
 
-static void send_unshallow(struct upload_pack_data *data)
+static void add_unshallow(struct upload_pack_data *data)
 {
 	int i;
 
@@ -852,8 +854,7 @@ static void send_unshallow(struct upload_pack_data *data)
 		struct object *object = data->shallows.objects[i].item;
 		if (object->flags & NOT_SHALLOW) {
 			struct commit_list *parents;
-			packet_writer_write(&data->writer, "unshallow %s",
-					    oid_to_hex(&object->oid));
+			oid_array_append(&data->unshallow_response, &object->oid);
 			object->flags &= ~CLIENT_SHALLOW;
 			/*
 			 * We want to _register_ "object" as shallow, but we
@@ -905,7 +906,7 @@ static void deepen(struct upload_pack_data *data, int depth)
 		result = get_shallow_commits(&reachable_shallows,
 					     depth + 1,
 					     SHALLOW, NOT_SHALLOW);
-		send_shallow(data, result);
+		add_shallow(data, result);
 		free_commit_list(result);
 		object_array_clear(&reachable_shallows);
 	} else {
@@ -913,11 +914,11 @@ static void deepen(struct upload_pack_data *data, int depth)
 
 		result = get_shallow_commits(&data->want_obj, depth,
 					     SHALLOW, NOT_SHALLOW);
-		send_shallow(data, result);
+		add_shallow(data, result);
 		free_commit_list(result);
 	}
 
-	send_unshallow(data);
+	add_unshallow(data);
 }
 
 static void deepen_by_rev_list(struct upload_pack_data *data,
@@ -928,13 +929,45 @@ static void deepen_by_rev_list(struct upload_pack_data *data,
 
 	disable_commit_graph(the_repository);
 	result = get_shallow_commits_by_rev_list(ac, av, SHALLOW, NOT_SHALLOW);
-	send_shallow(data, result);
+	add_shallow(data, result);
 	free_commit_list(result);
-	send_unshallow(data);
+	add_unshallow(data);
+}
+
+struct shallow_callback_data {
+	struct upload_pack_data *data;
+	const char *text;
+};
+
+static int send_one_shallow(const struct object_id *oid, void *data)
+{
+	struct shallow_callback_data *d = data;
+	packet_writer_write(&d->data->writer, "%s %s",
+			    d->text, oid_to_hex(oid));
+	return 0;
 }
 
 /* Returns 1 if a shallow list is sent or 0 otherwise */
 static int send_shallow_list(struct upload_pack_data *data)
+{
+	int sent = 0;
+	struct shallow_callback_data d = {
+		.data = data,
+		.text = "shallow",
+	};
+	oid_array_for_each(&data->shallow_response, send_one_shallow, &d);
+
+	d.text = "unshallow";
+	oid_array_for_each(&data->unshallow_response, send_one_shallow, &d);
+
+	sent = data->shallow_response.nr || data->unshallow_response.nr;
+
+	oid_array_clear(&data->shallow_response);
+	oid_array_clear(&data->unshallow_response);
+	return sent;
+}
+
+static int compute_shallow_list(struct upload_pack_data *data)
 {
 	int ret = 0;
 
@@ -1215,8 +1248,10 @@ static void receive_needs(struct upload_pack_data *data,
 	if (data->depth == 0 && !data->deepen_rev_list && data->shallows.nr == 0)
 		return;
 
-	if (send_shallow_list(data))
+	if (compute_shallow_list(data)) {
+		send_shallow_list(data);
 		packet_flush(1);
+	}
 }
 
 /* return non-zero if the ref is hidden, otherwise 0 */
@@ -1788,9 +1823,11 @@ static void send_shallow_info(struct upload_pack_data *data)
 
 	packet_writer_write(&data->writer, "shallow-info\n");
 
-	if (!send_shallow_list(data) &&
+	if (!compute_shallow_list(data) &&
 	    is_repository_shallow(the_repository))
 		deepen(data, INFINITE_DEPTH);
+
+	send_shallow_list(data);
 
 	packet_delim(1);
 }

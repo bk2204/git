@@ -183,7 +183,7 @@ int ls_refs(struct repository *r, struct packet_reader *request)
 		else if (!strcmp("unborn", arg))
 			data.unborn = !!unborn_config(r);
 		else if (skip_prefix(arg, "object-format=", &out)) {
-			int hash_algo = hash_algo_by_name(out);
+			uint32_t hash_algo = hash_algo_by_name(out);
 			if (hash_algo != GIT_HASH_UNKNOWN &&
 			    (hash_algo == hash_algo_by_ptr(r->hash_algo) ||
 			     (r->compat_hash_algo &&

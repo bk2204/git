@@ -52,12 +52,21 @@ static int insert_oid_pair(kh_oid_map_t *map, const struct object_id *key, const
 }
 
 static int insert_loose_map(struct odb_source *source,
-			    const struct object_id *oid,
-			    const struct object_id *compat_oid,
+			    const struct object_id *oid1,
+			    const struct object_id *oid2,
 			    int flags)
 {
 	struct loose_object_map *map = source->loose_map;
 	int inserted = 0;
+	const struct object_id *oid, *compat_oid;
+
+	if (oid1->algo == hash_algo_by_ptr(source->odb->repo->hash_algo)) {
+		oid = oid1;
+		compat_oid = oid2;
+	} else {
+		oid = oid2;
+		compat_oid = oid1;
+	}
 
 	inserted |= insert_oid_pair(map->to_compat, oid, compat_oid, flags);
 	inserted |= insert_oid_pair(map->to_storage, compat_oid, oid, flags);

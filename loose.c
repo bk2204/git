@@ -160,7 +160,7 @@ int repo_read_loose_object_map(struct repository *repo)
 	return 0;
 }
 
-int repo_write_loose_object_map(struct repository *repo, int flags)
+int repo_write_legacy_loose_object_map(struct repository *repo, int flags)
 {
 	kh_oid_map_t *map = repo->objects->sources->loose_map->to_compat;
 	struct lock_file lock;

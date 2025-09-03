@@ -37,6 +37,6 @@ int repo_add_loose_object_map(struct odb_source *source,
 			      const struct object_id *oid,
 			      const struct object_id *compat_oid, int flags);
 int repo_read_loose_object_map(struct repository *repo);
-int repo_write_loose_object_map(struct repository *repo, int flags);
+int repo_write_legacy_loose_object_map(struct repository *repo, int flags);
 
 #endif

@@ -13,6 +13,12 @@ struct loose_object_map {
 
 /* Should we write this object to disk? */
 #define LOOSE_WRITE		(1 << 6)
+/*
+ * This is an internal, reserved value that does not appear on disk.
+ * This value is only used for values like the null OID, the empty blob, and the
+ * empty tree.
+ */
+#define LOOSE_TYPE_RESERVED	0
 /* This is a loose object. */
 #define LOOSE_TYPE_LOOSE	1
 /* This is a shallow, its parent, or its tree. */

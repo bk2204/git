@@ -1,6 +1,7 @@
 libgit_rs = static_library('git_rs',
   sources: [
     'lib.rs',
+    'varint.rs',
   ],
   rust_crate_type: 'staticlib',
 )

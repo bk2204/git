@@ -241,6 +241,11 @@ const char *empty_tree_oid_hex(const struct git_hash_algo *algop)
 	return oid_to_hex_r(buf, algop->empty_tree);
 }
 
+const struct git_hash_algo *hash_algo_ptr_by_offset(uint32_t algo)
+{
+	return &hash_algos[algo];
+}
+
 uint32_t hash_algo_by_name(const char *name)
 {
 	if (!name)

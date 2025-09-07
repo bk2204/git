@@ -317,4 +317,15 @@ int load_idx(const char *path, const unsigned int hashsz, void *idx_map,
  */
 int parse_pack_header_option(const char *in, unsigned char *out, unsigned int *len);
 
+static inline int last_matching_offset(const struct object_id *a, const struct object_id *b,
+				       const struct git_hash_algo *algop)
+{
+	size_t i;
+	for (i = 0; i < algop->rawsz; i++)
+		if (a->hash[i] != b->hash[i])
+			return i;
+	/* We should never hit this case. */
+	return i;
+}
+
 #endif

@@ -57,17 +57,6 @@ static int need_large_offset(off_t offset, const struct pack_idx_option *opts)
 			 sizeof(ofsval), cmp_uint32);
 }
 
-static inline int last_matching_offset(const struct object_id *a, const struct object_id *b,
-				       const struct git_hash_algo *algop)
-{
-	size_t i;
-	for (i = 0; i < algop->rawsz; i++)
-		if (a->hash[i] != b->hash[i])
-			return i;
-	/* We should never hit this case. */
-	return i;
-}
-
 static const struct object_id *main_oid(const struct pack_idx_entry *ent)
 {
 	return &ent->oid;

@@ -1,6 +1,6 @@
 use std::os::raw::c_void;
 
-const GIT_MAX_RAWSZ: usize = 32;
+pub const GIT_MAX_RAWSZ: usize = 32;
 
 /// A binary object ID.
 #[repr(C)]

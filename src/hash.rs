@@ -75,6 +75,17 @@ impl HashAlgorithm {
         }
     }
 
+    /// Return a hash algorithm based on the internal integer ID used by Git.
+    ///
+    /// Returns `None` if the algorithm doesn't indicate a valid algorithm.
+    pub const fn from_format_id(algo: u32) -> Option<HashAlgorithm> {
+        match algo {
+            0x73686131 => Some(HashAlgorithm::SHA1),
+            0x73323536 => Some(HashAlgorithm::SHA256),
+            _ => None,
+        }
+    }
+
     /// The name of this hash algorithm as a string suitable for the configuration file.
     pub const fn name(self) -> &'static str {
         match self {

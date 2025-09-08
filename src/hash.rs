@@ -1,3 +1,4 @@
+use std::io::{self, Write};
 use std::os::raw::c_void;
 
 pub const GIT_MAX_RAWSZ: usize = 32;
@@ -24,6 +25,81 @@ impl ObjectID {
             Some(algo) => &mut self.hash[0..algo.raw_len()],
             None => &mut self.hash,
         }
+    }
+}
+
+pub struct Hasher {
+    algo: HashAlgorithm,
+    safe: bool,
+    ctx: *mut c_void,
+}
+
+impl Hasher {
+    /// Create a new safe hasher.
+    pub fn new(algo: HashAlgorithm) -> Hasher {
+        let ctx = unsafe { c::git_hash_alloc() };
+        unsafe { c::git_hash_init(ctx, algo.hash_algo_ptr()) };
+        Hasher {
+            algo,
+            safe: true,
+            ctx,
+        }
+    }
+
+    /// Return whether this is a safe hasher.
+    pub fn is_safe(&self) -> bool {
+        self.safe
+    }
+
+    /// Update the hasher with the specified data.
+    pub fn update(&mut self, data: &[u8]) {
+        unsafe { c::git_hash_update(self.ctx, data.as_ptr() as *const c_void, data.len()) };
+    }
+
+    /// Return an object ID, consuming the hasher.
+    pub fn into_oid(self) -> ObjectID {
+        let mut oid = ObjectID {
+            hash: [0u8; 32],
+            algo: self.algo as u32,
+        };
+        unsafe { c::git_hash_final_oid(&mut oid as *mut ObjectID as *mut c_void, self.ctx) };
+        oid
+    }
+
+    /// Return a hash as a `Vec`, consuming the hasher.
+    pub fn into_vec(self) -> Vec<u8> {
+        let mut v = vec![0u8; self.algo.raw_len()];
+        unsafe { c::git_hash_final(v.as_mut_ptr(), self.ctx) };
+        v
+    }
+}
+
+impl Write for Hasher {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        self.update(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Clone for Hasher {
+    fn clone(&self) -> Hasher {
+        let ctx = unsafe { c::git_hash_alloc() };
+        unsafe { c::git_hash_clone(ctx, self.ctx) };
+        Hasher {
+            algo: self.algo,
+            safe: self.safe,
+            ctx,
+        }
+    }
+}
+
+impl Drop for Hasher {
+    fn drop(&mut self) {
+        unsafe { c::git_hash_free(self.ctx) };
     }
 }
 
@@ -155,6 +231,11 @@ impl HashAlgorithm {
     pub fn hash_algo_ptr(self) -> *const c_void {
         unsafe { c::hash_algo_ptr_by_offset(self as u32) }
     }
+
+    /// Create a hasher for this algorithm.
+    pub fn hasher(self) -> Hasher {
+        Hasher::new(self)
+    }
 }
 
 pub mod c {
@@ -162,5 +243,81 @@ pub mod c {
 
     extern "C" {
         pub fn hash_algo_ptr_by_offset(n: u32) -> *const c_void;
+        pub fn unsafe_hash_algo(algop: *const c_void) -> *const c_void;
+        pub fn git_hash_alloc() -> *mut c_void;
+        pub fn git_hash_free(ctx: *mut c_void);
+        pub fn git_hash_init(dst: *mut c_void, algop: *const c_void);
+        pub fn git_hash_clone(dst: *mut c_void, src: *const c_void);
+        pub fn git_hash_update(ctx: *mut c_void, inp: *const c_void, len: usize);
+        pub fn git_hash_final(hash: *mut u8, ctx: *mut c_void);
+        pub fn git_hash_final_oid(hash: *mut c_void, ctx: *mut c_void);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+    use super::{HashAlgorithm, ObjectID};
+
+    fn all_algos() -> &'static [HashAlgorithm] {
+        &[HashAlgorithm::SHA1, HashAlgorithm::SHA256]
+    }
+
+    #[test]
+    fn format_id_round_trips() {
+        for algo in all_algos() {
+            assert_eq!(
+                *algo,
+                HashAlgorithm::from_format_id(algo.format_id()).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn offset_round_trips() {
+        for algo in all_algos() {
+            assert_eq!(*algo, HashAlgorithm::from_u32(*algo as u32).unwrap());
+        }
+    }
+
+    #[test]
+    fn slices_have_correct_length() {
+        for algo in all_algos() {
+            for oid in [algo.null_oid(), algo.empty_blob(), algo.empty_tree()] {
+                assert_eq!(oid.as_slice().len(), algo.raw_len());
+            }
+        }
+    }
+
+    #[test]
+    fn hasher_works_correctly() {
+        for algo in all_algos() {
+            let tests: &[(&[u8], &ObjectID)] = &[
+                (b"blob 0\0", algo.empty_blob()),
+                (b"tree 0\0", algo.empty_tree()),
+            ];
+            for (data, oid) in tests {
+                let mut h = algo.hasher();
+                assert_eq!(h.is_safe(), true);
+                // Test that this works incrementally.
+                h.update(&data[0..2]);
+                h.update(&data[2..]);
+
+                let h2 = h.clone();
+
+                let actual_oid = h.into_oid();
+                assert_eq!(**oid, actual_oid);
+
+                let v = h2.into_vec();
+                assert_eq!((*oid).as_slice(), &v);
+
+                let mut h = algo.hasher();
+                h.write_all(&data[0..2]).unwrap();
+                h.write_all(&data[2..]).unwrap();
+
+                let actual_oid = h.into_oid();
+                assert_eq!(**oid, actual_oid);
+            }
+        }
     }
 }

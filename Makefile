@@ -2950,7 +2950,7 @@ scalar$X: scalar.o GIT-LDFLAGS $(GITLIBS)
 $(LIB_FILE): $(LIB_OBJS)
 	$(QUIET_AR)$(RM) $@ && $(AR) $(ARFLAGS) $@ $^
 
-$(RUST_LIB): FORCE
+$(RUST_LIB): FORCE $(XDIFF_LIB) $(LIB_FILE) $(REFTABLE_LIB)
 	@OLD_STAT="$$(stat $@ 2>/dev/null)"; \
 	    cargo build $(CARGO_ARGS); \
 	    if test $$? != 0 || test x"$$OLD_STAT" != x"$$(stat $@ 2>/dev/null)"; then \

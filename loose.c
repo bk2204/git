@@ -1,5 +1,6 @@
 #include "git-compat-util.h"
 #include "hash.h"
+#include "dir.h"
 #include "path.h"
 #include "object-file.h"
 #include "odb.h"
@@ -14,6 +15,39 @@
 #include "packfile.h"
 
 static const char *loose_object_header = "# loose-object-idx\n";
+
+UNUSED
+static void for_each_file_in_loose_map_dir(const char *objdir,
+					   each_file_in_pack_dir_fn fn,
+					   void *data)
+{
+	struct strbuf path = STRBUF_INIT;
+	size_t dirnamelen;
+	DIR *dir;
+	struct dirent *de;
+
+	strbuf_addstr(&path, objdir);
+	strbuf_addstr(&path, "/object-map");
+	dir = opendir(path.buf);
+	if (!dir) {
+		if (errno != ENOENT)
+			error_errno("unable to open object pack directory: %s",
+				    path.buf);
+		strbuf_release(&path);
+		return;
+	}
+	strbuf_addch(&path, '/');
+	dirnamelen = path.len;
+	while ((de = readdir_skip_dot_and_dotdot(dir)) != NULL) {
+		strbuf_setlen(&path, dirnamelen);
+		strbuf_addstr(&path, de->d_name);
+
+		fn(path.buf, path.len, de->d_name, data);
+	}
+
+	closedir(dir);
+	strbuf_release(&path);
+}
 
 static inline int should_use_loose_object_map(struct repository *repo)
 {

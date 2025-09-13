@@ -37,6 +37,9 @@ struct odb_source_loose {
 
 	/* Map between object IDs for loose objects. */
 	struct loose_object_map *map;
+
+	/* Metadata about binary loose object maps that are open. */
+	struct loose_object_map_bin *map_bin;
 };
 
 struct odb_source_loose *odb_source_loose_new(struct odb_source *source);

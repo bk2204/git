@@ -11,6 +11,20 @@ struct loose_object_map {
 	kh_oid_map_t *to_storage;
 };
 
+struct loose_object_map_bin_entry {
+	char *name;
+	int fd;
+	void *mem;
+	size_t size;
+	void *ptr;
+	struct loose_object_map_bin_entry *next;
+};
+
+struct loose_object_map_bin {
+	void *hashmap;
+	struct loose_object_map_bin_entry *entries;
+};
+
 /* Should we write this object to disk? */
 #define LOOSE_WRITE		(1 << 6)
 /*

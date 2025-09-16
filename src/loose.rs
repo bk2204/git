@@ -227,7 +227,6 @@ impl<'a> Iterator for MmapedObjectMapIter<'a> {
     }
 }
 
-#[allow(dead_code)]
 pub struct MmapedObjectMap<'a> {
     memory: &'a [u8],
     nitems: usize,
@@ -237,7 +236,6 @@ pub struct MmapedObjectMap<'a> {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 enum MmapedParseError {
     HeaderTooSmall,
     InvalidSignature,
@@ -249,7 +247,6 @@ enum MmapedParseError {
     InvalidTrailerOffset,
 }
 
-#[allow(dead_code)]
 impl<'a> MmapedObjectMap<'a> {
     fn new(
         slice: &'a [u8],
@@ -622,7 +619,6 @@ impl ObjectMap {
         );
     }
 
-    #[allow(dead_code)]
     fn map_object(&self, oid: &ObjectID, algo: HashAlgorithm) -> Option<&MappedObject> {
         let map = if algo == self.mem.storage {
             &self.mem.to_storage
@@ -632,7 +628,6 @@ impl ObjectMap {
         map.get(oid)
     }
 
-    #[allow(dead_code)]
     fn map_oid<'a, 'b: 'a>(
         &'b self,
         oid: &'a ObjectID,
@@ -909,5 +904,395 @@ mod tests {
         assert_eq!(ObjectMemoryMap::required_nul_padding(2, 2), 0);
 
         assert_eq!(ObjectMemoryMap::required_nul_padding(39, 3), 3);
+    }
+}
+
+pub mod c {
+    use super::{MapType, MmapedObjectMap, ObjectMap};
+    use crate::csum_file::HashFile;
+    use crate::hash::{HashAlgorithm, ObjectID};
+    use std::collections::HashSet;
+    use std::ffi::{CStr, CString};
+    use std::os::raw::{c_char, c_int, c_void};
+
+    /// Initialize a loose object map.
+    ///
+    /// If `storage` and `compat` are both valid internal IDs, initialize `*map` to a new
+    /// `Box<ObjectMap>`.  Otherwise, set `*map` to a null pointer.
+    ///
+    /// # Safety
+    ///
+    /// This is safe if `map` is a valid pointer.
+    #[no_mangle]
+    pub unsafe extern "C" fn loose_object_map_init(
+        map: *mut *mut c_void,
+        storage: u32,
+        compat: u32,
+    ) {
+        let (storage, compat) = match (
+            HashAlgorithm::from_u32(storage),
+            HashAlgorithm::from_u32(compat),
+        ) {
+            (Some(s), Some(c)) => (s, c),
+            _ => {
+                *map = std::ptr::null_mut();
+                return;
+            }
+        };
+        let m = Box::new(ObjectMap::new(storage, compat));
+        let m = Box::into_raw(m) as *mut c_void;
+        *map = m;
+    }
+
+    /// Initialize a loose object binary map at `*map` whose contents are in `buf` (which is `len`
+    /// bytes long) and with the hash algorithm `storage`.
+    ///
+    /// # Safety
+    ///
+    /// `map` must be valid and `buf` must be valid and point to at least `len` bytes of data.
+    #[no_mangle]
+    pub unsafe extern "C" fn loose_object_map_bin_init_1(
+        map: *mut *mut c_void,
+        buf: *const u8,
+        len: usize,
+        storage: u32,
+    ) -> c_int {
+        let storage = match HashAlgorithm::from_u32(storage) {
+            Some(s) => s,
+            None => {
+                *map = std::ptr::null_mut();
+                return -1;
+            }
+        };
+        let slice = unsafe { std::slice::from_raw_parts(buf, len) };
+        let m = match MmapedObjectMap::new(slice, storage) {
+            Ok(map) => Box::new(map),
+            Err(_) => return -1,
+        };
+        let m = Box::into_raw(m) as *mut c_void;
+        *map = m;
+        0
+    }
+
+    /// Iterate over the loose object binary map in `map`.
+    ///
+    /// `data` is set by the caller to point to arbitrary data, which this function does not
+    /// access.  `f` is called with the main algorithm's object ID, the compatibility algorithm's
+    /// object ID, and `data`, until it returns a nonzero value or iteration is exhausted.
+    ///
+    /// # Safety
+    ///
+    /// `map` must be a valid binary loose object map and `data` must be suitable for use with `f.
+    /// It's recommended to set it to null if it is not needed.
+    #[no_mangle]
+    pub unsafe extern "C" fn loose_object_map_bin_for_each_1(
+        map: *mut c_void,
+        f: extern "C" fn(*const ObjectID, *const ObjectID, *mut c_void) -> c_int,
+        data: *mut c_void,
+    ) -> c_int {
+        if map.is_null() {
+            return -1;
+        }
+
+        let map = map as *const MmapedObjectMap;
+        let map = unsafe { &*map };
+
+        for oids in map.iter() {
+            let res = f(
+                &oids[0] as *const ObjectID,
+                &oids[1] as *const ObjectID,
+                data,
+            );
+            if res != 0 {
+                return res;
+            }
+        }
+        0
+    }
+
+    /// Free the memory associated with the binary loose object map in `*map`.
+    ///
+    /// `*map` will be set to a null pointer.
+    ///
+    /// # Safety
+    ///
+    /// `*map` must be a valid binary loose object map.
+    #[no_mangle]
+    pub unsafe extern "C" fn loose_object_map_bin_clear_1(map: *mut *mut c_void) {
+        let m = unsafe { *map };
+
+        if m.is_null() {
+            return;
+        }
+
+        let m = unsafe { Box::from_raw(m as *mut MmapedObjectMap) };
+        std::mem::drop(m);
+        *map = std::ptr::null_mut();
+    }
+
+    #[no_mangle]
+    pub extern "C" fn repo_loose_object_map_has_batch_1(map: *const c_void) -> bool {
+        if map.is_null() {
+            return false;
+        }
+
+        let map = map as *const ObjectMap;
+        let map = unsafe { &*map };
+
+        map.has_batch()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn repo_loose_object_map_start_batch_1(map: *mut c_void) {
+        if map.is_null() {
+            return;
+        }
+
+        let map = map as *mut ObjectMap;
+        let map = unsafe { &mut *map };
+
+        map.start_batch()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn repo_loose_object_map_abort_batch_1(map: *mut c_void) {
+        if map.is_null() {
+            return;
+        }
+
+        let map = map as *mut ObjectMap;
+        let map = unsafe { &mut *map };
+
+        map.abort_batch()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn repo_loose_object_map_batch_len_1(map: *const c_void) -> i64 {
+        if map.is_null() {
+            return -1;
+        }
+
+        let map = map as *const ObjectMap;
+        let map = unsafe { &*map };
+
+        match map.batch_len() {
+            Some(len) => len as i64,
+            None => -1,
+        }
+    }
+
+    /// Write the loose object batch in `map` to the file represented by file descriptor `fd`.
+    ///
+    /// # Safety
+    ///
+    /// `map` must be a valid loose object map from `loose_object_map_init`, `name` must point to a
+    /// valid C string, and `csum` must point to at least `GIT_MAX_RAWSZ` bytes of storage.
+    #[no_mangle]
+    pub unsafe extern "C" fn repo_loose_object_map_write_batch(
+        map: *mut c_void,
+        fd: i32,
+        name: *const c_char,
+        csum: *mut u8,
+        component: u32,
+        flags: u32,
+    ) -> c_int {
+        if map.is_null() {
+            return -1;
+        }
+
+        let map = map as *mut ObjectMap;
+        let map = unsafe { &mut *map };
+
+        let name = CStr::from_ptr(name);
+        let mut f = HashFile::new(map.hash_algo(), fd, name);
+        let status = match map.finish_batch(&mut f) {
+            Ok(()) => 0,
+            Err(_) => -1,
+        };
+        let res = f.finalize(component, flags);
+
+        let csum = std::slice::from_raw_parts_mut(csum, res.len());
+        csum.copy_from_slice(&res);
+        status
+    }
+
+    #[no_mangle]
+    pub extern "C" fn loose_object_map_oid_bin_1(
+        map: *const c_void,
+        src: *const c_void,
+        to: u32,
+        dest: *mut c_void,
+    ) -> c_int {
+        let src = src as *const ObjectID;
+        let dest = dest as *mut ObjectID;
+
+        let src = match unsafe { src.as_ref() } {
+            Some(src) => src,
+            None => return -1,
+        };
+        let dest = match unsafe { dest.as_mut() } {
+            Some(dest) => dest,
+            None => return -1,
+        };
+
+        if src.algo == to {
+            *dest = src.clone();
+            return 0;
+        }
+
+        let algo = match HashAlgorithm::from_u32(to) {
+            Some(algo) => algo,
+            None => return -1,
+        };
+
+        let map = map as *const MmapedObjectMap;
+        let map = unsafe { &*map };
+
+        match map.map_oid(src, algo) {
+            Some(mapped) => {
+                *dest = mapped;
+                0
+            }
+            None => -1,
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn repo_loose_object_map_oid_1(
+        map: *const c_void,
+        src: *const c_void,
+        to: u32,
+        dest: *mut c_void,
+    ) -> c_int {
+        let src = src as *const ObjectID;
+        let dest = dest as *mut ObjectID;
+
+        let src = match unsafe { src.as_ref() } {
+            Some(src) => src,
+            None => return -1,
+        };
+        let dest = match unsafe { dest.as_mut() } {
+            Some(dest) => dest,
+            None => return -1,
+        };
+
+        if src.algo == to {
+            *dest = src.clone();
+            return 0;
+        }
+
+        let algo = match HashAlgorithm::from_u32(to) {
+            Some(algo) => algo,
+            None => return -1,
+        };
+
+        let map = map as *const ObjectMap;
+        let map = unsafe { &*map };
+
+        match map.map_oid(src, algo) {
+            Some(mapped) => {
+                *dest = mapped.clone();
+                0
+            }
+            None => -1,
+        }
+    }
+
+    /// Insert an object into the map.
+    ///
+    /// # Safety
+    ///
+    /// `map` must be a pointer from `loose_object_map_init` and `oid1` and `oid2` must be valid
+    /// pointers to `ObjectID` with valid algorithms.
+    #[no_mangle]
+    pub unsafe extern "C" fn repo_add_loose_object_map_1(
+        map: *mut c_void,
+        oid1: *const ObjectID,
+        oid2: *const ObjectID,
+        kind: u32,
+        write: bool,
+    ) -> c_int {
+        let oid1 = match unsafe { oid1.as_ref() } {
+            Some(oid) => oid,
+            None => return -1,
+        };
+        let oid2 = match unsafe { oid2.as_ref() } {
+            Some(oid) => oid,
+            None => return -1,
+        };
+
+        let kind = match MapType::from_u32(kind) {
+            Some(kind) => kind,
+            None => return -1,
+        };
+
+        let map = map as *mut ObjectMap;
+        let map = unsafe { &mut *map };
+
+        map.insert(oid1, oid2, kind, write);
+
+        0
+    }
+
+    #[no_mangle]
+    extern "C" fn loose_object_map_clear(map: *mut *mut c_void) {
+        let m = unsafe { *map };
+
+        if m.is_null() {
+            return;
+        }
+
+        let m = unsafe { Box::from_raw(m as *mut ObjectMap) };
+        std::mem::drop(m);
+
+        unsafe { *map = std::ptr::null_mut() };
+    }
+
+    #[no_mangle]
+    unsafe extern "C" fn loose_object_map_bin_hashmap_init(map: *mut *mut c_void) {
+        let m: Box<HashSet<CString>> = Box::default();
+        let m = Box::into_raw(m) as *mut c_void;
+        *map = m;
+    }
+
+    #[no_mangle]
+    extern "C" fn loose_object_map_bin_hashmap_insert(map: *mut c_void, s: *const c_char) {
+        let m = map as *mut HashSet<CString>;
+
+        if m.is_null() {
+            return;
+        }
+        let m = unsafe { &mut *m };
+        let cs = unsafe { CStr::from_ptr(s) };
+        m.insert(cs.to_owned());
+    }
+
+    #[no_mangle]
+    extern "C" fn loose_object_map_bin_hashmap_contains(
+        map: *const c_void,
+        s: *const c_char,
+    ) -> bool {
+        let m = map as *const HashSet<CString>;
+
+        if m.is_null() {
+            return false;
+        }
+        let m = unsafe { &*m };
+        let cs = unsafe { CStr::from_ptr(s) };
+        m.contains(cs)
+    }
+
+    #[no_mangle]
+    extern "C" fn loose_object_map_bin_hashmap_clear(map: *mut *mut c_void) {
+        let m = unsafe { *map };
+
+        if m.is_null() {
+            return;
+        }
+
+        let m = unsafe { Box::from_raw(m as *mut HashSet<CString>) };
+        std::mem::drop(m);
+
+        unsafe { *map = std::ptr::null_mut() };
     }
 }

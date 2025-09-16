@@ -20,11 +20,11 @@
 #define OBJ_MAP_TYPE_MASK		0x3f
 
 struct repository;
+struct odb_source;
 struct odb_source_loose;
 
 struct loose_object_map {
-	kh_oid_map_t *to_compat;
-	kh_oid_map_t *to_storage;
+	void *ptr;
 };
 
 struct loose_object_map_bin_entry {
@@ -41,18 +41,25 @@ struct loose_object_map_bin {
 	struct loose_object_map_bin_entry *entries;
 };
 
-/* Should we write this object to disk? */
-#define LOOSE_WRITE		(1 << 6)
-
-void loose_object_map_init(struct loose_object_map **map);
+void loose_object_map_init(struct loose_object_map **map, uint32_t algo,
+			   uint32_t compat_algo);
 void loose_object_map_clear(struct loose_object_map **map);
 int loose_object_map_load(struct odb_source_loose *loose, int flags);
 int repo_loose_object_map_oid(struct repository *repo,
 			      const struct object_id *src,
 			      const struct git_hash_algo *dest_algo,
 			      struct object_id *dest);
-int repo_read_loose_object_map(struct repository *repo);
-int repo_write_loose_object_map(struct repository *repo, int flags);
+
+bool repo_loose_object_map_has_batch(struct odb_source_loose *loose);
+void repo_loose_object_map_start_batch(struct odb_source_loose *loose);
+int repo_loose_object_map_finish_batch(struct odb_source_loose *loose, bool noop_ok);
+int64_t repo_loose_object_map_batch_len(struct odb_source_loose *loose);
+
+void loose_object_map_bin_init(struct loose_object_map_bin **map);
+void loose_object_map_bin_clear(struct loose_object_map_bin **map);
+
+typedef void each_file_in_loose_map_fn(const char *full_path, size_t full_path_len,
+				       const char *file_name, void *data);
 
 int source_loose_object_map_oid(struct odb_source_loose *loose,
 				const struct object_id *src,

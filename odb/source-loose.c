@@ -1035,7 +1035,7 @@ static int odb_source_loose_map_oid(struct odb_source *source, const struct obje
 	 * let's reload the map to see if the object has appeared.
 	 */
 	if (flags & ODB_MAP_OID_RELOAD)
-		repo_read_loose_object_map(source->odb->repo);
+		loose_object_map_load(loose, 0);
 	return source_loose_object_map_oid(loose, src, to, dest);
 }
 
@@ -1053,6 +1053,7 @@ static void odb_source_loose_free(struct odb_source *source)
 	struct odb_source_loose *loose = odb_source_loose_downcast(source);
 	odb_source_loose_clear_cache(loose);
 	loose_object_map_clear(&loose->map);
+	loose_object_map_bin_clear(&loose->map_bin);
 	chdir_notify_unregister(odb_source_loose_reparent, loose);
 	odb_source_release(&loose->base);
 	free(loose);

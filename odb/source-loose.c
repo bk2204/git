@@ -694,6 +694,7 @@ static void odb_source_loose_free(struct odb_source *source)
 	struct odb_source_loose *loose = odb_source_loose_downcast(source);
 	odb_source_loose_clear_cache(loose);
 	loose_object_map_clear(&loose->map);
+	loose_object_map_bin_clear(&loose->map_bin);
 	chdir_notify_unregister(NULL, odb_source_loose_reparent, loose);
 	odb_source_release(&loose->base);
 	free(loose);

@@ -1,14 +1,14 @@
 #ifndef LOOSE_H
 #define LOOSE_H
 
+#include "odb.h"
 #include "khash.h"
 
 struct repository;
 struct odb_source_loose;
 
 struct loose_object_map {
-	kh_oid_map_t *to_compat;
-	kh_oid_map_t *to_storage;
+	void *ptr;
 };
 
 struct loose_object_map_bin_entry {
@@ -41,16 +41,28 @@ struct loose_object_map_bin {
 #define LOOSE_TYPE_SUBMODULE	3
 #define LOOSE_TYPE_MASK		0x3f
 
-void loose_object_map_init(struct loose_object_map **map);
+void loose_object_map_init(struct loose_object_map **map, uint32_t algo,
+			   uint32_t compat_algo);
 void loose_object_map_clear(struct loose_object_map **map);
 int repo_loose_object_map_oid(struct repository *repo,
 			      const struct object_id *src,
 			      const struct git_hash_algo *dest_algo,
 			      struct object_id *dest);
-int repo_add_loose_object_map(struct odb_source_loose *loose,
+int repo_add_loose_object_map(struct odb_source *source,
 			      const struct object_id *oid,
 			      const struct object_id *compat_oid, int flags);
 int repo_read_loose_object_map(struct repository *repo);
-int repo_write_loose_object_map(struct repository *repo, int flags);
+int repo_clear_loose_object_map(struct repository *repo);
+
+bool repo_loose_object_map_has_batch(struct odb_source *source);
+void repo_loose_object_map_start_batch(struct odb_source *source);
+int repo_loose_object_map_finish_batch(struct odb_source *source, bool noop_ok);
+int64_t repo_loose_object_map_batch_len(struct odb_source *source);
+
+void loose_object_map_bin_init(struct loose_object_map_bin **map);
+void loose_object_map_bin_clear(struct loose_object_map_bin **map);
+
+typedef void each_file_in_loose_map_fn(const char *full_path, size_t full_path_len,
+				       const char *file_name, void *data);
 
 #endif

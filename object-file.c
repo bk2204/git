@@ -959,13 +959,7 @@ int force_object_loose(struct odb_source *source,
 	hdrlen = format_object_header(hdr, sizeof(hdr), type, len);
 	ret = write_loose_object(files->loose, oid, hdr, hdrlen, buf, len, mtime, 0);
 	if (!ret && compat)
-<<<<<<< HEAD
-		ret = repo_add_loose_object_map(files->loose, oid, &compat_oid);
-||||||| parent of 81bb3f7e97 (loose: allow writing data for submodules)
-		ret = repo_add_loose_object_map(source, oid, &compat_oid);
-=======
-		ret = repo_add_loose_object_map(source, oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_LOOSE);
->>>>>>> 81bb3f7e97 (loose: allow writing data for submodules)
+		ret = repo_add_loose_object_map(&files->loose->base, oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_LOOSE);
 	free(buf);
 
 	return ret;

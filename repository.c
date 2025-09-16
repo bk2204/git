@@ -391,6 +391,8 @@ void repo_clear(struct repository *repo)
 	struct hashmap_iter iter;
 	struct strmap_entry *e;
 
+	repo_clear_loose_object_map(repo);
+
 	FREE_AND_NULL(repo->gitdir);
 	FREE_AND_NULL(repo->commondir);
 	FREE_AND_NULL(repo->graft_file);

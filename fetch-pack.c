@@ -35,6 +35,7 @@
 #include "commit-graph.h"
 #include "sigchain.h"
 #include "mergesort.h"
+#include "loose.h"
 #include "object-file-convert.h"
 #include "prio-queue.h"
 #include "promisor-remote.h"
@@ -1404,9 +1405,13 @@ static int add_haves(struct fetch_negotiator *negotiator,
 
 static void write_fetch_command_and_capabilities(struct strbuf *req_buf,
 						 const struct string_list *server_options,
-						 const struct git_hash_algo **algo)
+						 const struct git_hash_algo **algo,
+						 const struct git_hash_algo **map_algo)
 {
 	const char *hash_name;
+	const struct git_hash_algo *candidates[2] = {
+		the_repository->hash_algo, the_repository->compat_hash_algo,
+	};
 
 	ensure_server_supports_v2("fetch");
 	packet_buf_write(req_buf, "command=fetch");
@@ -1437,6 +1442,20 @@ static void write_fetch_command_and_capabilities(struct strbuf *req_buf,
 		die(_("the server does not support algorithm '%s'"),
 		    the_hash_algo->name);
 	}
+
+
+	*map_algo = NULL;
+	for (size_t i = 0; i < ARRAY_SIZE(candidates); i++) {
+		if (*algo && *algo == candidates[i])
+			continue;
+
+		if (candidates[i] &&
+		    server_supports_feature("object-format-map", candidates[i]->name, 0)) {
+			*map_algo = candidates[i];
+			packet_buf_write(req_buf, "object-format-map=%s", (*map_algo)->name);
+		}
+	}
+
 	packet_buf_delim(req_buf);
 }
 
@@ -1446,13 +1465,15 @@ static int send_fetch_request(struct fetch_negotiator *negotiator, int fd_out,
 			      int *haves_to_send, int *in_vain,
 			      int sideband_all, int seen_ack,
 			      struct oidset *negotiation_include_oids,
-			      const struct git_hash_algo **hash_algo)
+			      const struct git_hash_algo **hash_algo,
+			      const struct git_hash_algo **map_hash_algo)
 {
 	int haves_added;
 	int done_sent = 0;
 	struct strbuf req_buf = STRBUF_INIT;
 
-	write_fetch_command_and_capabilities(&req_buf, args->server_options, hash_algo);
+	write_fetch_command_and_capabilities(&req_buf, args->server_options,
+					     hash_algo, map_hash_algo);
 
 	if (args->use_thin_pack)
 		packet_buf_write(&req_buf, "thin-pack");
@@ -1606,6 +1627,48 @@ static int process_ack(struct fetch_negotiator *negotiator,
 	return 0;
 }
 
+static void receive_object_format_info(struct fetch_pack_args *args UNUSED,
+				       struct packet_reader *reader)
+{
+	const struct git_hash_algo *map_algo = reader->map_hash_algo;
+
+	process_section_header(reader, "object-map-info", 0);
+	while (packet_reader_read(reader) == PACKET_READ_NORMAL) {
+		const char *arg;
+		struct object_id oid, mapped;
+
+		if (!map_algo)
+			die(_("unexpected object-map-info with no requested algorithm"));
+
+		if (!skip_prefix(reader->line, "map-object ", &arg) ||
+		    !skip_prefix(arg, map_algo->name, &arg) ||
+		    *arg++ != ' ')
+			die(_("expected valid map-object, got %s"), reader->line);
+
+		if (skip_prefix(arg, "shallow ", &arg) ||
+		    skip_prefix(arg, "unshallow ", &arg)) {
+			if (parse_oid_hex_algop(arg, &oid, &arg, reader->hash_algo) ||
+			    *arg++ != ' ' ||
+			    get_oid_hex_algop(arg, &mapped, map_algo))
+				die(_("invalid map-object line: %s"), reader->line);
+			/*
+			 * We must insert these entries into the loose object
+			 * map because they will be required to correctly map
+			 * objects when we index the pack file.
+			 */
+			repo_add_loose_object_map(the_repository->objects->sources,
+						  &oid, &mapped,
+						  LOOSE_WRITE | LOOSE_TYPE_SHALLOW);
+			continue;
+		}
+		/* We allow unknown kinds here and ignore them. */
+	}
+
+	if (reader->status != PACKET_READ_FLUSH &&
+	    reader->status != PACKET_READ_DELIM)
+		die(_("error processing object map info: %d"), reader->status);
+}
+
 static void receive_shallow_info(struct fetch_pack_args *args,
 				 struct packet_reader *reader,
 				 struct oid_array *shallows,
@@ -1616,23 +1679,31 @@ static void receive_shallow_info(struct fetch_pack_args *args,
 	process_section_header(reader, "shallow-info", 0);
 	while (packet_reader_read(reader) == PACKET_READ_NORMAL) {
 		const char *arg;
-		struct object_id oid;
+		struct object_id oid, mapped;
 
 		if (skip_prefix(reader->line, "shallow ", &arg)) {
-			if (get_oid_hex(arg, &oid))
+			if (get_oid_hex_algop(arg, &oid, reader->hash_algo))
 				die(_("invalid shallow line: %s"), reader->line);
-			oid_array_append(shallows, &oid);
+			if (repo_oid_to_algop(the_repository, &oid,
+					      the_repository->hash_algo,
+					      &mapped))
+				die(_("unmapped shallow line: %s"), reader->line);
+			oid_array_append(shallows, &mapped);
 			continue;
 		}
 		if (skip_prefix(reader->line, "unshallow ", &arg)) {
-			if (get_oid_hex(arg, &oid))
+			if (get_oid_hex_algop(arg, &oid, reader->hash_algo))
 				die(_("invalid unshallow line: %s"), reader->line);
-			if (!lookup_object(the_repository, &oid))
+			if (repo_oid_to_algop(the_repository, &oid,
+					      the_repository->hash_algo,
+					      &mapped))
+				die(_("unmapped shallow line: %s"), reader->line);
+			if (!lookup_object(the_repository, &mapped))
 				die(_("object not found: %s"), reader->line);
 			/* make sure that it is parsed as shallow */
-			if (!parse_object(the_repository, &oid))
+			if (!parse_object(the_repository, &mapped))
 				die(_("error in object: %s"), reader->line);
-			if (unregister_shallow(&oid))
+			if (unregister_shallow(&mapped))
 				die(_("no shallow found: %s"), reader->line);
 			unshallow_received = 1;
 			continue;
@@ -1844,7 +1915,8 @@ static struct ref *do_fetch_pack_v2(struct fetch_pack_args *args,
 					       reader.use_sideband,
 					       seen_ack,
 					       &negotiation_include_oids,
-					       &reader.hash_algo)) {
+					       &reader.hash_algo,
+					       &reader.map_hash_algo)) {
 				trace2_region_leave_printf("negotiation_v2", "round",
 							   the_repository, "%d",
 							   negotiation_round);
@@ -1883,6 +1955,9 @@ static struct ref *do_fetch_pack_v2(struct fetch_pack_args *args,
 			trace2_data_intmax("negotiation_v2", the_repository,
 					   "total_rounds", negotiation_round);
 			/* Check for shallow-info section */
+			if (process_section_header(&reader, "object-map-info", 1))
+				receive_object_format_info(args, &reader);
+
 			if (process_section_header(&reader, "shallow-info", 1))
 				receive_shallow_info(args, &reader, shallows, si);
 
@@ -2322,7 +2397,9 @@ void negotiate_using_fetch(const struct oid_array *negotiation_restrict_tips,
 					   the_repository, "%d",
 					   negotiation_round);
 		strbuf_reset(&req_buf);
-		write_fetch_command_and_capabilities(&req_buf, server_options, &reader.hash_algo);
+		write_fetch_command_and_capabilities(&req_buf, server_options,
+						     &reader.hash_algo,
+						     &reader.map_hash_algo);
 
 		packet_buf_write(&req_buf, "wait-for-done");
 

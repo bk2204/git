@@ -195,6 +195,9 @@ struct packet_reader {
 	/* hash algorithm in use */
 	const struct git_hash_algo *hash_algo;
 
+	/* compatibility algorithm to map object IDs to */
+	const struct git_hash_algo *map_hash_algo;
+
 	/* hold temporary sideband message */
 	struct strbuf scratch;
 };

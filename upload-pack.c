@@ -85,6 +85,7 @@ struct upload_pack_data {
 
 	struct oid_array shallow_response;
 	struct oid_array unshallow_response;
+	struct oid_array shallow_references;
 
 	unsigned int timeout;					/* v0 only */
 	enum {
@@ -176,6 +177,7 @@ static void upload_pack_data_clear(struct upload_pack_data *data)
 	string_list_clear(&data->allowed_filters, 0);
 	string_list_clear(&data->uri_protocols, 0);
 	oid_array_clear(&data->shallow_response);
+	oid_array_clear(&data->shallow_references);
 	oid_array_clear(&data->unshallow_response);
 
 	free((char *)data->pack_objects_hook);
@@ -838,7 +840,19 @@ static void add_shallow(struct upload_pack_data *data,
 	while (result) {
 		struct object *object = &result->item->object;
 		if (!(object->flags & (CLIENT_SHALLOW|NOT_SHALLOW))) {
+			struct object_id *tree;
+
 			oid_array_append(&data->shallow_response, &object->oid);
+
+			repo_parse_commit(the_repository, result->item);
+
+			tree = get_commit_tree_oid(result->item);
+			if (tree)
+				oid_array_append(&data->shallow_references, tree);
+			for (struct commit_list *p = result->item->parents; p; p = p->next) {
+				oid_array_append(&data->shallow_references, &p->item->object.oid);
+			}
+
 			register_shallow(the_repository, &object->oid);
 			data->shallow_nr++;
 		}
@@ -918,7 +932,23 @@ static void deepen_by_rev_list(struct upload_pack_data *data,
 struct shallow_callback_data {
 	struct upload_pack_data *data;
 	const char *text;
+	struct repository *r;
+	const struct git_hash_algo *map_algo;
 };
+
+static int send_one_mapped_shallow(const struct object_id *oid, void *data)
+{
+	struct shallow_callback_data *d = data;
+	struct object_id mapped;
+
+	if (repo_oid_to_algop(d->r, oid, d->map_algo, &mapped))
+		return 1;
+
+	packet_writer_write(&d->data->writer, "map-object %s %s %s %s\n",
+			    d->map_algo->name, d->text, oid_to_hex(oid),
+			    oid_to_hex(&mapped));
+	return 0;
+}
 
 static int send_one_shallow(const struct object_id *oid, void *data)
 {
@@ -934,6 +964,7 @@ static int send_shallow_list(struct upload_pack_data *data)
 	struct shallow_callback_data d = {
 		.data = data,
 		.text = "shallow",
+		.r = the_repository,
 	};
 	oid_array_for_each(&data->shallow_response, send_one_shallow, &d);
 
@@ -1492,6 +1523,7 @@ void upload_pack(const int advertise_refs, const int stateless_rpc,
 				   PACKET_READ_DIE_ON_ERR_PACKET);
 
 		reader.hash_algo = the_repository->hash_algo;
+		reader.map_hash_algo = NULL;
 
 		receive_needs(&data, &reader);
 
@@ -1776,6 +1808,67 @@ static int process_haves_and_send_acks(struct upload_pack_data *data)
 	return ret;
 }
 
+static void compute_shallow_info(struct upload_pack_data *data)
+{
+	/* No shallow info needs to be sent */
+	if (!data->depth && !data->deepen_rev_list && !data->shallows.nr &&
+	    !is_repository_shallow(the_repository))
+		return;
+
+	if (!compute_shallow_list(data) &&
+	    is_repository_shallow(the_repository))
+		deepen(data, INFINITE_DEPTH);
+}
+
+static void send_object_map_info(struct upload_pack_data *data,
+				 const struct git_hash_algo *map_algo)
+{
+	struct hashmap_iter iter;
+	const struct strmap_entry *e;
+	struct shallow_callback_data d = {
+		.data = data,
+		.text = "shallow",
+		.r = the_repository,
+		.map_algo = map_algo,
+	};
+	struct oidset seen_wanted_refs = OIDSET_INIT;
+
+	if (!map_algo ||
+	    (strmap_empty(&data->wanted_refs) &&
+	     !data->shallow_response.nr &&
+	     !data->unshallow_response.nr))
+		return;
+
+	packet_writer_write(&data->writer, "object-map-info\n");
+
+	oid_array_for_each_unique(&data->shallow_response, send_one_mapped_shallow, &d);
+	oid_array_for_each_unique(&data->shallow_references, send_one_mapped_shallow, &d);
+
+	d.text = "unshallow";
+	oid_array_for_each_unique(&data->unshallow_response, send_one_mapped_shallow, &d);
+
+	strmap_for_each_entry(&data->wanted_refs, &iter, e) {
+		struct object_id mapped;
+
+		if (repo_oid_to_algop(the_repository, e->value, map_algo,
+				      &mapped) ||
+		    oidset_contains(&seen_wanted_refs, e->value))
+			continue;
+
+		packet_writer_write(&data->writer, "map-object %s %s %s %s\n",
+				    map_algo->name,
+				    "wanted-ref",
+				    oid_to_hex(e->value),
+				    oid_to_hex(&mapped));
+
+		oidset_insert(&seen_wanted_refs, e->value);
+	}
+
+	packet_writer_delim(&data->writer);
+
+	oidset_clear(&seen_wanted_refs);
+}
+
 static void send_wanted_ref_info(struct upload_pack_data *data)
 {
 	struct hashmap_iter iter;
@@ -1803,10 +1896,6 @@ static void send_shallow_info(struct upload_pack_data *data)
 		return;
 
 	packet_writer_write(&data->writer, "shallow-info\n");
-
-	if (!compute_shallow_list(data) &&
-	    is_repository_shallow(the_repository))
-		deepen(data, INFINITE_DEPTH);
 
 	send_shallow_list(data);
 
@@ -1865,6 +1954,8 @@ int upload_pack_v2(struct repository *r, struct packet_reader *request)
 				state = UPLOAD_DONE;
 			break;
 		case UPLOAD_SEND_PACK:
+			compute_shallow_info(&data);
+			send_object_map_info(&data, request->map_hash_algo);
 			send_wanted_ref_info(&data);
 			send_shallow_info(&data);
 

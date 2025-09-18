@@ -988,14 +988,18 @@ static int compute_shallow_list(struct upload_pack_data *data)
 	return ret;
 }
 
-static int process_shallow(const char *line, struct object_array *shallows)
+static int process_shallow(const char *line, struct object_array *shallows,
+			   const struct git_hash_algo *algo)
 {
 	const char *arg;
 	if (skip_prefix(line, "shallow ", &arg)) {
 		struct object_id oid;
 		struct object *object;
-		if (get_oid_hex(arg, &oid))
+		if (get_oid_hex_algop(arg, &oid, algo))
 			die("invalid shallow line: %s", line);
+		if (repo_oid_to_algop(the_repository, &oid,
+				      the_repository->hash_algo, &oid))
+			return 1;
 		object = parse_object(the_repository, &oid);
 		if (!object)
 			return 1;
@@ -1135,7 +1139,7 @@ static void receive_needs(struct upload_pack_data *data,
 		if (packet_reader_read(reader) != PACKET_READ_NORMAL)
 			break;
 
-		if (process_shallow(reader->line, &data->shallows))
+		if (process_shallow(reader->line, &data->shallows, reader->hash_algo))
 			continue;
 		if (process_deepen(reader->line, &data->depth))
 			continue;
@@ -1679,7 +1683,7 @@ static void process_args(struct packet_reader *request,
 		}
 
 		/* Shallow related arguments */
-		if (process_shallow(arg, &data->shallows))
+		if (process_shallow(arg, &data->shallows, request->hash_algo))
 			continue;
 		if (process_deepen(arg, &data->depth))
 			continue;

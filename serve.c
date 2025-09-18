@@ -15,7 +15,9 @@
 static int advertise_sid = -1;
 static int advertise_object_info = -1;
 static int advertise_compat = 0;
+static int advertise_compat_mapping = 1;
 static uint32_t client_hash_algo = GIT_HASH_SHA1_LEGACY;
+static uint32_t map_hash_algo = GIT_HASH_UNKNOWN;
 
 static int always_advertise(struct repository *r UNUSED,
 			    struct strbuf *value UNUSED,
@@ -91,6 +93,34 @@ static void object_format_receive(struct repository *r UNUSED,
 
 	client_hash_algo = hash_algo_by_name(algo_name);
 	if (client_hash_algo == GIT_HASH_UNKNOWN)
+		die("unknown object format '%s'", algo_name);
+}
+
+static int object_format_map_advertise(struct repository *r,
+				       struct strbuf *value,
+				       int count)
+{
+	if (count)
+		return 0;
+	if (r->compat_hash_algo) {
+		repo_config_get_bool(r, "transfer.advertisecompatobjectmapping", &advertise_compat_mapping);
+		if (advertise_compat_mapping) {
+			if (value)
+				strbuf_addstr(value, r->compat_hash_algo->name);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void object_format_map_receive(struct repository *r UNUSED,
+				      const char *algo_name)
+{
+	if (!algo_name)
+		die("object-format-map capability requires an argument");
+
+	map_hash_algo = hash_algo_by_name(algo_name);
+	if (map_hash_algo == GIT_HASH_UNKNOWN)
 		die("unknown object format '%s'", algo_name);
 }
 
@@ -189,6 +219,11 @@ static struct protocol_capability capabilities[] = {
 		.name = "object-format",
 		.advertise = object_format_advertise,
 		.receive = object_format_receive,
+	},
+	{
+		.name = "object-format-map",
+		.advertise = object_format_map_advertise,
+		.receive = object_format_map_receive,
 	},
 	{
 		.name = "session-id",
@@ -383,7 +418,13 @@ static int process_request(struct repository *r)
 		    r->hash_algo->name,
 		    hash_algos[client_hash_algo].name);
 
+	if (map_hash_algo && map_hash_algo != hash_algo_by_ptr(r->hash_algo) &&
+	    (!advertise_compat_mapping || map_hash_algo != hash_algo_by_ptr(r->compat_hash_algo)))
+		die("unsupported object format for mapping: %s",
+		    hash_algos[map_hash_algo].name);
+
 	reader.hash_algo = &hash_algos[client_hash_algo];
+	reader.map_hash_algo = map_hash_algo ? &hash_algos[map_hash_algo] : NULL;
 
 	command->command(r, &reader);
 

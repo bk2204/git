@@ -389,8 +389,9 @@ delimiter packets (0001), with each section beginning with its section
 header. Most sections are sent only when the packfile is sent.
 
     output = acknowledgements flush-pkt |
-	     [acknowledgments delim-pkt] [shallow-info delim-pkt]
-	     [wanted-refs delim-pkt] [packfile-uris delim-pkt]
+	     [acknowledgments delim-pkt] [object-map-info delim-pkt]
+			 [shallow-info delim-pkt] [wanted-refs delim-pkt]
+			 [packfile-uris delim-pkt]
 	     packfile flush-pkt
 
     acknowledgments = PKT-LINE("acknowledgments" LF)
@@ -399,6 +400,12 @@ header. Most sections are sent only when the packfile is sent.
     ready = PKT-LINE("ready" LF)
     nak = PKT-LINE("NAK" LF)
     ack = PKT-LINE("ACK" SP obj-id LF)
+
+		object-map-info = PKT-LINE("object-map-info" LF)
+		   *PKT-LINE(obj-map LF)
+		obj-map = "map-object" SP algo SP kind SP obj-id SP obj-id
+		algo = ("sha1" | "sha256")
+		kind = ("shallow" | "unshallow" | "submodule" | "promisor" | "wanted-ref")
 
     shallow-info = PKT-LINE("shallow-info" LF)
 		   *PKT-LINE((shallow | unshallow) LF)
@@ -539,6 +546,17 @@ form `object-format=X`) to notify the client that the server is able to deal
 with objects using hash algorithm X.  If not specified, the server is assumed to
 only handle SHA-1.  If the client would like to use a hash algorithm other than
 SHA-1, it should specify its object-format string.
+
+object-format-map
+~~~~~~~~~~~~~~~~~
+
+The server can advertise the `object-format-map` capability with a value `X`
+(in the form `object-format-map=X`) to notify the client that the server is
+able to map objects using hash algorithm X.  This allows the transmission of
+information about shallows, objects from partial clones, and submodules in an
+algorithm other than the default.  The server advertising this capability must
+be capable of converting object IDs from any value of `object-format` it
+supports to this algorithm.
 
 session-id=<session-id>
 ~~~~~~~~~~~~~~~~~~~~~~~

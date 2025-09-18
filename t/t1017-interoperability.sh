@@ -81,6 +81,11 @@ fetch_verify_oids () {
 		"main2:ghi.txt blobghi"
 }
 
+fetch_shallow_verify_oids () {
+	verify_oids "$1" "dev^{} commitjkl" \
+		"other^{} commitjkl"
+}
+
 push_verify_oids () {
 	fetch_verify_oids "$1" &&
 	verify_oids "$1" "latest latest" \
@@ -135,6 +140,17 @@ test_fetch_push () {
 			;;
 		esac
 	done
+
+	# Always unset the prerequisite first because if it's set twice in a
+	# row, then unsetting it doesn't work properly.
+	test_unset_prereq SHARED_ALGOS
+	if test "$source_algo" = "$dest_algo" && test "$source_compat_algo" = "$dest_compat_algo"
+	then
+		test_set_prereq SHARED_ALGOS
+	elif test "$source_algo" = "$dest_compat_algo" && test "$source_compat_algo" = "$dest_algo"
+	then
+		test_set_prereq SHARED_ALGOS
+	fi
 
 	test_expect_success "$desc: setup" '
 		sane_unset GIT_DEFAULT_HASH &&
@@ -238,6 +254,22 @@ test_fetch_push () {
 			push_verify_oids "$source_compat_algo"
 		)
 	'
+
+	test_expect_success SHARED_ALGOS "$desc: fetch from remote into shallow" '
+		create_repo shallow "$dest_algo" "$dest_compat_algo" &&
+		(
+			cd shallow &&
+			set_config "$fsck" "$large_blob" "$protocol" &&
+			git fetch --depth=1 ../source dev:dev dev:other &&
+			fetch_shallow_verify_oids "$dest_algo" &&
+			fetch_shallow_verify_oids "$dest_compat_algo" &&
+			git fetch --depth=2 ../source dev:dev dev:other &&
+			git fetch --unshallow ../source &&
+			git pull ../source main:main &&
+			fetch_verify_oids "$dest_algo" &&
+			fetch_verify_oids "$dest_compat_algo"
+		)
+	'
 }
 
 test_fetch_push sha1-to-sha1 sha1: sha1: --fsck
@@ -245,5 +277,6 @@ test_fetch_push sha256-to-sha256 sha256: sha256: --fsck
 test_fetch_push sha256-to-sha256-fancy sha256: sha256: --fsck --large-blob 512 --protocol 0
 test_fetch_push sha1-to-sha256-main sha1: sha256:sha1
 test_fetch_push sha1-to-sha256-main-fancy sha1: sha256:sha1 --fsck --large-blob 512 --protocol 0
+test_fetch_push sha1-to-sha256-both sha1:sha256 sha256:sha1
 
 test_done

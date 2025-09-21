@@ -1490,6 +1490,10 @@ static int send_fetch_request(struct fetch_negotiator *negotiator, int fd_out,
 	if (sideband_all)
 		packet_buf_write(&req_buf, "sideband-all");
 
+	if (!*map_hash_algo && the_repository->compat_hash_algo &&
+	    (is_repository_shallow(the_repository) || args->deepen))
+		die(_("remote side does not support shallow clones in compatibility mode"));
+
 	/* Add shallow-info and deepen request */
 	if (server_supports_feature("fetch", "shallow", 0))
 		add_shallow_requests(&req_buf, args, *hash_algo);

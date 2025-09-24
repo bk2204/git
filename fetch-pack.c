@@ -1361,24 +1361,29 @@ static void add_wants(const struct ref *wants, struct strbuf *req_buf)
 	}
 }
 
-static void add_common(struct strbuf *req_buf, struct oidset *common)
+static void add_common(struct strbuf *req_buf, struct oidset *common,
+		       const struct git_hash_algo *algop)
 {
 	struct oidset_iter iter;
 	const struct object_id *oid;
+	struct object_id mapped;
 	oidset_iter_init(common, &iter);
 
 	while ((oid = oidset_iter_next(&iter))) {
-		packet_buf_write(req_buf, "have %s\n", oid_to_hex(oid));
+		if (!repo_oid_to_algop(the_repository, oid, algop, &mapped))
+			packet_buf_write(req_buf, "have %s\n", oid_to_hex(&mapped));
 	}
 }
 
 static int add_haves(struct fetch_negotiator *negotiator,
 		     struct strbuf *req_buf,
 		     int *haves_to_send,
-		     struct oidset *negotiation_include_oids)
+		     struct oidset *negotiation_include_oids,
+		     const struct git_hash_algo *algop)
 {
 	int haves_added = 0;
 	const struct object_id *oid;
+	struct object_id mapped;
 
 	/* Send unconditional haves from --negotiation-include */
 	if (negotiation_include_oids) {
@@ -1396,9 +1401,11 @@ static int add_haves(struct fetch_negotiator *negotiator,
 	}
 
 	while ((oid = negotiator->next(negotiator))) {
-		packet_buf_write(req_buf, "have %s\n", oid_to_hex(oid));
-		if (++haves_added >= *haves_to_send)
-			break;
+		if (!repo_oid_to_algop(the_repository, oid, algop, &mapped)) {
+			packet_buf_write(req_buf, "have %s\n", oid_to_hex(&mapped));
+			if (++haves_added >= *haves_to_send)
+				break;
+		}
 	}
 
 	/* Increase haves to send on next round */
@@ -1528,10 +1535,10 @@ static int send_fetch_request(struct fetch_negotiator *negotiator, int fd_out,
 	add_wants(wants, &req_buf);
 
 	/* Add all of the common commits we've found in previous rounds */
-	add_common(&req_buf, common);
+	add_common(&req_buf, common, *hash_algo);
 
 	haves_added = add_haves(negotiator, &req_buf, haves_to_send,
-			       negotiation_include_oids);
+			       negotiation_include_oids, *hash_algo);
 	*in_vain += haves_added;
 	trace2_data_intmax("negotiation_v2", the_repository, "haves_added", haves_added);
 	trace2_data_intmax("negotiation_v2", the_repository, "in_vain", *in_vain);
@@ -1591,7 +1598,10 @@ static int process_ack(struct fetch_negotiator *negotiator,
 			continue;
 
 		if (skip_prefix(reader->line, "ACK ", &arg)) {
-			if (!get_oid_hex(arg, common_oid)) {
+			struct object_id oid;
+			if (!get_oid_hex_algop(arg, &oid, reader->hash_algo) &&
+			    !repo_oid_to_algop(the_repository, &oid,
+					       the_repository->hash_algo, common_oid)) {
 				struct commit *commit;
 				commit = lookup_commit(the_repository, common_oid);
 				if (negotiator)
@@ -2412,7 +2422,8 @@ void negotiate_using_fetch(const struct oid_array *negotiation_restrict_tips,
 		packet_buf_write(&req_buf, "wait-for-done");
 
 		haves_added = add_haves(&negotiator, &req_buf, &haves_to_send,
-				       &negotiation_include_oids);
+				       &negotiation_include_oids,
+				       reader.hash_algo);
 		in_vain += haves_added;
 		if (!haves_added || (seen_ack && in_vain >= MAX_IN_VAIN))
 			last_iteration = 1;

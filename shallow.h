@@ -43,7 +43,8 @@ struct commit_list *get_shallow_commits(struct object_array *heads,
 struct commit_list *get_shallow_commits_by_rev_list(struct strvec *argv,
 						    int shallow_flag, int not_shallow_flag);
 int write_shallow_commits(struct strbuf *out, int use_pack_protocol,
-			  const struct oid_array *extra);
+			  const struct oid_array *extra,
+			  const struct git_hash_algo *algop);
 
 void setup_alternate_shallow(struct shallow_lock *shallow_lock,
 			     const char **alternate_shallow_file,

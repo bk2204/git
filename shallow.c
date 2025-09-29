@@ -5,6 +5,7 @@
 #include "repository.h"
 #include "tempfile.h"
 #include "lockfile.h"
+#include "object-file-convert.h"
 #include "odb.h"
 #include "commit.h"
 #include "tag.h"
@@ -354,12 +355,17 @@ struct write_shallow_data {
 	int use_pack_protocol;
 	int count;
 	unsigned flags;
+	const struct git_hash_algo *algop;
 };
 
 static int write_one_shallow(const struct commit_graft *graft, void *cb_data)
 {
 	struct write_shallow_data *data = cb_data;
-	const char *hex = oid_to_hex(&graft->oid);
+	struct object_id mapped;
+
+	if (repo_oid_to_algop(the_repository, &graft->oid, data->algop, &mapped))
+		return 0;
+
 	if (graft->nr_parent != -1)
 		return 0;
 	if (data->flags & QUICK) {
@@ -377,9 +383,9 @@ static int write_one_shallow(const struct commit_graft *graft, void *cb_data)
 	}
 	data->count++;
 	if (data->use_pack_protocol)
-		packet_buf_write(data->out, "shallow %s", hex);
+		packet_buf_write(data->out, "shallow %s", oid_to_hex(&mapped));
 	else {
-		strbuf_addstr(data->out, hex);
+		strbuf_add_oid_hex(data->out, &mapped);
 		strbuf_addch(data->out, '\n');
 	}
 	return 0;
@@ -387,12 +393,14 @@ static int write_one_shallow(const struct commit_graft *graft, void *cb_data)
 
 static int write_shallow_commits_1(struct strbuf *out, int use_pack_protocol,
 				   const struct oid_array *extra,
+				   const struct git_hash_algo *algop,
 				   unsigned flags)
 {
 	struct write_shallow_data data = {
 		.out = out,
 		.use_pack_protocol = use_pack_protocol,
 		.flags = flags,
+		.algop = algop,
 	};
 
 	for_each_commit_graft(write_one_shallow, &data);
@@ -407,9 +415,10 @@ static int write_shallow_commits_1(struct strbuf *out, int use_pack_protocol,
 }
 
 int write_shallow_commits(struct strbuf *out, int use_pack_protocol,
-			  const struct oid_array *extra)
+			  const struct oid_array *extra,
+			  const struct git_hash_algo *algop)
 {
-	return write_shallow_commits_1(out, use_pack_protocol, extra, 0);
+	return write_shallow_commits_1(out, use_pack_protocol, extra, algop, 0);
 }
 
 const char *setup_temporary_shallow(const struct oid_array *extra)
@@ -417,7 +426,7 @@ const char *setup_temporary_shallow(const struct oid_array *extra)
 	struct tempfile *temp;
 	struct strbuf sb = STRBUF_INIT;
 
-	if (write_shallow_commits(&sb, 0, extra)) {
+	if (write_shallow_commits(&sb, 0, extra, the_repository->hash_algo)) {
 		char *path = repo_git_path(the_repository, "shallow_XXXXXX");
 		temp = xmks_tempfile(path);
 		free(path);
@@ -447,7 +456,7 @@ void setup_alternate_shallow(struct shallow_lock *shallow_lock,
 				       git_path_shallow(the_repository),
 				       LOCK_DIE_ON_ERROR);
 	check_shallow_file_for_update(the_repository);
-	if (write_shallow_commits(&sb, 0, extra)) {
+	if (write_shallow_commits(&sb, 0, extra, the_repository->hash_algo)) {
 		if (write_in_full(fd, sb.buf, sb.len) < 0)
 			die_errno("failed to write to %s",
 				  get_lock_file_path(&shallow_lock->lock));
@@ -494,7 +503,7 @@ void prune_shallow(unsigned options)
 
 	if (options & PRUNE_SHOW_ONLY) {
 		flags |= VERBOSE;
-		write_shallow_commits_1(&sb, 0, NULL, flags);
+		write_shallow_commits_1(&sb, 0, NULL, the_repository->hash_algo, flags);
 		strbuf_release(&sb);
 		return;
 	}
@@ -502,7 +511,7 @@ void prune_shallow(unsigned options)
 				       git_path_shallow(the_repository),
 				       LOCK_DIE_ON_ERROR);
 	check_shallow_file_for_update(the_repository);
-	if (write_shallow_commits_1(&sb, 0, NULL, flags)) {
+	if (write_shallow_commits_1(&sb, 0, NULL, the_repository->hash_algo, flags)) {
 		if (write_in_full(fd, sb.buf, sb.len) < 0)
 			die_errno("failed to write to %s",
 				  get_lock_file_path(&shallow_lock.lock));

@@ -358,7 +358,8 @@ static void add_oids_to_set(const struct oid_array *array,
 static int find_common(struct fetch_negotiator *negotiator,
 		       struct fetch_pack_args *args,
 		       int fd[2], struct object_id *result_oid,
-		       struct ref *refs)
+		       struct ref *refs,
+		       const struct git_hash_algo *algop)
 {
 	int fetching;
 	int count = 0, flushes = 0, flush_at = INITIAL_FLUSH, retval;
@@ -378,6 +379,8 @@ static int find_common(struct fetch_negotiator *negotiator,
 	packet_reader_init(&reader, fd[0], NULL, 0,
 			   PACKET_READ_CHOMP_NEWLINE |
 			   PACKET_READ_DIE_ON_ERR_PACKET);
+
+	reader.hash_algo = algop;
 
 	mark_tips(negotiator, args->negotiation_restrict_tips);
 	for_each_cached_alternate(negotiator, insert_one_alternate_object);
@@ -440,7 +443,7 @@ static int find_common(struct fetch_negotiator *negotiator,
 	}
 
 	if (is_repository_shallow(the_repository))
-		write_shallow_commits(&req_buf, 1, NULL);
+		write_shallow_commits(&req_buf, 1, NULL, reader.hash_algo);
 	if (args->depth > 0)
 		packet_buf_write(&req_buf, "deepen %d", args->depth);
 	if (args->deepen_since) {
@@ -1271,7 +1274,7 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 		packet_flush(fd[1]);
 		goto all_done;
 	}
-	if (find_common(negotiator, args, fd, &oid, ref) < 0)
+	if (find_common(negotiator, args, fd, &oid, ref, algo) < 0)
 		if (!args->keep_pack)
 			/* When cloning, it is not unusual to have
 			 * no common commit.
@@ -1305,10 +1308,11 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 }
 
 static void add_shallow_requests(struct strbuf *req_buf,
-				 const struct fetch_pack_args *args)
+				 const struct fetch_pack_args *args,
+				 const struct git_hash_algo *algop)
 {
 	if (is_repository_shallow(the_repository))
-		write_shallow_commits(req_buf, 1, NULL);
+		write_shallow_commits(req_buf, 1, NULL, algop);
 	if (args->depth > 0)
 		packet_buf_write(req_buf, "deepen %d", args->depth);
 	if (args->deepen_since) {
@@ -1488,7 +1492,7 @@ static int send_fetch_request(struct fetch_negotiator *negotiator, int fd_out,
 
 	/* Add shallow-info and deepen request */
 	if (server_supports_feature("fetch", "shallow", 0))
-		add_shallow_requests(&req_buf, args);
+		add_shallow_requests(&req_buf, args, *hash_algo);
 	else if (is_repository_shallow(the_repository) || args->deepen)
 		die(_("Server does not support shallow requests"));
 

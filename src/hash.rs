@@ -35,8 +35,8 @@ impl Error for InvalidHashAlgorithm {}
 #[repr(C)]
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct ObjectID {
-    pub hash: [u8; GIT_MAX_RAWSZ],
-    pub algo: u32,
+    hash: [u8; GIT_MAX_RAWSZ],
+    algo: u32,
 }
 
 #[allow(dead_code)]

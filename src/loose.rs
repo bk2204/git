@@ -10,7 +10,7 @@
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, see <https://www.gnu.org/licenses/>.
 
-use crate::hash::{HashAlgorithm, ObjectID, GIT_MAX_RAWSZ};
+use crate::hash::{HashAlgorithm, ObjectID};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::io::{self, Write};
@@ -155,8 +155,14 @@ impl ObjectMemoryMap {
     }
 
     fn last_matching_offset(a: &ObjectID, b: &ObjectID, algop: HashAlgorithm) -> usize {
-        for i in 0..=algop.raw_len() {
-            if a.hash[i] != b.hash[i] {
+        for ((i, ax), bx) in a
+            .as_slice()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .zip(b.as_slice().unwrap())
+        {
+            if ax != bx {
                 return i;
             }
         }
@@ -405,7 +411,7 @@ impl<'a> MmapedObjectMap<'a> {
     ///
     /// If this object is in the map, return the offset in the table for the main algorithm.
     fn look_up_object(&self, oid: &ObjectID) -> Option<usize> {
-        let oid_algo = HashAlgorithm::from_u32(oid.algo)?;
+        let oid_algo = oid.algo().unwrap();
         let params = self.obj_formats.get(&oid_algo)?;
         let short_table =
             &self.memory[params.data_off..params.data_off + (params.shortened_len * self.nitems)];
@@ -453,7 +459,7 @@ impl<'a> MmapedObjectMap<'a> {
     }
 
     fn map_oid(&self, oid: &ObjectID, algo: HashAlgorithm) -> Option<ObjectID> {
-        if algo as u32 == oid.algo {
+        if algo == oid.algo().unwrap() {
             return Some(oid.clone());
         }
 
@@ -464,14 +470,9 @@ impl<'a> MmapedObjectMap<'a> {
     fn oid_from_offset(&self, offset: usize, algo: HashAlgorithm) -> Option<ObjectID> {
         let aparams = self.obj_formats.get(&algo)?;
 
-        let mut hash = [0u8; GIT_MAX_RAWSZ];
         let len = algo.raw_len();
         let oid_off = aparams.full_off + (offset * len);
-        hash[0..len].copy_from_slice(&self.memory[oid_off..oid_off + len]);
-        Some(ObjectID {
-            hash,
-            algo: algo as u32,
-        })
+        Some(ObjectID::new(algo, &self.memory[oid_off..oid_off + len]))
     }
 
     fn u32_at_offset(slice: &[u8], offset: usize) -> u32 {
@@ -583,12 +584,11 @@ impl ObjectMap {
     /// If `write` is true and there is a batch started, write the object into the batch as well as
     /// into the memory map.
     pub fn insert(&mut self, oid1: &ObjectID, oid2: &ObjectID, kind: MapType, write: bool) {
-        let (compat_oid, storage_oid) =
-            if HashAlgorithm::from_u32(oid1.algo) == Some(self.mem.compat) {
-                (oid1, oid2)
-            } else {
-                (oid2, oid1)
-            };
+        let (compat_oid, storage_oid) = if oid1.algo().unwrap() == self.mem.compat {
+            (oid1, oid2)
+        } else {
+            (oid2, oid1)
+        };
         Self::insert_into(&mut self.mem, storage_oid, compat_oid, kind);
         if write {
             if let Some(ref mut batch) = self.batch {
@@ -633,7 +633,7 @@ impl ObjectMap {
         oid: &'a ObjectID,
         algo: HashAlgorithm,
     ) -> Option<&'a ObjectID> {
-        if algo as u32 == oid.algo {
+        if algo == oid.algo().unwrap() {
             return Some(oid);
         }
         let entry = self.map_object(oid, algo);
@@ -645,7 +645,6 @@ impl ObjectMap {
 mod tests {
     use super::{MapType, MmapedObjectMap, ObjectMap, ObjectMemoryMap};
     use crate::hash::{CryptoDigest, CryptoHasher, HashAlgorithm, ObjectID};
-    use std::convert::TryInto;
     use std::io::{self, Cursor, Write};
 
     struct TrailingWriter {
@@ -685,20 +684,12 @@ mod tests {
 
     fn sha1_oid(b: &[u8]) -> ObjectID {
         assert_eq!(b.len(), 20);
-        let mut data = [0u8; 32];
-        data[0..20].copy_from_slice(b);
-        ObjectID {
-            hash: data,
-            algo: HashAlgorithm::SHA1 as u32,
-        }
+        ObjectID::new(HashAlgorithm::SHA1, b)
     }
 
     fn sha256_oid(b: &[u8]) -> ObjectID {
         assert_eq!(b.len(), 32);
-        ObjectID {
-            hash: b.try_into().unwrap(),
-            algo: HashAlgorithm::SHA256 as u32,
-        }
+        ObjectID::new(HashAlgorithm::SHA256, b)
     }
 
     #[allow(clippy::type_complexity)]
@@ -789,10 +780,7 @@ mod tests {
         }
 
         for octet in &[0x00u8, 0x6d, 0x6e, 0x8a, 0xff] {
-            let missing_oid = ObjectID {
-                hash: [*octet; 32],
-                algo: HashAlgorithm::SHA256 as u32,
-            };
+            let missing_oid = ObjectID::new(HashAlgorithm::SHA256, &[*octet; 32]);
 
             assert!(map.map_object(&missing_oid, HashAlgorithm::SHA1).is_none());
             assert!(map.map_oid(&missing_oid, HashAlgorithm::SHA1).is_none());
@@ -842,10 +830,7 @@ mod tests {
         let s256 = sha256_oid(entries[0].2);
         let s1 = sha1_oid(entries[0].1);
 
-        let missing_oid = ObjectID {
-            hash: [0xffu8; 32],
-            algo: HashAlgorithm::SHA256 as u32,
-        };
+        let missing_oid = ObjectID::new(HashAlgorithm::SHA256, &[0xffu8; 32]);
 
         let res = map.map_object(&s256, HashAlgorithm::SHA1).unwrap();
         assert_eq!(res.oid, s1);
@@ -1135,7 +1120,7 @@ pub mod c {
             None => return -1,
         };
 
-        if src.algo == to {
+        if src.algo().unwrap() as u32 == to {
             *dest = src.clone();
             return 0;
         }
@@ -1176,7 +1161,7 @@ pub mod c {
             None => return -1,
         };
 
-        if src.algo == to {
+        if src.algo().unwrap() as u32 == to {
             *dest = src.clone();
             return 0;
         }

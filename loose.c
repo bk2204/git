@@ -32,7 +32,7 @@ void repo_loose_object_map_start_batch_1(void *map);
 void repo_loose_object_map_abort_batch_1(void *map);
 int64_t repo_loose_object_map_batch_len_1(const void *map);
 
-typedef int loose_object_map_bin_for_each_fn(const struct object_id *main, const struct object_id *compat, void *data);
+typedef int loose_object_map_bin_for_each_fn(const struct object_id *main, const struct object_id *compat, uint32_t, void *data);
 
 int loose_object_map_bin_init_1(void **map, const uint8_t *buf,
 				size_t len, uint32_t storage);
@@ -137,7 +137,9 @@ struct loose_object_map_data {
 };
 
 static int insert_cached_objects(const struct object_id *main UNUSED,
-				 const struct object_id *compat, void *data)
+				 const struct object_id *compat,
+				 uint32_t kind UNUSED,
+				 void *data)
 {
 	oidtree_insert(data, compat, NULL);
 	return 0;

@@ -212,7 +212,7 @@ pub struct MmapedObjectMapIter<'a> {
 }
 
 impl<'a> Iterator for MmapedObjectMapIter<'a> {
-    type Item = Vec<ObjectID>;
+    type Item = (Vec<ObjectID>, MapType);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset >= self.source.nitems {
@@ -229,7 +229,7 @@ impl<'a> Iterator for MmapedObjectMapIter<'a> {
         if v.len() != self.algos.len() {
             return None;
         }
-        Some(v)
+        Some((v, self.source.meta_type_from_offset(offset)?))
     }
 }
 
@@ -475,6 +475,15 @@ impl<'a> MmapedObjectMap<'a> {
         Some(ObjectID::new(algo, &self.memory[oid_off..oid_off + len]))
     }
 
+    fn meta_type_from_offset(&self, offset: usize) -> Option<MapType> {
+        let meta = MapType::from_u32(Self::u32_at_offset(
+            self.memory,
+            self.meta_off + (offset * 4),
+        ))?;
+
+        Some(meta)
+    }
+
     fn u32_at_offset(slice: &[u8], offset: usize) -> u32 {
         u32::from_be_bytes(slice[offset..offset + 4].try_into().unwrap())
     }
@@ -645,6 +654,7 @@ impl ObjectMap {
 mod tests {
     use super::{MapType, MmapedObjectMap, ObjectMap, ObjectMemoryMap};
     use crate::hash::{CryptoDigest, CryptoHasher, HashAlgorithm, ObjectID};
+    use std::collections::BTreeSet;
     use std::io::{self, Cursor, Write};
 
     struct TrailingWriter {
@@ -790,6 +800,28 @@ mod tests {
                 missing_oid
             );
         }
+    }
+
+    #[test]
+    fn iterates_over_bin_maps() {
+        let mut map = test_map(true);
+        let mut wrtr = TrailingWriter::new();
+        map.finish_batch(&mut wrtr).unwrap();
+
+        assert!(!map.has_batch());
+
+        let data = wrtr.finalize();
+        let entries = test_entries();
+        let mut items = entries
+            .iter()
+            .map(|ent| (sha1_oid(ent.1), sha256_oid(ent.2), ent.3))
+            .collect::<BTreeSet<_>>();
+        let map = MmapedObjectMap::new(&data, HashAlgorithm::SHA256).unwrap();
+
+        for (oids, kind) in map.iter() {
+            items.remove(&(oids[1].clone(), oids[0].clone(), kind));
+        }
+        assert_eq!(items.len(), 0, "{:?} is empty", items);
     }
 
     #[test]
@@ -972,7 +1004,7 @@ pub mod c {
     #[no_mangle]
     pub unsafe extern "C" fn loose_object_map_bin_for_each_1(
         map: *mut c_void,
-        f: extern "C" fn(*const ObjectID, *const ObjectID, *mut c_void) -> c_int,
+        f: extern "C" fn(*const ObjectID, *const ObjectID, u32, *mut c_void) -> c_int,
         data: *mut c_void,
     ) -> c_int {
         if map.is_null() {
@@ -982,10 +1014,11 @@ pub mod c {
         let map = map as *const MmapedObjectMap;
         let map = unsafe { &*map };
 
-        for oids in map.iter() {
+        for (oids, kind) in map.iter() {
             let res = f(
                 &oids[0] as *const ObjectID,
                 &oids[1] as *const ObjectID,
+                kind as u32,
                 data,
             );
             if res != 0 {

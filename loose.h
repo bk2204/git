@@ -52,7 +52,7 @@ int repo_loose_object_map_oid(struct repository *repo,
 
 bool repo_loose_object_map_has_batch(struct odb_source_loose *loose);
 void repo_loose_object_map_start_batch(struct odb_source_loose *loose);
-int repo_loose_object_map_finish_batch(struct odb_source_loose *loose, bool noop_ok);
+int repo_loose_object_map_finish_batch(struct odb_source_loose *loose, bool noop_ok, char **file);
 int64_t repo_loose_object_map_batch_len(struct odb_source_loose *loose);
 
 void loose_object_map_bin_init(struct loose_object_map_bin **map);

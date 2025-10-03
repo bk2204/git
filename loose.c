@@ -292,7 +292,7 @@ int repo_clear_loose_object_map(struct repository *repo)
 }
 
 #ifdef WITH_RUST
-static int repo_write_loose_object_map(struct repository *repo, void *map)
+static int repo_write_loose_object_map(struct repository *repo, void *map, char **file)
 {
 	int fd;
 	struct strbuf path = STRBUF_INIT, final = STRBUF_INIT;
@@ -320,7 +320,10 @@ static int repo_write_loose_object_map(struct repository *repo, void *map)
 	ret = 0;
 out:
 	strbuf_release(&path);
-	strbuf_release(&final);
+	if (file)
+		*file = strbuf_detach(&final, NULL);
+	else
+		strbuf_release(&final);
 	return ret;
 }
 #endif
@@ -361,7 +364,7 @@ int repo_add_loose_object_map(struct odb_source *source MAYBE_UNUSED,
 					flags & LOOSE_TYPE_MASK, flags & LOOSE_WRITE))
 		return error(_("failed to insert object in loose object map"));
 
-	if (started_batch && repo_loose_object_map_finish_batch(source, false)) {
+	if (started_batch && repo_loose_object_map_finish_batch(source, false, NULL)) {
 		return error(_("failed to write loose object map"));
 	}
 
@@ -394,7 +397,8 @@ void repo_loose_object_map_start_batch(struct odb_source *source MAYBE_UNUSED)
 }
 
 int repo_loose_object_map_finish_batch(struct odb_source *source MAYBE_UNUSED,
-				       bool noop_ok MAYBE_UNUSED)
+				       bool noop_ok MAYBE_UNUSED,
+				       char **file MAYBE_UNUSED)
 {
 #ifdef WITH_RUST
 	struct odb_source_files *files = odb_source_files_downcast(source);
@@ -405,7 +409,8 @@ int repo_loose_object_map_finish_batch(struct odb_source *source MAYBE_UNUSED,
 	}
 
 	return repo_write_loose_object_map(files->loose->base.odb->repo,
-					   files->loose->map);
+					   files->loose->map,
+					   file);
 #else
 	return 0;
 #endif

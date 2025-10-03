@@ -28,6 +28,7 @@
 #include "strvec.h"
 #include "commit.h"
 #include "commit-graph.h"
+#include "loose.h"
 #include "packfile.h"
 #include "object-file.h"
 #include "pack.h"
@@ -37,6 +38,7 @@
 #include "repack.h"
 #include "rerere.h"
 #include "revision.h"
+#include "string-list.h"
 #include "blob.h"
 #include "tree.h"
 #include "promisor-remote.h"
@@ -131,6 +133,7 @@ struct gc_config {
 	int aggressive_depth;
 	int aggressive_window;
 	int gc_auto_threshold;
+	int gc_auto_loose_map_limit;
 	int gc_auto_pack_limit;
 	int detach_auto;
 	char *gc_log_expire;
@@ -156,6 +159,7 @@ struct gc_config {
 	.aggressive_window = 250, \
 	.gc_auto_threshold = 6700, \
 	.gc_auto_pack_limit = 50, \
+	.gc_auto_loose_map_limit = 200, \
 	.detach_auto = 1, \
 	.gc_log_expire = xstrdup("1.day.ago"), \
 	.prune_expire = xstrdup("2.weeks.ago"), \
@@ -194,6 +198,7 @@ static void gc_config(struct gc_config *cfg)
 	repo_config_get_int(the_repository, "gc.aggressivedepth", &cfg->aggressive_depth);
 	repo_config_get_int(the_repository, "gc.auto", &cfg->gc_auto_threshold);
 	repo_config_get_int(the_repository, "gc.autopacklimit", &cfg->gc_auto_pack_limit);
+	repo_config_get_int(the_repository, "gc.autoloosemaplimit", &cfg->gc_auto_loose_map_limit);
 	repo_config_get_bool(the_repository, "gc.autodetach", &cfg->detach_auto);
 	repo_config_get_bool(the_repository, "gc.cruftpacks", &cfg->cruft_packs);
 	repo_config_get_ulong(the_repository, "gc.maxcruftsize", &cfg->max_cruft_size);
@@ -426,6 +431,88 @@ out:
 	return should_prune;
 }
 
+#ifdef WITH_RUST
+static int repack_oid_map_object(const struct object_id *main,
+				 const struct object_id *compat, uint32_t flags,
+				 void *data)
+{
+	uint32_t type = flags & LOOSE_TYPE_MASK;
+
+	/* Don't include now-removed loose objects we've just packed. */
+	if (type == LOOSE_TYPE_LOOSE && !odb_source_loose_has_object(data, main))
+		return 0;
+	/* Don't include the empty tree, empty blob, or null OIDs. */
+	if (type == LOOSE_TYPE_RESERVED)
+		return 0;
+	return repo_add_loose_object_map(data, main, compat,
+					 LOOSE_WRITE | flags);
+
+}
+#endif
+
+static int maintenance_task_loose_map_gc(struct maintenance_run_opts *opts UNUSED,
+					 struct gc_config *cfg UNUSED)
+{
+#ifdef WITH_RUST
+	struct repository *repo = the_repository;
+	struct odb_source *source = repo->objects->sources;
+	struct odb_source_files *files = odb_source_files_downcast(source);
+	struct string_list to_remove = STRING_LIST_INIT_DUP;
+	struct loose_object_map_bin *bin = files->loose->map_bin;
+	struct loose_object_map_bin_entry *entry, *cur;
+	char *dest_file = NULL;
+
+	if (!bin)
+		return 0;
+
+	repo_loose_object_map_start_batch(source);
+
+	for (entry = bin->entries; entry; entry = entry->next) {
+		if (loose_object_map_bin_for_each(entry, repack_oid_map_object, source))
+			return error(_("cannot insert object ID when repacking loose object map"));
+		string_list_insert(&to_remove, entry->name);
+	}
+	string_list_sort(&to_remove);
+
+	if (repo_loose_object_map_finish_batch(source, true, &dest_file))
+		return error(_("cannot write loose object map batch while repacking loose object map"));
+
+	for (entry = bin->entries; entry;) {
+		cur = entry;
+		entry = entry->next;
+
+		if (string_list_has_string(&to_remove, cur->name)) {
+			bool update = cur == bin->entries;
+
+			loose_object_map_bin_entry_clear(&cur);
+
+			if (update)
+				bin->entries = entry;
+		}
+	}
+
+	for (size_t i = 0; i < to_remove.nr; i++) {
+		/*
+		 * If we wrote a new file that happened to be the same as an
+		 * existing one, don't delete it.
+		 */
+		if (!dest_file || strcmp(to_remove.items[i].string, dest_file))
+			unlink_or_warn(to_remove.items[i].string);
+	}
+	free(dest_file);
+	string_list_clear(&to_remove, 0);
+
+	/*
+	 * We've just closed, freed, and unlinked every loose object map except
+	 * for the one we just created, so be sure to re-read the new repacked
+	 * map so we can map objects correctly.
+	 *
+	 */
+	repo_read_loose_object_map(repo);
+#endif
+	return 0;
+}
+
 static int maintenance_task_rerere_gc(struct maintenance_run_opts *opts UNUSED,
 				      struct gc_config *cfg UNUSED)
 {
@@ -462,6 +549,40 @@ out:
 	if (dir)
 		closedir(dir);
 	return should_gc;
+}
+
+static bool too_many_loose_object_maps(struct gc_config *cfg)
+{
+	DIR *dir;
+	struct dirent *ent;
+	int num_loose = 0;
+	bool needed = false;
+	const unsigned hexsz = the_hash_algo->hexsz;
+	char *path;
+
+	path = repo_git_path(the_repository, "objects/object-map");
+	dir = opendir(path);
+	free(path);
+	if (!dir)
+		return false;
+
+	if (!cfg->gc_auto_loose_map_limit)
+		return false;
+
+	while ((ent = readdir(dir)) != NULL) {
+		if (strlen(ent->d_name) != 4 + 4 + hexsz)
+			continue;
+		if (strncmp(ent->d_name, "map-", 4) ||
+		    strspn(ent->d_name + 4, "0123456789abcdef") != hexsz ||
+		    strncmp(ent->d_name + 4 + hexsz, ".map", 4) != '\0')
+			continue;
+		if (++num_loose > cfg->gc_auto_loose_map_limit) {
+			needed = true;
+			break;
+		}
+	}
+	closedir(dir);
+	return needed;
 }
 
 static int too_many_loose_objects(int limit)
@@ -706,7 +827,7 @@ static int need_to_gc(struct gc_config *cfg, struct strvec *repack_args)
 		string_list_clear(&keep_pack, 0);
 	} else if (too_many_loose_objects(cfg->gc_auto_threshold))
 		add_repack_incremental_option(repack_args);
-	else
+	else if (!too_many_loose_object_maps(cfg))
 		return 0;
 
 	if (run_hooks(the_repository, "pre-auto-gc"))
@@ -1045,6 +1166,9 @@ int cmd_gc(int argc,
 
 	if (maintenance_task_rerere_gc(&opts, &cfg))
 		die(FAILED_RUN, "rerere");
+
+	if (maintenance_task_loose_map_gc(&opts, &cfg))
+		die(FAILED_RUN, "object-map");
 
 	report_garbage = report_pack_garbage;
 	odb_reprepare(the_repository->objects);

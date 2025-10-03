@@ -145,7 +145,31 @@ test_expect_success 'auto gc with too many loose objects does not attempt to cre
 	comm -1 -3 existing_packs post_packs >new &&
 	comm -2 -3 existing_packs post_packs >del &&
 	test_line_count = 0 del && # No packs are deleted
-	test_line_count = 1 new # There is one new pack
+	test_line_count = 1 new && # There is one new pack
+	if test_have_prereq COMPAT_HASH
+	then
+		ls .git/objects/object-map/map-*.map | sort >maps &&
+		test_line_count -le 1 maps # There are either zero or one maps
+	fi
+'
+
+test_expect_success COMPAT_HASH 'gc packs loose object maps' '
+	git init lom &&
+	(
+		cd lom &&
+		echo abc >example &&
+		git add example &&
+		echo def >example &&
+		git add example &&
+		test_commit commit &&
+		ls .git/objects/object-map/map-*.map | sort >maps &&
+		test_line_count -gt 1 maps &&
+		git gc --no-cruft 2>err &&
+		find .git/objects &&
+		test_grep ! "^warning:" err &&
+		ls .git/objects/object-map/map-*.map | sort >maps &&
+		test_line_count = 1 maps
+	)
 '
 
 test_expect_success 'gc --no-quiet' '

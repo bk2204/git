@@ -38,6 +38,13 @@ gc.autoPackLimit::
 See the `gc.bigPackThreshold` configuration variable below. When in
 use, it'll affect how the auto pack limit works.
 
+gc.autoLooseMapLimit::
+	When there are more than this many loose object maps in the repository,
+	`git gc --auto` consolidates them into one larger loose object map.
+	The default value is 50.
+	Setting this to 0 disables it.
+	Setting `gc.auto` to 0 will also disable this.
+
 gc.autoDetach::
 	Make `git gc --auto` return immediately and run in the background
 	if the system supports it. Default is true. This config variable acts

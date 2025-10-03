@@ -64,4 +64,12 @@ void loose_object_map_bin_clear(struct loose_object_map_bin **map);
 typedef void each_file_in_loose_map_fn(const char *full_path, size_t full_path_len,
 				       const char *file_name, void *data);
 
+typedef int loose_object_map_bin_for_each_fn(const struct object_id *main, const struct object_id *compat, uint32_t, void *data);
+
+#ifdef WITH_RUST
+int loose_object_map_bin_for_each(struct loose_object_map_bin_entry *entry,
+				  loose_object_map_bin_for_each_fn fn, void *data);
+#endif
+void loose_object_map_bin_entry_clear(struct loose_object_map_bin_entry **ent);
+
 #endif

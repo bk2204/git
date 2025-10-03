@@ -32,8 +32,6 @@ void repo_loose_object_map_start_batch_1(void *map);
 void repo_loose_object_map_abort_batch_1(void *map);
 int64_t repo_loose_object_map_batch_len_1(const void *map);
 
-typedef int loose_object_map_bin_for_each_fn(const struct object_id *main, const struct object_id *compat, uint32_t, void *data);
-
 int loose_object_map_bin_init_1(void **map, const uint8_t *buf,
 				size_t len, uint32_t storage);
 int loose_object_map_oid_bin_1(const void *map, const void *src,
@@ -145,6 +143,12 @@ static int insert_cached_objects(const struct object_id *main UNUSED,
 	return 0;
 }
 
+int loose_object_map_bin_for_each(struct loose_object_map_bin_entry *entry,
+				  loose_object_map_bin_for_each_fn fn, void *data)
+{
+	return loose_object_map_bin_for_each_1(entry->ptr, fn, data);
+}
+
 static void prepare_loose_object_map_bin(const char *full_name,
 					 size_t full_name_len,
 					 const char *file_name UNUSED, void *data)
@@ -184,7 +188,7 @@ static void prepare_loose_object_map_bin(const char *full_name,
 		goto out;
 	}
 
-	loose_object_map_bin_for_each_1(new->ptr, insert_cached_objects, files->loose->cache);
+	loose_object_map_bin_for_each(new, insert_cached_objects, files->loose->cache);
 
 	new->next = entry;
 	bin->entries = new;

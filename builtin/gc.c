@@ -28,6 +28,7 @@
 #include "strvec.h"
 #include "commit.h"
 #include "commit-graph.h"
+#include "loose.h"
 #include "packfile.h"
 #include "object-file.h"
 #include "odb.h"

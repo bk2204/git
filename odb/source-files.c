@@ -367,6 +367,41 @@ static struct packed_git *find_base_packs(struct odb_source_files *files,
 	return base;
 }
 
+static bool too_many_object_maps(struct odb_source_files *files, int limit)
+{
+	DIR *dir;
+	struct dirent *ent;
+	int num_loose = 0;
+	bool needed = false;
+	struct repository *repo = files->base.odb->repo;
+	const unsigned hexsz = repo->hash_algo->hexsz;
+	char *path;
+
+	path = repo_git_path(repo, "objects/object-map");
+	dir = opendir(path);
+	free(path);
+	if (!dir)
+		return false;
+
+	if (!limit)
+		return false;
+
+	while ((ent = readdir(dir)) != NULL) {
+		if (strlen(ent->d_name) != 4 + 4 + hexsz)
+			continue;
+		if (strncmp(ent->d_name, "map-", 4) ||
+		    strspn(ent->d_name + 4, "0123456789abcdef") != hexsz ||
+		    strncmp(ent->d_name + 4 + hexsz, ".map", 4) != '\0')
+			continue;
+		if (++num_loose > limit) {
+			needed = true;
+			break;
+		}
+	}
+	closedir(dir);
+	return needed;
+}
+
 static int too_many_packs(struct odb_source_files *files, int gc_auto_pack_limit)
 {
 	struct packfile_list_entry *e;
@@ -549,9 +584,11 @@ bool odb_source_files_optimize_required(struct odb_source *source,
 	case ODB_OPTIMIZE_INCREMENTAL: {
 		int gc_auto_threshold = 6700;
 		int gc_auto_pack_limit = 50;
+		int gc_auto_object_map_limit = 200;
 
 		repo_config_get_int(repo, "gc.auto", &gc_auto_threshold);
 		repo_config_get_int(repo, "gc.autopacklimit", &gc_auto_pack_limit);
+		repo_config_get_int(repo, "gc.autoobjectmaplimit", &gc_auto_object_map_limit);
 
 		/*
 		 * Setting gc.auto to 0 or negative can disable the
@@ -560,7 +597,8 @@ bool odb_source_files_optimize_required(struct odb_source *source,
 		if (gc_auto_threshold <= 0)
 			return false;
 		if (!too_many_packs(files, gc_auto_pack_limit) &&
-		    !too_many_loose_objects(files, gc_auto_threshold))
+		    !too_many_loose_objects(files, gc_auto_threshold) &&
+		    !too_many_object_maps(files, gc_auto_object_map_limit))
 			return false;
 
 		return true;
@@ -622,6 +660,91 @@ bool odb_source_files_optimize_required(struct odb_source *source,
 	}
 }
 
+#ifdef WITH_RUST
+static inline int odb_source_files_write_oid_map(struct odb_source *source,
+						 const struct object_id *oid,
+						 const struct object_id *compat_oid,
+						 enum odb_write_oid_map_flags flags);
+
+static int repack_oid_map_object(const struct object_id *main,
+				 const struct object_id *compat, uint32_t flags,
+				 void *data)
+{
+	uint32_t type = flags & OBJ_MAP_TYPE_MASK;
+
+	/* Don't include now-removed loose objects we've just packed. */
+	if (type == OBJ_MAP_TYPE_LOOSE && !odb_has_object(data, main, 0))
+		return 0;
+	/* Don't include the empty tree, empty blob, or null OIDs. */
+	if (type == OBJ_MAP_TYPE_RESERVED)
+		return 0;
+	return odb_source_files_write_oid_map(data, main, compat,
+					      OBJ_MAP_WRITE | flags);
+
+}
+#endif
+
+static int odb_source_files_optimize_object_map(struct odb_source *source)
+{
+#ifdef WITH_RUST
+	struct odb_source_files *files = odb_source_files_downcast(source);
+	struct odb_source_loose *loose = files->loose;
+	struct string_list to_remove = STRING_LIST_INIT_DUP;
+	struct loose_object_map_bin *bin = files->loose->map_bin;
+	struct loose_object_map_bin_entry *entry, *cur;
+	char *dest_file = NULL;
+
+	if (!bin)
+		return 0;
+
+	repo_loose_object_map_start_batch(loose);
+
+	for (entry = bin->entries; entry; entry = entry->next) {
+		if (loose_object_map_bin_for_each(entry, repack_oid_map_object, source))
+			return error(_("cannot insert object ID when repacking loose object map"));
+		string_list_insert(&to_remove, entry->name);
+	}
+	string_list_sort(&to_remove);
+
+	if (repo_loose_object_map_finish_batch(loose, true, &dest_file))
+		return error(_("cannot write object map batch while repacking loose object map"));
+
+	for (entry = bin->entries; entry;) {
+		cur = entry;
+		entry = entry->next;
+
+		if (string_list_has_string(&to_remove, cur->name)) {
+			bool update = cur == bin->entries;
+
+			loose_object_map_bin_entry_clear(&cur);
+
+			if (update)
+				bin->entries = entry;
+		}
+	}
+
+	for (size_t i = 0; i < to_remove.nr; i++) {
+		/*
+		 * If we wrote a new file that happened to be the same as an
+		 * existing one, don't delete it.
+		 */
+		if (!dest_file || strcmp(to_remove.items[i].string, dest_file))
+			unlink_or_warn(to_remove.items[i].string);
+	}
+	free(dest_file);
+	string_list_clear(&to_remove, 0);
+
+	/*
+	 * We've just closed, freed, and unlinked every loose object map except
+	 * for the one we just created, so be sure to re-read the new repacked
+	 * map so we can map objects correctly.
+	 *
+	 */
+	loose_object_map_load(loose, 0);
+#endif
+	return 0;
+}
+
 int odb_source_files_optimize(struct odb_source *source,
 			      const struct odb_optimize_options *opts)
 {
@@ -631,10 +754,12 @@ int odb_source_files_optimize(struct odb_source *source,
 	unsigned long big_pack_threshold = 0;
 	int gc_auto_threshold = 6700;
 	int gc_auto_pack_limit = 50;
+	int gc_auto_object_map_limit = 200;
 	int ret;
 
 	repo_config_get_int(repo, "gc.auto", &gc_auto_threshold);
 	repo_config_get_int(repo, "gc.autopacklimit", &gc_auto_pack_limit);
+	repo_config_get_int(repo, "gc.autoobjectmaplimit", &gc_auto_object_map_limit);
 	repo_config_get_ulong(repo, "gc.bigpackthreshold", &big_pack_threshold);
 
 	if (repo->repository_format_precious_objects)
@@ -710,6 +835,8 @@ int odb_source_files_optimize(struct odb_source *source,
 				add_repack_incremental_option(&repack_cmd.args);
 			}
 		}
+		if (too_many_object_maps(files, gc_auto_object_map_limit))
+			odb_source_files_optimize_object_map(source);
 
 		break;
 	case ODB_OPTIMIZE_GEOMETRIC: {

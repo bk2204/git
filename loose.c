@@ -96,6 +96,29 @@ void loose_object_map_bin_init(struct loose_object_map_bin **map)
 	*map = m;
 }
 
+void loose_object_map_bin_entry_clear(struct loose_object_map_bin_entry **ent)
+{
+	struct loose_object_map_bin_entry *entry;
+
+	if (!ent || !*ent)
+		return;
+
+	entry = *ent;
+	/*
+	 * The Rust code holds onto the memory, so de-allocate the Rust
+	 * objects before unmapping the memory.
+	 */
+#ifdef WITH_RUST
+	loose_object_map_bin_clear_1(&entry->ptr);
+#endif
+	munmap(entry->mem, entry->size);
+	free(entry->name);
+	close(entry->fd);
+	free(entry);
+
+	*ent = NULL;
+}
+
 void loose_object_map_bin_clear(struct loose_object_map_bin **map)
 {
 	struct loose_object_map_bin *m = *map;
@@ -107,15 +130,8 @@ void loose_object_map_bin_clear(struct loose_object_map_bin **map)
 	loose_object_map_bin_hashmap_clear(&m->hashmap);
 	for (struct loose_object_map_bin_entry *cur, *entry = m->entries; entry;) {
 		cur = entry;
-		/*
-		 * The Rust code holds onto the memory, so de-allocate the Rust
-		 * objects before unmapping the memory.
-		 */
-		loose_object_map_bin_clear_1(&entry->ptr);
-		munmap(entry->mem, entry->size);
-		close(entry->fd);
 		entry = entry->next;
-		free(cur);
+		loose_object_map_bin_entry_clear(&cur);
 	}
 #endif
 

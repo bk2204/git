@@ -70,4 +70,12 @@ int source_add_loose_object_map(struct odb_source_loose *loose,
 				const struct object_id *compat_oid,
 				int flags);
 
+typedef int loose_object_map_bin_for_each_fn(const struct object_id *main, const struct object_id *compat, uint32_t, void *data);
+
+#ifdef WITH_RUST
+int loose_object_map_bin_for_each(struct loose_object_map_bin_entry *entry,
+				  loose_object_map_bin_for_each_fn fn, void *data);
+#endif
+void loose_object_map_bin_entry_clear(struct loose_object_map_bin_entry **ent);
+
 #endif

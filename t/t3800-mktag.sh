@@ -34,7 +34,7 @@ check_verify_failure () {
 
 	test_expect_success "fail with [--[no-]strict]: $subject" '
 		test_must_fail git mktag <tag.sig 2>err &&
-		if test -z "$no_strict"
+		if test -z "$no_strict" || ! test_have_prereq BROKEN_OBJECTS
 		then
 			test_must_fail git mktag <tag.sig 2>err2 &&
 			test_cmp err err2
@@ -43,7 +43,7 @@ check_verify_failure () {
 		fi
 	'
 
-	test_expect_success "setup: $subject" '
+	test_expect_success BROKEN_OBJECTS "setup: $subject" '
 		tag_ref=refs/tags/bad_tag &&
 
 		# Reset any leftover state from the last $subject
@@ -53,7 +53,7 @@ check_verify_failure () {
 		bad_tag=$(git -C bad-tag hash-object -t tag -w --stdin --literally <tag.sig)
 	'
 
-	test_expect_success "hash-object & fsck unreachable: $subject" '
+	test_expect_success BROKEN_OBJECTS "hash-object & fsck unreachable: $subject" '
 		if test -n "$fsck_obj_ok"
 		then
 			git -C bad-tag fsck
@@ -62,7 +62,7 @@ check_verify_failure () {
 		fi
 	'
 
-	test_expect_success "update-ref & fsck reachable: $subject" '
+	test_expect_success BROKEN_OBJECTS "update-ref & fsck reachable: $subject" '
 		# Make sure the earlier test created it for us
 		git rev-parse "$bad_tag" &&
 
@@ -80,7 +80,7 @@ check_verify_failure () {
 		test_must_fail git -C bad-tag fsck
 	'
 
-	test_expect_success "for-each-ref: $subject" '
+	test_expect_success BROKEN_OBJECTS "for-each-ref: $subject" '
 		# Make sure the earlier test created it for us
 		git rev-parse "$bad_tag" &&
 
@@ -94,7 +94,7 @@ check_verify_failure () {
 		test_must_fail git -C bad-tag for-each-ref --format="%(*objectname)"
 	'
 
-	test_expect_success "fast-export & fast-import: $subject" '
+	test_expect_success BROKEN_OBJECTS "fast-export & fast-import: $subject" '
 		# Make sure the earlier test created it for us
 		git rev-parse "$bad_tag" &&
 

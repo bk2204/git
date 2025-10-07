@@ -111,6 +111,7 @@ struct upload_pack_data {
 	unsigned no_done : 1;					/* v0 only */
 	unsigned daemon_mode : 1;				/* v0 only */
 	unsigned filter_capability_requested : 1;		/* v0 only */
+	unsigned advertise_object_format_map : 1;		/* v0 only */
 
 	unsigned use_thin_pack : 1;
 	unsigned use_ofs_delta : 1;
@@ -161,6 +162,7 @@ static void upload_pack_data_init(struct upload_pack_data *data)
 
 	data->keepalive = 5;
 	data->advertise_sid = 0;
+	data->advertise_object_format_map = 1;
 }
 
 static void upload_pack_data_clear(struct upload_pack_data *data)
@@ -205,6 +207,10 @@ static void send_client_data(int fd, const char *data, ssize_t sz,
 	}
 	write_or_die(fd, data, sz);
 }
+
+static void send_object_map_info(struct upload_pack_data *data,
+				 const struct git_hash_algo *map_algo,
+				 bool header);
 
 static int write_one_shallow(const struct commit_graft *graft, void *cb_data)
 {
@@ -1164,7 +1170,7 @@ static void receive_needs(struct upload_pack_data *data,
 		const char *features;
 		struct object_id oid_buf;
 		const char *arg;
-		size_t feature_len;
+		size_t feature_len, map_len;
 
 		reset_timeout(data->timeout);
 		if (packet_reader_read(reader) != PACKET_READ_NORMAL)
@@ -1224,6 +1230,18 @@ static void receive_needs(struct upload_pack_data *data,
 			free(client_sid);
 		}
 
+		arg = parse_feature_value(features, "object-format-map", &map_len, NULL);
+		if (arg) {
+			char *wanted_algo_s = xstrndup(arg, map_len);
+			int wanted_algo = hash_algo_by_name(wanted_algo_s);
+			if (wanted_algo == GIT_HASH_UNKNOWN ||
+			    !the_repository->compat_hash_algo ||
+			    wanted_algo != hash_algo_by_ptr(the_repository->compat_hash_algo))
+			    die("git upload-pack: unsupported object format for mapping");
+			reader->map_hash_algo = &hash_algos[wanted_algo];
+			free(wanted_algo_s);
+		}
+
 		o = parse_object_with_flags(the_repository, &oid_buf,
 					    PARSE_OBJECT_SKIP_HASH_CHECK |
 					    PARSE_OBJECT_DISCARD_TREE);
@@ -1260,6 +1278,7 @@ static void receive_needs(struct upload_pack_data *data,
 		return;
 
 	if (compute_shallow_list(data)) {
+		send_object_map_info(data, reader->map_hash_algo, false);
 		send_shallow_list(data);
 		packet_flush(1);
 	}
@@ -1298,6 +1317,14 @@ static void format_symref_info(struct strbuf *buf, struct string_list *symref)
 		strbuf_addf(buf, " symref=%s:%s", item->string, (char *)item->util);
 }
 
+static void format_object_format_map(struct strbuf *buf,
+				     struct upload_pack_data *d,
+				     const struct git_hash_algo *compat_algo)
+{
+	if (d->advertise_object_format_map && compat_algo)
+		strbuf_addf(buf, " object-format-map=%s", compat_algo->name);
+}
+
 static void format_session_id(struct strbuf *buf, struct upload_pack_data *d) {
 	if (d->advertise_sid)
 		strbuf_addf(buf, " session-id=%s", trace2_session_id());
@@ -1318,10 +1345,13 @@ static void write_v0_ref(struct upload_pack_data *data,
 	if (capabilities) {
 		struct strbuf symref_info = STRBUF_INIT;
 		struct strbuf session_id = STRBUF_INIT;
+		struct strbuf object_format_map = STRBUF_INIT;
 
 		format_symref_info(&symref_info, &data->symref);
 		format_session_id(&session_id, data);
-		packet_fwrite_fmt(stdout, "%s %s%c%s%s%s%s%s%s%s object-format=%s agent=%s\n",
+		format_object_format_map(&object_format_map, data,
+					 the_repository->compat_hash_algo);
+		packet_fwrite_fmt(stdout, "%s %s%c%s%s%s%s%s%s%s object-format=%s%s agent=%s\n",
 			     oid_to_hex(ref->oid), refname_nons,
 			     0, capabilities,
 			     (data->allow_uor & ALLOW_TIP_SHA1) ?
@@ -1333,9 +1363,11 @@ static void write_v0_ref(struct upload_pack_data *data,
 			     data->allow_filter ? " filter" : "",
 			     session_id.buf,
 			     the_hash_algo->name,
+			     object_format_map.buf,
 			     git_user_agent_sanitized());
 		strbuf_release(&symref_info);
 		strbuf_release(&session_id);
+		strbuf_release(&object_format_map);
 		data->sent_capabilities = 1;
 	} else {
 		packet_fwrite_fmt(stdout, "%s %s\n", oid_to_hex(ref->oid), refname_nons);
@@ -1444,6 +1476,8 @@ static int upload_pack_config(const char *var, const char *value,
 		precomposed_unicode = git_config_bool(var, value);
 	} else if (!strcmp("transfer.advertisesid", var)) {
 		data->advertise_sid = git_config_bool(var, value);
+	} else if (!strcmp("transfer.advertisecompatobjectmapping", var)) {
+		data->advertise_object_format_map = git_config_bool(var, value);
 	}
 
 	if (parse_object_filter_config(var, value, ctx->kvi, data) < 0)

@@ -355,6 +355,39 @@ static void add_oids_to_set(const struct oid_array *array,
 	}
 }
 
+static void parse_one_object_format_info(const char *line,
+					 const struct git_hash_algo *hash_algo,
+					 const struct git_hash_algo *map_algo)
+{
+	const char *arg;
+	struct object_id oid, mapped;
+
+	if (!map_algo)
+		die(_("unexpected object-map-info with no requested algorithm"));
+
+	if (!skip_prefix(line, "map-object ", &arg) ||
+	    !skip_prefix(arg, map_algo->name, &arg) ||
+	    *arg++ != ' ')
+		die(_("expected valid map-object, got %s"), line);
+
+	if (skip_prefix(arg, "shallow ", &arg) ||
+	    skip_prefix(arg, "unshallow ", &arg)) {
+		if (parse_oid_hex_algop(arg, &oid, &arg, hash_algo) ||
+		    *arg++ != ' ' ||
+		    get_oid_hex_algop(arg, &mapped, map_algo))
+			die(_("invalid map-object line: %s"), line);
+		/*
+		 * We must insert these entries into the loose object
+		 * map because they will be required to correctly map
+		 * objects when we index the pack file.
+		 */
+		repo_add_loose_object_map(the_repository->objects->sources,
+					  &oid, &mapped,
+					  LOOSE_WRITE | LOOSE_TYPE_SHALLOW);
+	}
+	/* We allow unknown kinds here and ignore them. */
+}
+
 static int find_common(struct fetch_negotiator *negotiator,
 		       struct fetch_pack_args *args,
 		       int fd[2], struct object_id *result_oid,
@@ -1648,39 +1681,10 @@ static int process_ack(struct fetch_negotiator *negotiator,
 static void receive_object_format_info(struct fetch_pack_args *args UNUSED,
 				       struct packet_reader *reader)
 {
-	const struct git_hash_algo *map_algo = reader->map_hash_algo;
-
 	process_section_header(reader, "object-map-info", 0);
-	while (packet_reader_read(reader) == PACKET_READ_NORMAL) {
-		const char *arg;
-		struct object_id oid, mapped;
-
-		if (!map_algo)
-			die(_("unexpected object-map-info with no requested algorithm"));
-
-		if (!skip_prefix(reader->line, "map-object ", &arg) ||
-		    !skip_prefix(arg, map_algo->name, &arg) ||
-		    *arg++ != ' ')
-			die(_("expected valid map-object, got %s"), reader->line);
-
-		if (skip_prefix(arg, "shallow ", &arg) ||
-		    skip_prefix(arg, "unshallow ", &arg)) {
-			if (parse_oid_hex_algop(arg, &oid, &arg, reader->hash_algo) ||
-			    *arg++ != ' ' ||
-			    get_oid_hex_algop(arg, &mapped, map_algo))
-				die(_("invalid map-object line: %s"), reader->line);
-			/*
-			 * We must insert these entries into the loose object
-			 * map because they will be required to correctly map
-			 * objects when we index the pack file.
-			 */
-			repo_add_loose_object_map(the_repository->objects->sources,
-						  &oid, &mapped,
-						  LOOSE_WRITE | LOOSE_TYPE_SHALLOW);
-			continue;
-		}
-		/* We allow unknown kinds here and ignore them. */
-	}
+	while (packet_reader_read(reader) == PACKET_READ_NORMAL)
+		parse_one_object_format_info(reader->line, reader->hash_algo,
+					     reader->map_hash_algo);
 
 	if (reader->status != PACKET_READ_FLUSH &&
 	    reader->status != PACKET_READ_DELIM)

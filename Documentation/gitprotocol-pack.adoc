@@ -316,9 +316,19 @@ send this information to the client. If the client did not request
 a positive depth, this step is skipped.
 
 ----
+  metadata-update = map-object-update
+          shallow-update
+          flush-pkt
+
+  map-object-update = *map-object-line
+
+  hash-algo        =  "sha1" / "sha256"
+  map-object-type  =  "shallow" / "unshallow"
+  map-object-line  =  PKT-LINE("map-object" SP hash-algo SP map-object-type
+                               SP obj-id SP obj_id)
+
   shallow-update   =  *shallow-line
-		      *unshallow-line
-		      flush-pkt
+                      *unshallow-line
 
   shallow-line     =  PKT-LINE("shallow" SP obj-id)
 
@@ -329,12 +339,21 @@ If the client has requested a positive depth, the server will compute
 the set of commits which are no deeper than the desired depth. The set
 of commits starts at the client's wants.
 
+If the client and server both support the 'object-format-map' capability and
+the client has requested one of the advertised hash algorithms, then the server
+writes any 'map-object' lines.  These are required for every shallow or
+unshallow that the server sends.  Unknown mapping types should be ignored.
+
 The server writes 'shallow' lines for each
 commit whose parents will not be sent as a result. The server writes
 an 'unshallow' line for each commit which the client has indicated is
 shallow, but is no longer shallow at the currently requested depth
 (that is, its parents will now be sent). The server MUST NOT mark
 as unshallow anything which the client has not indicated was shallow.
+
+The server will follow all 'map-object', 'shallow', or 'unshallow' lines with a
+flush-pkt if any were sent.  If none of these directives were sent, the the
+server omits the flush-pkt.
 
 Now the client will send a list of the obj-ids it has using 'have'
 lines, so the server can make a packfile that only contains the objects

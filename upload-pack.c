@@ -1821,7 +1821,8 @@ static void compute_shallow_info(struct upload_pack_data *data)
 }
 
 static void send_object_map_info(struct upload_pack_data *data,
-				 const struct git_hash_algo *map_algo)
+				 const struct git_hash_algo *map_algo,
+				 bool headerfooter)
 {
 	struct hashmap_iter iter;
 	const struct strmap_entry *e;
@@ -1839,7 +1840,8 @@ static void send_object_map_info(struct upload_pack_data *data,
 	     !data->unshallow_response.nr))
 		return;
 
-	packet_writer_write(&data->writer, "object-map-info\n");
+	if (headerfooter)
+		packet_writer_write(&data->writer, "object-map-info\n");
 
 	oid_array_for_each_unique(&data->shallow_response, send_one_mapped_shallow, &d);
 	oid_array_for_each_unique(&data->shallow_references, send_one_mapped_shallow, &d);
@@ -1864,7 +1866,8 @@ static void send_object_map_info(struct upload_pack_data *data,
 		oidset_insert(&seen_wanted_refs, e->value);
 	}
 
-	packet_writer_delim(&data->writer);
+	if (headerfooter)
+		packet_writer_delim(&data->writer);
 
 	oidset_clear(&seen_wanted_refs);
 }
@@ -1955,7 +1958,7 @@ int upload_pack_v2(struct repository *r, struct packet_reader *request)
 			break;
 		case UPLOAD_SEND_PACK:
 			compute_shallow_info(&data);
-			send_object_map_info(&data, request->map_hash_algo);
+			send_object_map_info(&data, request->map_hash_algo, true);
 			send_wanted_ref_info(&data);
 			send_shallow_info(&data);
 

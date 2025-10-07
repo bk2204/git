@@ -270,14 +270,27 @@ test_fetch_push () {
 			fetch_verify_oids "$dest_compat_algo"
 		)
 	'
+
+	test_expect_success !SHARED_ALGOS "$desc: fetch from remote into shallow" '
+		create_repo shallow "$dest_algo" "$dest_compat_algo" &&
+		(
+			cd shallow &&
+			set_config "$fsck" "$large_blob" "$protocol" &&
+			test_must_fail git fetch --depth=1 ../source dev:dev dev:other 2>err &&
+			grep "remote side does not support shallow clones in compatibility mode" err
+		)
+	'
 }
 
 test_fetch_push sha1-to-sha1 sha1: sha1: --fsck
 test_fetch_push sha256-to-sha256 sha256: sha256: --fsck
 test_fetch_push sha256-to-sha256-fancy sha256: sha256: --fsck --large-blob 512 --protocol 0
 test_fetch_push sha1-to-sha256-same sha1:sha256 sha1:sha256
+test_fetch_push sha1-to-sha256-same-fancy sha1:sha256 sha1:sha256 --fsck --large-blob 512 --protocol 0
 test_fetch_push sha256-to-sha1-same sha256:sha1 sha256:sha1
+test_fetch_push sha256-to-sha1-same-fancy sha256:sha1 sha256:sha1 --fsck --large-blob 512 --protocol 0
 test_fetch_push sha256-to-sha1-both sha256:sha1 sha1:sha256
+test_fetch_push sha1-to-sha256-both-fancy sha1:sha256 sha256:sha1 --fsck --large-blob 512 --protocol 0
 test_fetch_push sha1-to-sha256-main sha1: sha256:sha1
 test_fetch_push sha1-to-sha256-main-fancy sha1: sha256:sha1 --fsck --large-blob 512 --protocol 0
 test_fetch_push sha1-to-sha256-both sha1:sha256 sha256:sha1

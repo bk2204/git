@@ -392,7 +392,8 @@ static int find_common(struct fetch_negotiator *negotiator,
 		       struct fetch_pack_args *args,
 		       int fd[2], struct object_id *result_oid,
 		       struct ref *refs,
-		       const struct git_hash_algo *algop)
+		       const struct git_hash_algo *algop,
+		       const struct git_hash_algo *map_algop)
 {
 	int fetching;
 	int count = 0, flushes = 0, flush_at = INITIAL_FLUSH, retval;
@@ -414,6 +415,7 @@ static int find_common(struct fetch_negotiator *negotiator,
 			   PACKET_READ_DIE_ON_ERR_PACKET);
 
 	reader.hash_algo = algop;
+	reader.map_hash_algo = map_algop;
 
 	mark_tips(negotiator, args->negotiation_restrict_tips);
 	for_each_cached_alternate(negotiator, insert_one_alternate_object);
@@ -460,6 +462,8 @@ static int find_common(struct fetch_negotiator *negotiator,
 							    git_user_agent_sanitized());
 			if (advertise_sid)
 				strbuf_addf(&c, " session-id=%s", trace2_session_id());
+			if (map_algop)
+				strbuf_addf(&c, " object-format-map=%s", map_algop->name);
 			if (args->filter_options.choice)
 				strbuf_addstr(&c, " filter");
 			packet_buf_write(&req_buf, "want %s%s\n", remote_hex, c.buf);
@@ -500,15 +504,24 @@ static int find_common(struct fetch_negotiator *negotiator,
 
 		send_request(args, fd[1], &req_buf);
 		while (packet_reader_read(&reader) == PACKET_READ_NORMAL) {
+			if (skip_prefix(reader.line, "map-object ", &arg)) {
+				parse_one_object_format_info(reader.line, reader.hash_algo,
+							     reader.map_hash_algo);
+				continue;
+			}
 			if (skip_prefix(reader.line, "shallow ", &arg)) {
-				if (get_oid_hex(arg, &oid))
+				if (get_oid_hex_algop(arg, &oid, reader.hash_algo))
 					die(_("invalid shallow line: %s"), reader.line);
 				register_shallow(the_repository, &oid);
 				continue;
 			}
 			if (skip_prefix(reader.line, "unshallow ", &arg)) {
-				if (get_oid_hex(arg, &oid))
+				if (get_oid_hex_algop(arg, &oid, reader.hash_algo))
 					die(_("invalid unshallow line: %s"), reader.line);
+				if (repo_oid_to_algop(the_repository, &oid,
+						      the_repository->hash_algo,
+						      &oid))
+					die(_("cannot map unshallow line: %s"), reader.line);
 				if (!lookup_object(the_repository, &oid))
 					die(_("object not found: %s"), reader.line);
 				/* make sure that it is parsed as shallow */
@@ -1190,11 +1203,11 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 	struct repository *r = the_repository;
 	struct ref *ref = copy_ref_list(orig_ref);
 	struct object_id oid;
-	const char *agent_feature;
-	size_t agent_len;
+	const char *agent_feature, *map_algo_name;
+	size_t agent_len, map_len;
 	struct fetch_negotiator negotiator_alloc;
 	struct fetch_negotiator *negotiator;
-	const struct git_hash_algo *algo = NULL, *candidates[2] = {
+	const struct git_hash_algo *algo = NULL, *map_algo = NULL, *candidates[2] = {
 		the_repository->hash_algo, the_repository->compat_hash_algo,
 	};
 
@@ -1301,13 +1314,27 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 	if (!algo)
 		die(_("Server does not support this repository's object format"));
 
+	map_algo_name = server_feature_value("object-format-map", &map_len);
+	if (map_algo_name) {
+		char *algo_name = xstrndup(map_algo_name, map_len);
+		int algo_id;
+		algo_id = hash_algo_by_name(algo_name);
+		if (algo_id != GIT_HASH_UNKNOWN)
+			map_algo = &hash_algos[algo_id];
+		free(algo_name);
+	}
+
+	if (!map_algo && the_repository->compat_hash_algo &&
+	    (is_repository_shallow(the_repository) || args->deepen))
+		die(_("remote side does not support shallow clones in compatibility mode"));
+
 	mark_complete_and_common_ref(negotiator, args, &ref);
 	filter_refs(args, &ref, sought, nr_sought);
 	if (!args->refetch && everything_local(args, &ref)) {
 		packet_flush(fd[1]);
 		goto all_done;
 	}
-	if (find_common(negotiator, args, fd, &oid, ref, algo) < 0)
+	if (find_common(negotiator, args, fd, &oid, ref, algo, map_algo) < 0)
 		if (!args->keep_pack)
 			/* When cloning, it is not unusual to have
 			 * no common commit.

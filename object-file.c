@@ -1456,8 +1456,9 @@ static int hash_blob_stream(struct odb_write_stream *stream,
  * packfile in state while updating the hash in ctx.
  */
 static void stream_blob_to_pack(struct transaction_packfile *state,
-				struct git_hash_ctx *ctx, size_t size,
-				struct odb_write_stream *stream)
+				struct git_hash_ctx *ctx,
+				struct git_hash_ctx *compat_ctx,
+				size_t size, struct odb_write_stream *stream)
 {
 	git_zstream s;
 	unsigned char ibuf[16384];
@@ -1481,6 +1482,9 @@ static void stream_blob_to_pack(struct transaction_packfile *state,
 				die("failed to read blob data");
 
 			git_hash_update(ctx, ibuf, rsize);
+			if (compat_ctx)
+				git_hash_update(compat_ctx,
+						ibuf, rsize);
 
 			s.next_in = ibuf;
 			s.avail_in = rsize;
@@ -1592,16 +1596,22 @@ static int odb_transaction_files_write_object_stream(struct odb_transaction *bas
 								 struct odb_transaction_files,
 								 base);
 	struct transaction_packfile *state = &transaction->packfile;
-	struct git_hash_ctx ctx;
+	struct git_hash_ctx ctx, compat_ctx;
+	struct object_id compat_oid;
 	unsigned char obuf[16384];
 	unsigned header_len;
 	struct hashfile_checkpoint checkpoint;
 	struct pack_idx_entry *idx;
+	const struct git_hash_algo *compat = transaction->base.source->odb->repo->compat_hash_algo;
 
 	header_len = format_object_header((char *)obuf, sizeof(obuf),
 					  OBJ_BLOB, size);
 	transaction->base.source->odb->repo->hash_algo->init_fn(&ctx);
 	git_hash_update(&ctx, obuf, header_len);
+	if (compat) {
+		compat->init_fn(&compat_ctx);
+		git_hash_update(&compat_ctx, obuf, header_len);
+	}
 
 	/*
 	 * If writing another object to the packfile could result in it
@@ -1624,8 +1634,10 @@ static int odb_transaction_files_write_object_stream(struct odb_transaction *bas
 	hashfile_checkpoint(state->f, &checkpoint);
 	idx->offset = state->offset;
 	crc32_begin(state->f);
-	stream_blob_to_pack(state, &ctx, size, stream);
+	stream_blob_to_pack(state, &ctx, compat ? &compat_ctx : NULL, size, stream);
 	git_hash_final_oid(result_oid, &ctx);
+	if (compat)
+		git_hash_final_oid(&compat_oid, &compat_ctx);
 
 	idx->crc32 = crc32_end(state->f);
 	if (already_written(transaction, result_oid)) {
@@ -1634,6 +1646,8 @@ static int odb_transaction_files_write_object_stream(struct odb_transaction *bas
 		free(idx);
 	} else {
 		oidcpy(&idx->oid, result_oid);
+		if (compat)
+			oidcpy(&idx->compat_oid, &compat_oid);
 		ALLOC_GROW(state->written,
 			   state->nr_written + 1,
 			   state->alloc_written);

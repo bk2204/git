@@ -470,19 +470,87 @@ void setup_alternate_shallow(struct shallow_lock *shallow_lock,
 	strbuf_release(&sb);
 }
 
-static int advertise_shallow_grafts_cb(const struct commit_graft *graft, void *cb)
+struct transport_shallows {
+	struct oid_array arr;
+	const struct git_hash_algo *algo;
+	struct repository *r;
+	struct strbuf *buf;
+};
+
+static int find_shallow_grafts_cb(const struct commit_graft *graft, void *cb)
 {
-	int fd = *(int *)cb;
+	struct transport_shallows *shallows = cb;
 	if (graft->nr_parent == -1)
-		packet_write_fmt(fd, "shallow %s\n", oid_to_hex(&graft->oid));
+		oid_array_append(&shallows->arr, &graft->oid);
 	return 0;
 }
 
-void advertise_shallow_grafts(int fd)
+static int advertise_mapped_objects_cb(const struct object_id *oid, void *cb)
 {
-	if (!is_repository_shallow(the_repository))
+	struct transport_shallows *shallows = cb;
+	struct object_id mapped;
+
+	if (!shallows->algo)
+		return 0;
+
+	if (repo_oid_to_algop(shallows->r, oid, shallows->algo, &mapped))
+		return 1;
+
+	packet_buf_write(shallows->buf, "map-object %s shallow %s %s",
+			 shallows->algo->name, oid_to_hex(oid),
+			 oid_to_hex(&mapped));
+	return 0;
+}
+
+static int advertise_shallow_grafts_cb(const struct object_id *oid, void *cb)
+{
+	struct transport_shallows *shallows = cb;
+	packet_buf_write(shallows->buf, "shallow %s\n", oid_to_hex(oid));
+	return 0;
+}
+
+static void do_advertise_shallow_grafts(struct transport_shallows *shallows)
+{
+	if (!is_repository_shallow(shallows->r))
 		return;
-	for_each_commit_graft(advertise_shallow_grafts_cb, &fd);
+
+	for_each_commit_graft(find_shallow_grafts_cb, shallows);
+	if (shallows->algo)
+		oid_array_for_each_unique(&shallows->arr,
+					  advertise_mapped_objects_cb,
+					  shallows);
+	oid_array_for_each_unique(&shallows->arr, advertise_shallow_grafts_cb,
+				  shallows);
+}
+
+void advertise_shallow_grafts(int fd, const struct git_hash_algo *algo)
+{
+	struct strbuf buf = STRBUF_INIT;
+	struct transport_shallows shallows = {
+		.arr = OID_ARRAY_INIT,
+		.algo = algo,
+		.r = the_repository,
+		.buf = &buf,
+	};
+
+	do_advertise_shallow_grafts(&shallows);
+	write_in_full(fd, buf.buf, buf.len);
+	strbuf_release(&buf);
+	oid_array_clear(&shallows.arr);
+}
+
+void advertise_shallow_grafts_buf(struct repository *r, struct strbuf *sb,
+				  const struct git_hash_algo *algo)
+{
+	struct transport_shallows shallows = {
+		.arr = OID_ARRAY_INIT,
+		.algo = algo,
+		.r = r,
+		.buf = sb,
+	};
+
+	do_advertise_shallow_grafts(&shallows);
+	oid_array_clear(&shallows.arr);
 }
 
 /*

@@ -659,13 +659,14 @@ const char *parse_feature_value(const char *feature_list, const char *feature, s
 	return NULL;
 }
 
-int server_supports_hash(const char *desired, int *feature_supported)
+int server_supports_hash(const char *desired, const char *name,
+			 int *feature_supported)
 {
 	size_t offset = 0;
 	size_t len;
 	const char *hash;
 
-	hash = next_server_feature_value("object-format", &len, &offset);
+	hash = next_server_feature_value(name, &len, &offset);
 	if (feature_supported)
 		*feature_supported = !!hash;
 	if (!hash) {
@@ -676,7 +677,7 @@ int server_supports_hash(const char *desired, int *feature_supported)
 		if (!xstrncmpz(desired, hash, len))
 			return 1;
 
-		hash = next_server_feature_value("object-format", &len, &offset);
+		hash = next_server_feature_value(name, &len, &offset);
 	}
 	return 0;
 }

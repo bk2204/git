@@ -9,6 +9,8 @@
 #include "hook.h"
 #include "pkt-line.h"
 #include "fetch-pack.h"
+#include "loose.h"
+#include "odb.h"
 #include "remote.h"
 #include "connect.h"
 #include "send-pack.h"
@@ -1259,6 +1261,42 @@ struct transport *transport_get(struct remote *remote, const char *url)
 	sideband_apply_url_config(ret->url);
 
 	return ret;
+}
+
+void parse_one_object_format_info(struct repository *r,
+				  const char *line,
+				  const struct git_hash_algo *hash_algo,
+				  const struct git_hash_algo *map_algo)
+{
+	const char *arg;
+	struct object_id oid, mapped;
+
+	if (!map_algo)
+		die(_("unexpected object-map-info with no requested algorithm"));
+
+	if (!skip_prefix(line, "map-object ", &arg))
+		die(_("expected valid map-object, got %s"), line);
+
+	/* Ignore other algorithms. */
+	if (!skip_prefix(arg, map_algo->name, &arg) || *arg++ != ' ')
+		return;
+
+	if (skip_prefix(arg, "shallow ", &arg) ||
+	    skip_prefix(arg, "unshallow ", &arg)) {
+		if (parse_oid_hex_algop(arg, &oid, &arg, hash_algo) ||
+		    *arg++ != ' ' ||
+		    get_oid_hex_algop(arg, &mapped, map_algo))
+			die(_("invalid map-object line: %s"), line);
+		/*
+		 * We must insert these entries into the loose object
+		 * map because they will be required to correctly map
+		 * objects when we index the pack file.
+		 */
+		repo_add_loose_object_map(r->objects->sources,
+					  &oid, &mapped,
+					  LOOSE_WRITE | LOOSE_TYPE_SHALLOW);
+	}
+	/* We allow unknown kinds here and ignore them. */
 }
 
 const struct git_hash_algo *transport_get_hash_algo(struct transport *transport)

@@ -1276,7 +1276,8 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 
 	for (size_t i = 0; i < ARRAY_SIZE(candidates); i++)
 		if (candidates[i] &&
-		    server_supports_hash(candidates[i]->name, NULL)) {
+		    server_supports_hash(candidates[i]->name,
+					 "object-format", NULL)) {
 			algo = candidates[i];
 			break;
 		}

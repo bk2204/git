@@ -584,6 +584,7 @@ int send_pack(struct repository *r,
 	for (size_t i = 0; i < ARRAY_SIZE(candidates); i++)
 		if (candidates[i] &&
 		    server_supports_hash(candidates[i]->name,
+					 "object-format",
 					 &object_format_supported)) {
 			algo = candidates[i];
 			break;

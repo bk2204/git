@@ -349,4 +349,9 @@ void reject_atomic_push(struct ref *refs, int mirror_mode);
 int parse_transport_option(const char *var, const char *value,
 			   struct string_list *transport_options);
 
+void parse_one_object_format_info(struct repository *r,
+				  const char *line,
+				  const struct git_hash_algo *hash_algo,
+				  const struct git_hash_algo *map_algo);
+
 #endif

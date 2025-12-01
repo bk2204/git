@@ -53,7 +53,13 @@ current working directory.
 
 `--object-format=<format>`::
 Specify the given object _<format>_ (hash algorithm) for the repository.  The valid
-values are `sha1` and (if enabled) `sha256`.  `sha1` is the default.
+values are `sha1` and (if enabled) `sha256`.
+ifndef::with-breaking-changes[]
+	`sha1` is the default.
+endif::with-breaking-changes[]
+ifdef::with-breaking-changes[]
+	`sha256` is the default.
+endif::with-breaking-changes[]
 +
 include::object-format-disclaimer.adoc[]
 

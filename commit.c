@@ -67,7 +67,7 @@ struct commit *lookup_commit_reference_gently(struct repository *r,
 	}
 
 	commit = lookup_commit(r, maybe_peeled);
-	if (!commit || repo_parse_commit_gently(r, commit, quiet) < 0)
+	if (!commit || repo_parse_commit_gently(r, commit, quiet, 0) < 0)
 		return NULL;
 
 	return commit;
@@ -513,7 +513,7 @@ const void *detach_commit_buffer(struct commit *commit, unsigned long *sizep)
 	return ret;
 }
 
-int parse_commit_buffer(struct repository *r, struct commit *item, const void *buffer, unsigned long size, int check_graph)
+int parse_commit_buffer(struct repository *r, struct commit *item, const void *buffer, unsigned long size, int check_graph, int keep_parents)
 {
 	const char *tail = buffer;
 	const char *bufptr = buffer;
@@ -566,7 +566,7 @@ int parse_commit_buffer(struct repository *r, struct commit *item, const void *b
 		 * The clone is shallow if nr_parent < 0, and we must
 		 * not traverse its real parents even when we unhide them.
 		 */
-		if (graft && (graft->nr_parent < 0 || !grafts_keep_true_parents))
+		if (graft && !keep_parents && (graft->nr_parent < 0 || !grafts_keep_true_parents))
 			continue;
 		new_parent = lookup_commit(r, &parent);
 		if (!new_parent)
@@ -600,7 +600,8 @@ int parse_commit_buffer(struct repository *r, struct commit *item, const void *b
 int repo_parse_commit_internal(struct repository *r,
 			       struct commit *item,
 			       int quiet_on_missing,
-			       int use_commit_graph)
+			       int use_commit_graph,
+			       int keep_parents)
 {
 	enum object_type type;
 	void *buffer;
@@ -649,7 +650,7 @@ int repo_parse_commit_internal(struct repository *r,
 			     oid_to_hex(&item->object.oid));
 	}
 
-	ret = parse_commit_buffer(r, item, buffer, size, 0);
+	ret = parse_commit_buffer(r, item, buffer, size, 0, keep_parents);
 	if (save_commit_buffer && !ret &&
 	    !get_cached_commit_buffer(r, item, NULL)) {
 		set_commit_buffer(r, item, buffer, size);
@@ -660,9 +661,11 @@ int repo_parse_commit_internal(struct repository *r,
 }
 
 int repo_parse_commit_gently(struct repository *r,
-			     struct commit *item, int quiet_on_missing)
+			     struct commit *item, int quiet_on_missing,
+			     int keep_parents)
 {
-	return repo_parse_commit_internal(r, item, quiet_on_missing, 1);
+	return repo_parse_commit_internal(r, item, quiet_on_missing, 1,
+					  keep_parents);
 }
 
 void parse_commit_or_die(struct commit *item)

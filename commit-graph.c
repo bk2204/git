@@ -2829,7 +2829,7 @@ static int verify_one_commit_graph(struct commit_graph *g,
 
 		graph_commit = lookup_commit(r, &cur_oid);
 		odb_commit = (struct commit *)create_object(r, &cur_oid, alloc_commit_node(r));
-		if (repo_parse_commit_internal(r, odb_commit, 0, 0)) {
+		if (repo_parse_commit_internal(r, odb_commit, 0, 0, 0)) {
 			graph_report(_("failed to parse commit %s from object database for commit-graph"),
 				     oid_to_hex(&cur_oid));
 			continue;

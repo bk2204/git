@@ -472,7 +472,7 @@ void setup_alternate_shallow(struct shallow_lock *shallow_lock,
 
 struct transport_shallows {
 	struct oid_array arr;
-	const struct git_hash_algo *algo;
+	const struct git_hash_algo *algo, *map_algo;
 	struct repository *r;
 	struct strbuf *buf;
 };
@@ -485,20 +485,50 @@ static int find_shallow_grafts_cb(const struct commit_graft *graft, void *cb)
 	return 0;
 }
 
+static int advertise_one(const struct transport_shallows *shallows,
+			 const struct object_id *oid)
+{
+	struct object_id main_oid, map_oid;
+
+	if (!oid)
+		return 0;
+
+	if (repo_oid_to_algop(shallows->r, oid, shallows->algo, &main_oid) ||
+	    repo_oid_to_algop(shallows->r, oid, shallows->map_algo, &map_oid))
+		return 1;
+
+	packet_buf_write(shallows->buf, "map-object %s shallow %s %s",
+			 shallows->map_algo->name, oid_to_hex(&main_oid),
+			 oid_to_hex(&map_oid));
+	return 0;
+}
+
 static int advertise_mapped_objects_cb(const struct object_id *oid, void *cb)
 {
 	struct transport_shallows *shallows = cb;
-	struct object_id mapped;
+	struct commit *c = lookup_commit(shallows->r, oid);
+	bool reparse = false;
 
 	if (!shallows->algo)
 		return 0;
 
-	if (repo_oid_to_algop(shallows->r, oid, shallows->algo, &mapped))
-		return 1;
-
-	packet_buf_write(shallows->buf, "map-object %s shallow %s %s",
-			 shallows->algo->name, oid_to_hex(oid),
-			 oid_to_hex(&mapped));
+	if (advertise_one(shallows, oid))
+		return -1;
+	if (advertise_one(shallows, get_commit_tree_oid(c)))
+		return -1;
+	if (c->object.parsed && !c->parents) {
+		unparse_commit(shallows->r, oid);
+		reparse = true;
+	}
+	if (repo_parse_commit_gently(shallows->r, c, 0, 1))
+		return -1;
+	for (struct commit_list *iter = c->parents; iter; iter = iter->next)
+		if (advertise_one(shallows, &iter->item->object.oid))
+			return -1;
+	if (reparse) {
+		unparse_commit(shallows->r, oid);
+		return repo_parse_commit_gently(shallows->r, c, 0, 0);
+	}
 	return 0;
 }
 
@@ -515,7 +545,7 @@ static void do_advertise_shallow_grafts(struct transport_shallows *shallows)
 		return;
 
 	for_each_commit_graft(find_shallow_grafts_cb, shallows);
-	if (shallows->algo)
+	if (shallows->algo && shallows->map_algo)
 		oid_array_for_each_unique(&shallows->arr,
 					  advertise_mapped_objects_cb,
 					  shallows);
@@ -523,12 +553,14 @@ static void do_advertise_shallow_grafts(struct transport_shallows *shallows)
 				  shallows);
 }
 
-void advertise_shallow_grafts(int fd, const struct git_hash_algo *algo)
+void advertise_shallow_grafts(int fd, const struct git_hash_algo *algo,
+			      const struct git_hash_algo *map_algo)
 {
 	struct strbuf buf = STRBUF_INIT;
 	struct transport_shallows shallows = {
 		.arr = OID_ARRAY_INIT,
 		.algo = algo,
+		.map_algo = map_algo,
 		.r = the_repository,
 		.buf = &buf,
 	};
@@ -540,11 +572,13 @@ void advertise_shallow_grafts(int fd, const struct git_hash_algo *algo)
 }
 
 void advertise_shallow_grafts_buf(struct repository *r, struct strbuf *sb,
-				  const struct git_hash_algo *algo)
+				  const struct git_hash_algo *algo,
+				  const struct git_hash_algo *map_algo)
 {
 	struct transport_shallows shallows = {
 		.arr = OID_ARRAY_INIT,
 		.algo = algo,
+		.map_algo = map_algo,
 		.r = r,
 		.buf = sb,
 	};

@@ -1543,7 +1543,7 @@ void upload_pack(const int advertise_refs, const int stateless_rpc,
 		 * uses stdio.
 		 */
 		fflush_or_die(stdout);
-		advertise_shallow_grafts(1, NULL);
+		advertise_shallow_grafts(1, NULL, NULL);
 		packet_flush(1);
 	} else {
 		refs_head_ref_namespaced(get_main_ref_store(the_repository),

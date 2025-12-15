@@ -94,6 +94,7 @@ static struct signature_check sigcheck;
 static const char *push_cert_nonce;
 static char *cert_nonce_seed;
 static struct strvec hidden_refs = STRVEC_INIT;
+static const struct git_hash_algo *compat_hash_algo;
 
 static const char *NONCE_UNSOLICITED = "UNSOLICITED";
 static const char *NONCE_BAD = "BAD";
@@ -367,7 +368,8 @@ static void write_head_info(void)
 	if (!sent_capabilities)
 		show_ref("capabilities^{}", null_oid(the_hash_algo));
 
-	advertise_shallow_grafts(1, NULL);
+	advertise_shallow_grafts(1, the_repository->hash_algo,
+				 compat_hash_algo);
 
 	/* EOF */
 	packet_flush(1);

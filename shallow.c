@@ -366,7 +366,7 @@ static int write_one_shallow(const struct commit_graft *graft, void *cb_data)
 	if (repo_oid_to_algop(the_repository, &graft->oid, data->algop, &mapped))
 		return 0;
 
-	if (graft->nr_parent != -1)
+	if (graft->nr_parent >= 0)
 		return 0;
 	if (data->flags & QUICK) {
 		if (!odb_has_object(the_repository->objects, &graft->oid,
@@ -480,7 +480,7 @@ struct transport_shallows {
 static int find_shallow_grafts_cb(const struct commit_graft *graft, void *cb)
 {
 	struct transport_shallows *shallows = cb;
-	if (graft->nr_parent == -1)
+	if (graft->nr_parent < 0)
 		oid_array_append(&shallows->arr, &graft->oid);
 	return 0;
 }

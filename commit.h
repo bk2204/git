@@ -92,15 +92,17 @@ struct commit *lookup_commit_reference_by_name_gently(const char *name,
  */
 struct commit *lookup_commit_or_die(const struct object_id *oid, const char *ref_name);
 
-int parse_commit_buffer(struct repository *r, struct commit *item, const void *buffer, unsigned long size, int check_graph);
+int parse_commit_buffer(struct repository *r, struct commit *item, const void *buffer, unsigned long size, int check_graph, int keep_parents);
 int repo_parse_commit_internal(struct repository *r, struct commit *item,
-			       int quiet_on_missing, int use_commit_graph);
+			       int quiet_on_missing, int use_commit_graph,
+			       int keep_parents);
 int repo_parse_commit_gently(struct repository *r,
 			     struct commit *item,
-			     int quiet_on_missing);
+			     int quiet_on_missing,
+			     int keep_parents);
 static inline int repo_parse_commit(struct repository *r, struct commit *item)
 {
-	return repo_parse_commit_gently(r, item, 0);
+	return repo_parse_commit_gently(r, item, 0, 0);
 }
 
 void unparse_commit(struct repository *r, const struct object_id *oid);
@@ -118,7 +120,7 @@ static inline int repo_parse_commit_no_graph(struct repository *r,
 	if (commit->object.parsed && !commit->maybe_tree)
 		unparse_commit(r, &commit->object.oid);
 
-	return repo_parse_commit_internal(r, commit, 0, 0);
+	return repo_parse_commit_internal(r, commit, 0, 0, 0);
 }
 
 void parse_commit_or_die(struct commit *item);

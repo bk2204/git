@@ -1152,7 +1152,7 @@ static int process_parents(struct rev_info *revs, struct commit *commit,
 			if (p)
 				p->object.flags |= UNINTERESTING |
 						   CHILD_VISITED;
-			if (repo_parse_commit_gently(revs->repo, p, 1) < 0)
+			if (repo_parse_commit_gently(revs->repo, p, 1, 0) < 0)
 				continue;
 			if (p->parents)
 				mark_parents_uninteresting(revs, p);
@@ -1186,7 +1186,7 @@ static int process_parents(struct rev_info *revs, struct commit *commit,
 		int gently = revs->ignore_missing_links ||
 			     revs->exclude_promisor_objects ||
 			     revs->do_not_die_on_missing_objects;
-		if (repo_parse_commit_gently(revs->repo, p, gently) < 0) {
+		if (repo_parse_commit_gently(revs->repo, p, gently, 0) < 0) {
 			if (revs->exclude_promisor_objects &&
 			    is_promisor_object(revs->repo, &p->object.oid)) {
 				if (revs->first_parent_only)
@@ -3726,7 +3726,7 @@ static void explore_walk_step(struct rev_info *revs)
 	if (!c)
 		return;
 
-	if (repo_parse_commit_gently(revs->repo, c, 1) < 0)
+	if (repo_parse_commit_gently(revs->repo, c, 1, 0) < 0)
 		return;
 
 	count_explore_walked++;
@@ -3766,7 +3766,7 @@ static void indegree_walk_step(struct rev_info *revs)
 	if (!c)
 		return;
 
-	if (repo_parse_commit_gently(revs->repo, c, 1) < 0)
+	if (repo_parse_commit_gently(revs->repo, c, 1, 0) < 0)
 		return;
 
 	count_indegree_walked++;
@@ -3777,7 +3777,7 @@ static void indegree_walk_step(struct rev_info *revs)
 		struct commit *parent = p->item;
 		int *pi = indegree_slab_at(&info->indegree, parent);
 
-		if (repo_parse_commit_gently(revs->repo, parent, 1) < 0)
+		if (repo_parse_commit_gently(revs->repo, parent, 1, 0) < 0)
 			return;
 
 		if (*pi)
@@ -3858,7 +3858,7 @@ static void init_topo_walk(struct rev_info *revs)
 		struct commit *c = list->item;
 		timestamp_t generation;
 
-		if (repo_parse_commit_gently(revs->repo, c, 1))
+		if (repo_parse_commit_gently(revs->repo, c, 1, 0))
 			continue;
 
 		test_flag_and_insert(&info->explore_queue, c, TOPO_WALK_EXPLORED);
@@ -3929,7 +3929,7 @@ static void expand_topo_walk(struct rev_info *revs, struct commit *commit)
 		if (parent->object.flags & UNINTERESTING)
 			continue;
 
-		if (repo_parse_commit_gently(revs->repo, parent, 1) < 0)
+		if (repo_parse_commit_gently(revs->repo, parent, 1, 0) < 0)
 			continue;
 
 		generation = commit_graph_generation(parent);

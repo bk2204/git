@@ -395,6 +395,7 @@ static int find_common(struct fetch_negotiator *negotiator,
 		struct object *o;
 
 		if (!args->refetch) {
+			struct object_id converted;
 			/*
 			* If that object is complete (i.e. it is an ancestor of a
 			* local ref), we tell them we have it but do not have to
@@ -405,7 +406,10 @@ static int find_common(struct fetch_negotiator *negotiator,
 			* interested in the case we *know* the object is
 			* reachable and we have already scanned it.
 			*/
-			if (((o = lookup_object(the_repository, remote)) != NULL) &&
+			if (!repo_oid_to_algop(the_repository, remote,
+					       the_repository->hash_algo,
+					       &converted) &&
+			    ((o = lookup_object(the_repository, &converted)) != NULL) &&
 					(o->flags & COMPLETE)) {
 				continue;
 			}

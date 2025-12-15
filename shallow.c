@@ -407,7 +407,12 @@ static int write_shallow_commits_1(struct strbuf *out, int use_pack_protocol,
 	if (!extra)
 		return data.count;
 	for (size_t i = 0; i < extra->nr; i++) {
-		strbuf_add_oid_hex(out, extra->oid + i);
+		struct object_id mapped;
+
+		if (repo_oid_to_algop(the_repository, extra->oid + i, algop,
+				      &mapped))
+			return -1;
+		strbuf_add_oid_hex(out, &mapped);
 		strbuf_addch(out, '\n');
 		data.count++;
 	}

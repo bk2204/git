@@ -52,9 +52,11 @@ void setup_alternate_shallow(struct shallow_lock *shallow_lock,
 
 const char *setup_temporary_shallow(const struct oid_array *extra);
 
-void advertise_shallow_grafts(int, const struct git_hash_algo *algo);
+void advertise_shallow_grafts(int fd, const struct git_hash_algo *algo,
+			      const struct git_hash_algo *map_algo);
 void advertise_shallow_grafts_buf(struct repository *r, struct strbuf *sb,
-				  const struct git_hash_algo *algo);
+				  const struct git_hash_algo *algo,
+				  const struct git_hash_algo *map_algo);
 
 #define PRUNE_SHOW_ONLY 1
 #define PRUNE_QUICK 2

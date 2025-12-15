@@ -531,7 +531,7 @@ int send_pack(struct repository *r,
 	char *push_cert_nonce = NULL;
 	struct packet_reader reader;
 	int use_bitmaps;
-	const struct git_hash_algo *algo = NULL, *candidates[2] = {
+	const struct git_hash_algo *algo = NULL, *map_algo = NULL, *candidates[2] = {
 		r->hash_algo, r->compat_hash_algo,
 	};
 
@@ -682,7 +682,7 @@ int send_pack(struct repository *r,
 	}
 
 	if (!args->dry_run)
-		advertise_shallow_grafts_buf(r, &req_buf, NULL);
+		advertise_shallow_grafts_buf(r, &req_buf, algo, map_algo);
 
 	/*
 	 * Finally, tell the other end!

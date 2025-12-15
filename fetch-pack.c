@@ -245,7 +245,7 @@ static enum ack_type get_ack(struct packet_reader *reader,
 		return NAK;
 	if (skip_prefix(reader->line, "ACK ", &arg)) {
 		const char *p;
-		if (!parse_oid_hex(arg, result_oid, &p)) {
+		if (!parse_oid_hex_algop(arg, result_oid, &p, reader->hash_algo)) {
 			len -= p - reader->line;
 			if (len < 1)
 				return ACK;
@@ -538,6 +538,12 @@ static int find_common(struct fetch_negotiator *negotiator,
 	}
 
 	while ((oid = negotiator->next(negotiator))) {
+		struct object_id converted;
+		if (repo_oid_to_algop(the_repository, oid,
+				      reader.hash_algo,
+				      &converted))
+			continue;
+		oid = &converted;
 		packet_buf_write(&req_buf, "have %s\n", oid_to_hex(oid));
 		print_verbose(args, "have %s", oid_to_hex(oid));
 		in_vain++;

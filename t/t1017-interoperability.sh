@@ -96,6 +96,17 @@ push_verify_oids () {
 		"dev commitjkl"
 }
 
+push_shallow_verify_oids () {
+	verify_oids "$1" "foobar tagfoobar" \
+		"foobar^{} commitfoobar" \
+		"other commitfoobar"
+}
+
+push_shallow_verify_oids2 () {
+	verify_oids "$1" \
+		"other commitbarbaz"
+}
+
 set_config () {
 	local i
 
@@ -199,6 +210,14 @@ test_fetch_push () {
 		commitmno sha256:d724eb0be0e19448e6f1995a1dfc02f45037c43f2d162bbe15d142d51c1f4bba
 		commitjkl sha1:5dce1d8f80fcbf314deccef2b9491229d800f47f
 		commitjkl sha256:b8370f6805640ef3c423768beb896f01ba03f38b2ccf18ccfb0f1a1f3d0ff606
+		tagfoobar sha1:b45ac8c8ec546b943320a1bdc6df9ad33b394ed6
+		tagfoobar sha256:89ab78a11c688b3d511d68450687bee22691a13725b8a07be3a1c7010ac19bb4
+		commitfoobar sha1:78a5b255e240c7b6012ba03a380e2b7ba9119b22
+		commitfoobar sha256:f41262a3d7fb330b8524be42c8f5354e2347209e704f28f411850107c91f16c6
+		tagbarbaz sha1:5dce1d8f80fcbf314deccef2b9491229d800f47f
+		tagbarbaz sha256:b8370f6805640ef3c423768beb896f01ba03f38b2ccf18ccfb0f1a1f3d0ff606
+		commitbarbaz sha1:36fb0d1c0c4682026416c1def6c629ddcd50c30e
+		commitbarbaz sha256:dc47d49053f77149293f2f8e02fb42198ef41e94cf34bd87054a6e69ee64ab72
 		EOF
 		(
 			cd source &&
@@ -278,6 +297,50 @@ test_fetch_push () {
 			set_config "$fsck" "$large_blob" "$protocol" &&
 			test_must_fail git fetch --depth=1 ../source dev:dev dev:other 2>err &&
 			grep "remote side does not support shallow clones in compatibility mode" err
+		)
+	'
+
+	test_expect_success SHARED_ALGOS "$desc: fetch and push with shallow repo" '
+		create_repo shallow2 "$dest_algo" "$dest_compat_algo" &&
+		create_repo shallow3 "$dest_algo" "$dest_compat_algo" &&
+		create_repo source2 "$source_algo" "$source_compat_algo" &&
+		(
+			cd source2 &&
+			git fetch ../source dev:dev
+		) &&
+		(
+			cd shallow3 &&
+			git config receive.shallowupdate true &&
+			set_config "$fsck" "$large_blob" "$protocol" &&
+			git fetch --depth=1 ../source dev:dev
+		) &&
+		(
+			cd shallow2 &&
+			git config receive.shallowupdate true &&
+			set_config "$fsck" "$large_blob" "$protocol" &&
+			git fetch --depth=1 ../source dev:dev dev:other &&
+			fetch_shallow_verify_oids "$dest_algo" &&
+			fetch_shallow_verify_oids "$dest_compat_algo" &&
+			git checkout other &&
+			test_commit --annotate foobar &&
+			git checkout dev &&
+			git push --follow-tags ../source2 +other &&
+			git push --follow-tags ../shallow3 +other:dev
+		) &&
+		(
+			cd source2 &&
+			push_shallow_verify_oids "$dest_algo" &&
+			push_shallow_verify_oids "$dest_compat_algo" &&
+			git checkout other &&
+			test_commit --annotate barbaz &&
+			git push ../shallow2 other &&
+			push_shallow_verify_oids2 "$source_algo" &&
+			push_shallow_verify_oids2 "$source_compat_algo"
+		) &&
+		(
+			cd shallow2 &&
+			push_shallow_verify_oids2 "$dest_algo" &&
+			push_shallow_verify_oids2 "$dest_compat_algo"
 		)
 	'
 }

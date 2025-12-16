@@ -253,6 +253,22 @@ static void process_capabilities(struct packet_reader *reader, size_t *linelen)
 	} else {
 		reader->hash_algo = &hash_algos[GIT_HASH_SHA1_LEGACY];
 	}
+
+	feat_val = server_feature_value("object-format-map", &feat_len);
+	if (feat_val) {
+		char *hash_name = xstrndup(feat_val, feat_len);
+		int hash_algo = hash_algo_by_name(hash_name);
+		const struct git_hash_algo *algop = hash_algo ?
+						    &hash_algos[hash_algo] :
+						    NULL;
+		if (algop && algop != reader->hash_algo &&
+		    (algop == the_repository->hash_algo ||
+		     algop == the_repository->compat_hash_algo))
+			reader->map_hash_algo = algop;
+		free(hash_name);
+	} else {
+		reader->map_hash_algo = NULL;
+	}
 }
 
 static int process_dummy_ref(const struct packet_reader *reader)
@@ -325,9 +341,23 @@ static int process_shallow(const struct packet_reader *reader, size_t len,
 	return 1;
 }
 
+static int process_map_object(const struct packet_reader *reader)
+{
+	const char *line = reader->line;
+	const char *arg;
+
+	if (!skip_prefix(line, "map-object ", &arg))
+		return 0;
+
+	parse_one_object_format_info(the_repository, line, reader->hash_algo,
+				     reader->map_hash_algo);
+	return 1;
+}
+
 enum get_remote_heads_state {
 	EXPECTING_FIRST_REF = 0,
 	EXPECTING_REF,
+	EXPECTING_MAP_OBJECT,
 	EXPECTING_SHALLOW,
 	EXPECTING_DONE,
 };
@@ -365,13 +395,18 @@ struct ref **get_remote_heads(struct packet_reader *reader,
 		case EXPECTING_FIRST_REF:
 			process_capabilities(reader, &len);
 			if (process_dummy_ref(reader)) {
-				state = EXPECTING_SHALLOW;
+				state = EXPECTING_MAP_OBJECT;
 				break;
 			}
 			state = EXPECTING_REF;
 			/* fallthrough */
 		case EXPECTING_REF:
 			if (process_ref(reader, len, &list, flags, extra_have))
+				break;
+			state = EXPECTING_MAP_OBJECT;
+			/* fallthrough */
+		case EXPECTING_MAP_OBJECT:
+			if (process_map_object(reader))
 				break;
 			state = EXPECTING_SHALLOW;
 			/* fallthrough */

@@ -647,8 +647,11 @@ void prepare_shallow_info(struct shallow_info *info, struct oid_array *sa)
 	ALLOC_ARRAY(info->ours, sa->nr);
 	ALLOC_ARRAY(info->theirs, sa->nr);
 	for (size_t i = 0; i < sa->nr; i++) {
-		if (odb_has_object(the_repository->objects, sa->oid + i,
-				   ODB_HAS_OBJECT_RECHECK_PACKED | ODB_HAS_OBJECT_FETCH_PROMISOR)) {
+		struct object_id oid;
+		if (!repo_oid_to_algop(the_repository, sa->oid + i,
+				       the_repository->hash_algo, &oid) &&
+		     odb_has_object(the_repository->objects, &oid,
+				    ODB_HAS_OBJECT_RECHECK_PACKED | ODB_HAS_OBJECT_FETCH_PROMISOR)) {
 			struct commit_graft *graft;
 			graft = lookup_commit_graft(the_repository,
 						    &sa->oid[i]);
@@ -684,9 +687,12 @@ void remove_nonexistent_theirs_shallow(struct shallow_info *info)
 	size_t i, dst;
 	trace_printf_key(&trace_shallow, "shallow: remove_nonexistent_theirs_shallow\n");
 	for (i = dst = 0; i < info->nr_theirs; i++) {
+		struct object_id mapped;
 		if (i != dst)
 			info->theirs[dst] = info->theirs[i];
-		if (odb_has_object(the_repository->objects, oid + info->theirs[i],
+		if (!repo_oid_to_algop(the_repository, oid + info->theirs[i],
+				       the_repository->hash_algo, &mapped) &&
+		    odb_has_object(the_repository->objects, &mapped,
 				   ODB_HAS_OBJECT_RECHECK_PACKED | ODB_HAS_OBJECT_FETCH_PROMISOR))
 			dst++;
 	}
@@ -870,21 +876,36 @@ void assign_shallow_commits_to_refs(struct shallow_info *info,
 
 	/* Mark potential bottoms so we won't go out of bound */
 	for (i = 0; i < nr_shallow; i++) {
-		struct commit *c = lookup_commit(the_repository,
-						 &oid[shallow[i]]);
+		struct commit *c;
+		struct object_id mapped;
+
+		repo_oid_to_algop(the_repository, &oid[shallow[i]],
+				  the_repository->hash_algo, &mapped);
+
+		c = lookup_commit(the_repository, &mapped);
 		c->object.flags |= BOTTOM;
 	}
 
-	for (i = 0; i < ref->nr; i++)
-		paint_down(&pi, ref->oid + i, i);
+	for (i = 0; i < ref->nr; i++) {
+		struct object_id mapped;
+		if (!repo_oid_to_algop(the_repository, ref->oid + i,
+				       the_repository->hash_algo, &mapped))
+			paint_down(&pi, &mapped, i);
+	}
 
 	if (used) {
 		int bitmap_size = DIV_ROUND_UP(pi.nr_bits, 32) * sizeof(uint32_t);
 		MEMZERO_ARRAY(used, info->shallow->nr);
 		for (i = 0; i < nr_shallow; i++) {
-			const struct commit *c = lookup_commit(the_repository,
-							       &oid[shallow[i]]);
-			uint32_t **map = ref_bitmap_at(&pi.ref_bitmap, c);
+			const struct commit *c;
+			struct object_id mapped;
+			uint32_t **map;
+
+			repo_oid_to_algop(the_repository, &oid[shallow[i]],
+					  the_repository->hash_algo, &mapped);
+
+			c = lookup_commit(the_repository, &mapped);
+			map = ref_bitmap_at(&pi.ref_bitmap, c);
 			if (*map)
 				used[shallow[i]] = xmemdupz(*map, bitmap_size);
 		}
@@ -936,6 +957,7 @@ static void post_assign_shallow(struct shallow_info *info,
 	size_t dst, i, j;
 	size_t bitmap_nr = DIV_ROUND_UP(info->ref->nr, 32);
 	struct commit_stack cs = COMMIT_STACK_INIT;
+	struct object_id mapped;
 
 	trace_printf_key(&trace_shallow, "shallow: post_assign_shallow\n");
 	if (ref_status)
@@ -945,7 +967,11 @@ static void post_assign_shallow(struct shallow_info *info,
 	for (i = dst = 0; i < info->nr_theirs; i++) {
 		if (i != dst)
 			info->theirs[dst] = info->theirs[i];
-		c = lookup_commit(the_repository, &oid[info->theirs[i]]);
+
+		if (repo_oid_to_algop(the_repository, &oid[info->theirs[i]],
+				      the_repository->hash_algo, &mapped))
+			continue;
+		c = lookup_commit(the_repository, &mapped);
 		bitmap = ref_bitmap_at(ref_bitmap, c);
 		if (!*bitmap)
 			continue;
@@ -965,7 +991,10 @@ static void post_assign_shallow(struct shallow_info *info,
 	for (i = dst = 0; i < info->nr_ours; i++) {
 		if (i != dst)
 			info->ours[dst] = info->ours[i];
-		c = lookup_commit(the_repository, &oid[info->ours[i]]);
+		if (repo_oid_to_algop(the_repository, &oid[info->ours[i]],
+				      the_repository->hash_algo, &mapped))
+			continue;
+		c = lookup_commit(the_repository, &mapped);
 		bitmap = ref_bitmap_at(ref_bitmap, c);
 		if (!*bitmap)
 			continue;

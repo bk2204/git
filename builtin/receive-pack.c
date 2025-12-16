@@ -6,6 +6,7 @@
 #include "commit.h"
 #include "commit-reach.h"
 #include "config.h"
+#include "transport.h"
 #include "connect.h"
 #include "connected.h"
 #include "environment.h"
@@ -18,6 +19,7 @@
 #include "lockfile.h"
 #include "object.h"
 #include "object-file.h"
+#include "object-file-convert.h"
 #include "object-name.h"
 #include "odb.h"
 #include "oid-array.h"
@@ -66,6 +68,7 @@ static struct strbuf fsck_msg_types = STRBUF_INIT;
 static int receive_unpack_limit = -1;
 static int transfer_unpack_limit = -1;
 static int advertise_atomic_push = 1;
+static int advertise_object_format_map = 1;
 static int advertise_push_options;
 static int advertise_sid;
 static int unpack_limit = 100;
@@ -248,6 +251,11 @@ static int receive_pack_config(const char *var, const char *value,
 		return 0;
 	}
 
+	if (strcmp(var, "receive.advertisecompatobjectmapping") == 0) {
+		advertise_object_format_map = git_config_bool(var, value);
+		return 0;
+	}
+
 	if (strcmp(var, "receive.advertisepushoptions") == 0) {
 		advertise_push_options = git_config_bool(var, value);
 		return 0;
@@ -298,6 +306,9 @@ static void show_ref(const char *path, const struct object_id *oid)
 		if (advertise_sid)
 			strbuf_addf(&cap, " session-id=%s", trace2_session_id());
 		strbuf_addf(&cap, " object-format=%s", the_hash_algo->name);
+		if (advertise_object_format_map && the_repository->compat_hash_algo)
+			strbuf_addf(&cap, " object-format-map=%s",
+				    the_repository->compat_hash_algo->name);
 		strbuf_addf(&cap, " agent=%s", git_user_agent_sanitized());
 		packet_write_fmt(1, "%s %s%c%s\n",
 			     oid_to_hex(oid), path, 0, cap.buf);
@@ -1362,8 +1373,15 @@ static int update_shallow_ref(struct command *cmd, struct shallow_info *si)
 	for (i = 0; i < si->shallow->nr; i++)
 		if (si->used_shallow[i] &&
 		    (si->used_shallow[i][cmd->index / 32] & mask) &&
-		    !delayed_reachability_test(si, i))
-			oid_array_append(&extra, &si->shallow->oid[i]);
+		    !delayed_reachability_test(si, i)) {
+			struct object_id dest_oid;
+			if (repo_oid_to_algop(the_repository,
+					      &si->shallow->oid[i],
+					      the_repository->hash_algo,
+					      &dest_oid))
+				return -1;
+			oid_array_append(&extra, &dest_oid);
+		}
 
 	opt.env = tmp_objdir_env(tmp_objdir);
 	setup_alternate_shallow(&shallow_lock, &opt.shallow_file, &extra);
@@ -2211,6 +2229,13 @@ static struct command *read_head_info(struct packet_reader *reader,
 		if (packet_reader_read(reader) != PACKET_READ_NORMAL)
 			break;
 
+		if (reader->pktlen > 12 && starts_with(reader->line, "map-object ")) {
+			parse_one_object_format_info(the_repository, reader->line,
+						     the_repository->hash_algo,
+						     the_repository->compat_hash_algo);
+			continue;
+		}
+
 		if (reader->pktlen > 8 && starts_with(reader->line, "shallow ")) {
 			struct object_id oid;
 			if (get_oid_hex(reader->line + 8, &oid))
@@ -2240,6 +2265,15 @@ static struct command *read_head_info(struct packet_reader *reader,
 			if (advertise_push_options
 			    && parse_feature_request(feature_list, "push-options"))
 				use_push_options = 1;
+			if (advertise_object_format_map) {
+				const char *algo = parse_feature_value(feature_list, "object-format-map", &len, NULL);
+				if (algo &&
+				    xstrncmpz(the_repository->compat_hash_algo->name,
+					      algo, len)) {
+					reader->map_hash_algo = compat_hash_algo =
+						the_repository->compat_hash_algo;
+				}
+			}
 			hash = parse_feature_value(feature_list, "object-format", &len, NULL);
 			if (!hash) {
 				hash = hash_algos[GIT_HASH_SHA1_LEGACY].name;
@@ -2368,7 +2402,8 @@ static const char *unpack(int err_fd, struct shallow_info *si)
 	 */
 	tmp_objdir_add_as_alternate(tmp_objdir);
 
-	if (ntohl(hdr.hdr_entries) < unpack_limit) {
+	if (ntohl(hdr.hdr_entries) < unpack_limit &&
+	    !the_repository->compat_hash_algo) {
 		strvec_push(&child.args, "unpack-objects");
 		push_header_arg(&child.args, &hdr);
 		if (quiet)

@@ -525,6 +525,7 @@ int send_pack(struct repository *r,
 	int use_push_options = 0;
 	int push_options_supported = 0;
 	int object_format_supported = 0;
+	int object_format_map_supported = 0;
 	unsigned cmds_sent = 0;
 	int ret;
 	struct async demux;
@@ -592,6 +593,16 @@ int send_pack(struct repository *r,
 	if (!algo)
 		die(_("the receiving end does not support this repository's hash algorithm"));
 
+	for (size_t i = 0; i < ARRAY_SIZE(candidates); i++)
+		if (candidates[i] &&
+		    candidates[i] != algo &&
+		    server_supports_hash(candidates[i]->name,
+					 "object-format-map",
+					 &object_format_map_supported)) {
+			map_algo = candidates[i];
+			break;
+		}
+
 	if (args->push_cert != SEND_PACK_PUSH_CERT_NEVER) {
 		size_t len;
 		const char *nonce = server_feature_value("push-cert", &len);
@@ -636,6 +647,8 @@ int send_pack(struct repository *r,
 		strbuf_addf(&cap_buf, " agent=%s", git_user_agent_sanitized());
 	if (advertise_sid)
 		strbuf_addf(&cap_buf, " session-id=%s", trace2_session_id());
+	if (map_algo)
+		strbuf_addf(&cap_buf, " object-format-map=%s", map_algo->name);
 
 	/*
 	 * NEEDSWORK: why does delete-refs have to be so specific to

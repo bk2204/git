@@ -130,7 +130,7 @@ format_and_save_expect () {
 	sed -e 's/Z$//' >expect
 }
 
-HASH_MESSAGE="The bundle uses this hash algorithm: $GIT_DEFAULT_HASH"
+HASH_MESSAGE="The bundle uses this hash algorithm: ${GIT_DEFAULT_HASH%%:*}"
 
 #            (C)   (D, pull/1/head, topic/1)
 #             o --- o

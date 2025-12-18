@@ -5075,18 +5075,6 @@ static int option_parse_cruft_expiration(const struct option *opt UNUSED,
 	return 0;
 }
 
-static int is_not_in_promisor_pack_obj(struct object *obj, void *data UNUSED)
-{
-	struct object_info info = OBJECT_INFO_INIT;
-	if (odb_read_object_info_extended(the_repository->objects, &obj->oid, &info, 0))
-		BUG("should_include_obj should only be called on existing objects");
-	return info.whence != OI_PACKED || !info.u.packed.pack->pack_promisor;
-}
-
-static int is_not_in_promisor_pack(struct commit *commit, void *data) {
-	return is_not_in_promisor_pack_obj((struct object *) commit, data);
-}
-
 static int parse_stdin_packs_mode(const struct option *opt, const char *arg,
 				  int unset)
 {
@@ -5495,8 +5483,8 @@ int cmd_pack_objects(int argc,
 		repo_init_revisions(the_repository, &revs, NULL);
 		list_objects_filter_copy(&revs.filter, &filter_options);
 		if (exclude_promisor_objects_best_effort) {
-			revs.include_check = is_not_in_promisor_pack;
-			revs.include_check_obj = is_not_in_promisor_pack_obj;
+			revs.include_check = commit_is_not_in_promisor_pack;
+			revs.include_check_obj = object_is_not_in_promisor_pack;
 		}
 		get_object_list(&revs, &rp);
 		release_revisions(&revs);

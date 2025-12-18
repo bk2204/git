@@ -560,4 +560,7 @@ int rewrite_parents(struct rev_info *revs,
  */
 struct commit_list *get_saved_parents(struct rev_info *revs, const struct commit *commit);
 
+int object_is_not_in_promisor_pack(struct object *obj, void *data);
+int commit_is_not_in_promisor_pack(struct commit *commit, void *data);
+
 #endif

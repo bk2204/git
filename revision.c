@@ -4749,3 +4749,20 @@ void put_revision_mark(const struct rev_info *revs, const struct commit *commit)
 	fputs(mark, stdout);
 	putchar(' ');
 }
+
+
+int object_is_not_in_promisor_pack(struct object *obj, void *data UNUSED)
+{
+	struct odb_source_info source_info;
+	struct object_info info = {
+		.source_infop = &source_info,
+	};
+
+	if (odb_read_object_info_extended(the_repository->objects, &obj->oid, &info, 0))
+		BUG("should_include_obj should only be called on existing objects");
+	return source_info.source->type != ODB_SOURCE_PACKED || !source_info.u.packed.pack->pack_promisor;
+}
+
+int commit_is_not_in_promisor_pack(struct commit *commit, void *data) {
+	return object_is_not_in_promisor_pack((struct object *) commit, data);
+}

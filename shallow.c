@@ -540,7 +540,11 @@ static int advertise_mapped_objects_cb(const struct object_id *oid, void *cb)
 static int advertise_shallow_grafts_cb(const struct object_id *oid, void *cb)
 {
 	struct transport_shallows *shallows = cb;
-	packet_buf_write(shallows->buf, "shallow %s\n", oid_to_hex(oid));
+	struct object_id main_oid;
+
+	if (repo_oid_to_algop(shallows->r, oid, shallows->algo, &main_oid))
+		return 1;
+	packet_buf_write(shallows->buf, "shallow %s\n", oid_to_hex(&main_oid));
 	return 0;
 }
 

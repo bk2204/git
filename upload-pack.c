@@ -105,6 +105,9 @@ struct upload_pack_data {
 
 	struct packet_writer writer;
 
+	struct child_process pack_objects;
+	struct strvec stdin_objects;
+
 	char *pack_objects_hook;
 
 	unsigned stateless_rpc : 1;				/* v0 only */
@@ -143,6 +146,7 @@ static void upload_pack_data_init(struct upload_pack_data *data)
 	struct string_list uri_protocols = STRING_LIST_INIT_DUP;
 	struct object_array extra_edge_obj = OBJECT_ARRAY_INIT;
 	struct string_list allowed_filters = STRING_LIST_INIT_DUP;
+	struct strvec stdin_objects = STRVEC_INIT;
 
 	memset(data, 0, sizeof(*data));
 	data->symref = symref;
@@ -157,6 +161,7 @@ static void upload_pack_data_init(struct upload_pack_data *data)
 	data->allowed_filters = allowed_filters;
 	data->allow_filter_fallback = 1;
 	data->tree_filter_max_depth = ULONG_MAX;
+	data->stdin_objects = stdin_objects;
 	packet_writer_init(&data->writer, 1);
 	list_objects_filter_init(&data->filter_options);
 
@@ -181,6 +186,7 @@ static void upload_pack_data_clear(struct upload_pack_data *data)
 	oid_array_clear(&data->shallow_response);
 	oid_array_clear(&data->shallow_references);
 	oid_array_clear(&data->unshallow_response);
+	strvec_clear(&data->stdin_objects);
 
 	free((char *)data->pack_objects_hook);
 }
@@ -211,14 +217,6 @@ static void send_client_data(int fd, const char *data, ssize_t sz,
 static void send_object_map_info(struct upload_pack_data *data,
 				 const struct git_hash_algo *map_algo,
 				 bool header);
-
-static int write_one_shallow(const struct commit_graft *graft, void *cb_data)
-{
-	FILE *fp = cb_data;
-	if (graft->nr_parent == -1)
-		fprintf(fp, "--shallow %s\n", oid_to_hex(&graft->oid));
-	return 0;
-}
 
 struct output_state {
 	/*
@@ -311,83 +309,103 @@ static int relay_pack_data(int pack_objects_out, struct output_state *os,
 	return readsz;
 }
 
-static void create_pack_file(struct upload_pack_data *pack_data,
+static int save_one_shallow(const struct commit_graft *graft, void *cb_data)
+{
+	struct strvec *v = cb_data;
+	if (graft->nr_parent == -1)
+		strvec_pushf(v, "--shallow %s", oid_to_hex(&graft->oid));
+	return 0;
+}
+
+static void compute_packing_args(struct upload_pack_data *pack_data,
 			     const struct string_list *uri_protocols,
 			     const struct git_hash_algo *hash_algo)
 {
-	struct child_process pack_objects = CHILD_PROCESS_INIT;
+	struct child_process *pack_objects = &pack_data->pack_objects;
+	struct strvec *stdin_objects = &pack_data->stdin_objects;
+
+	child_process_init(pack_objects);
+
+	if (!pack_data->pack_objects_hook)
+		pack_objects->git_cmd = 1;
+	else {
+		strvec_push(&pack_objects->args, pack_data->pack_objects_hook);
+		strvec_push(&pack_objects->args, "git");
+		pack_objects->use_shell = 1;
+	}
+
+	if (pack_data->shallow_nr) {
+		strvec_push(&pack_objects->args, "--shallow-file");
+		strvec_push(&pack_objects->args, "");
+	}
+	strvec_push(&pack_objects->args, "pack-objects");
+	strvec_push(&pack_objects->args, "--revs");
+	if (pack_data->use_thin_pack)
+		strvec_push(&pack_objects->args, "--thin");
+
+	strvec_push(&pack_objects->args, "--stdout");
+	strvec_pushf(&pack_objects->args, "--object-format=%s", hash_algo->name);
+	if (pack_data->shallow_nr)
+		strvec_push(&pack_objects->args, "--shallow");
+	if (!pack_data->no_progress)
+		strvec_push(&pack_objects->args, "--progress");
+	if (pack_data->use_ofs_delta)
+		strvec_push(&pack_objects->args, "--delta-base-offset");
+	if (pack_data->use_include_tag)
+		strvec_push(&pack_objects->args, "--include-tag");
+	if (repo_has_accepted_promisor_remote(the_repository))
+		strvec_push(&pack_objects->args, "--missing=allow-promisor");
+	if (pack_data->filter_options.choice) {
+		const char *spec =
+			expand_list_objects_filter_spec(&pack_data->filter_options);
+		strvec_pushf(&pack_objects->args, "--filter=%s", spec);
+	}
+	if (uri_protocols) {
+		for (int i = 0; i < uri_protocols->nr; i++)
+			strvec_pushf(&pack_objects->args, "--uri-protocol=%s",
+					 uri_protocols->items[i].string);
+	}
+
+	pack_objects->in = -1;
+	pack_objects->out = -1;
+	pack_objects->err = -1;
+	pack_objects->clean_on_exit = 1;
+
+	if (pack_data->shallow_nr)
+		for_each_commit_graft(save_one_shallow, stdin_objects);
+
+	for (int i = 0; i < pack_data->want_obj.nr; i++)
+		strvec_push(stdin_objects,
+			    oid_to_hex(&pack_data->want_obj.objects[i].item->oid));
+	strvec_push(stdin_objects, "--not");
+	for (int i = 0; i < pack_data->have_obj.nr; i++)
+		strvec_push(stdin_objects,
+			    oid_to_hex(&pack_data->have_obj.objects[i].item->oid));
+	for (int i = 0; i < pack_data->extra_edge_obj.nr; i++)
+		strvec_push(stdin_objects,
+			    oid_to_hex(&pack_data->extra_edge_obj.objects[i].item->oid));
+}
+
+static void create_pack_file(struct upload_pack_data *pack_data,
+			     const struct string_list *uri_protocols)
+{
 	struct output_state *output_state = xcalloc(1, sizeof(struct output_state));
 	char progress[128];
 	char abort_msg[] = "aborting due to possible repository "
 		"corruption on the remote side.";
 	uint64_t last_sent_ms = 0;
 	ssize_t sz;
-	int i;
 	FILE *pipe_fd;
+	struct child_process *pack_objects = &pack_data->pack_objects;
+	struct strvec *stdin_objects = &pack_data->stdin_objects;
 
-	if (!pack_data->pack_objects_hook)
-		pack_objects.git_cmd = 1;
-	else {
-		strvec_push(&pack_objects.args, pack_data->pack_objects_hook);
-		strvec_push(&pack_objects.args, "git");
-		pack_objects.use_shell = 1;
-	}
-
-	if (pack_data->shallow_nr) {
-		strvec_push(&pack_objects.args, "--shallow-file");
-		strvec_push(&pack_objects.args, "");
-	}
-	strvec_push(&pack_objects.args, "pack-objects");
-	strvec_push(&pack_objects.args, "--revs");
-	if (pack_data->use_thin_pack)
-		strvec_push(&pack_objects.args, "--thin");
-
-	strvec_push(&pack_objects.args, "--stdout");
-	strvec_pushf(&pack_objects.args, "--object-format=%s", hash_algo->name);
-	if (pack_data->shallow_nr)
-		strvec_push(&pack_objects.args, "--shallow");
-	if (!pack_data->no_progress)
-		strvec_push(&pack_objects.args, "--progress");
-	if (pack_data->use_ofs_delta)
-		strvec_push(&pack_objects.args, "--delta-base-offset");
-	if (pack_data->use_include_tag)
-		strvec_push(&pack_objects.args, "--include-tag");
-	if (repo_has_accepted_promisor_remote(the_repository))
-		strvec_push(&pack_objects.args, "--missing=allow-promisor");
-	if (pack_data->filter_options.choice) {
-		const char *spec =
-			expand_list_objects_filter_spec(&pack_data->filter_options);
-		strvec_pushf(&pack_objects.args, "--filter=%s", spec);
-	}
-	if (uri_protocols) {
-		for (i = 0; i < uri_protocols->nr; i++)
-			strvec_pushf(&pack_objects.args, "--uri-protocol=%s",
-					 uri_protocols->items[i].string);
-	}
-
-	pack_objects.in = -1;
-	pack_objects.out = -1;
-	pack_objects.err = -1;
-	pack_objects.clean_on_exit = 1;
-
-	if (start_command(&pack_objects))
+	if (start_command(pack_objects))
 		die("git upload-pack: unable to fork git-pack-objects");
 
-	pipe_fd = xfdopen(pack_objects.in, "w");
+	pipe_fd = xfdopen(pack_objects->in, "w");
 
-	if (pack_data->shallow_nr)
-		for_each_commit_graft(write_one_shallow, pipe_fd);
-
-	for (i = 0; i < pack_data->want_obj.nr; i++)
-		fprintf(pipe_fd, "%s\n",
-			oid_to_hex(&pack_data->want_obj.objects[i].item->oid));
-	fprintf(pipe_fd, "--not\n");
-	for (i = 0; i < pack_data->have_obj.nr; i++)
-		fprintf(pipe_fd, "%s\n",
-			oid_to_hex(&pack_data->have_obj.objects[i].item->oid));
-	for (i = 0; i < pack_data->extra_edge_obj.nr; i++)
-		fprintf(pipe_fd, "%s\n",
-			oid_to_hex(&pack_data->extra_edge_obj.objects[i].item->oid));
+	for (size_t i = 0; i < stdin_objects->nr; i++)
+		fprintf(pipe_fd, "%s\n", stdin_objects->v[i]);
 	fprintf(pipe_fd, "\n");
 	fflush(pipe_fd);
 	fclose(pipe_fd);
@@ -410,14 +428,14 @@ static void create_pack_file(struct upload_pack_data *pack_data,
 		pollsize = 0;
 		pe = pu = -1;
 
-		if (0 <= pack_objects.out) {
-			pfd[pollsize].fd = pack_objects.out;
+		if (0 <= pack_objects->out) {
+			pfd[pollsize].fd = pack_objects->out;
 			pfd[pollsize].events = POLLIN;
 			pu = pollsize;
 			pollsize++;
 		}
-		if (0 <= pack_objects.err) {
-			pfd[pollsize].fd = pack_objects.err;
+		if (0 <= pack_objects->err) {
+			pfd[pollsize].fd = pack_objects->err;
 			pfd[pollsize].events = POLLIN;
 			pe = pollsize;
 			pollsize++;
@@ -454,15 +472,15 @@ static void create_pack_file(struct upload_pack_data *pack_data,
 			/* Status ready; we ship that in the side-band
 			 * or dump to the standard error.
 			 */
-			sz = xread(pack_objects.err, progress,
+			sz = xread(pack_objects->err, progress,
 				  sizeof(progress));
 			if (0 < sz) {
 				send_client_data(2, progress, sz,
 						 pack_data->use_sideband);
 				last_sent_ms = now_ms;
 			} else if (sz == 0) {
-				close(pack_objects.err);
-				pack_objects.err = -1;
+				close(pack_objects->err);
+				pack_objects->err = -1;
 			}
 			else
 				goto fail;
@@ -472,15 +490,15 @@ static void create_pack_file(struct upload_pack_data *pack_data,
 
 		if (0 <= pu && (pfd[pu].revents & (POLLIN|POLLHUP))) {
 			bool did_send_data;
-			int result = relay_pack_data(pack_objects.out,
+			int result = relay_pack_data(pack_objects->out,
 						     output_state,
 						     pack_data->use_sideband,
 						     !!uri_protocols,
 						     &did_send_data);
 
 			if (result == 0) {
-				close(pack_objects.out);
-				pack_objects.out = -1;
+				close(pack_objects->out);
+				pack_objects->out = -1;
 			} else if (result < 0) {
 				goto fail;
 			}
@@ -515,7 +533,7 @@ static void create_pack_file(struct upload_pack_data *pack_data,
 		}
 	}
 
-	if (finish_command(&pack_objects)) {
+	if (finish_command(pack_objects)) {
 		error("git upload-pack: git-pack-objects died with error.");
 		goto fail;
 	}
@@ -1573,7 +1591,8 @@ void upload_pack(const int advertise_refs, const int stateless_rpc,
 		    packet_reader_peek(&reader) != PACKET_READ_EOF) {
 			reader.options &= ~PACKET_READ_GENTLE_ON_EOF;
 			get_common_commits(&data, &reader);
-			create_pack_file(&data, NULL, reader.hash_algo);
+			compute_packing_args(&data, NULL, reader.hash_algo);
+			create_pack_file(&data, NULL);
 		}
 	}
 
@@ -1992,17 +2011,19 @@ int upload_pack_v2(struct repository *r, struct packet_reader *request)
 			break;
 		case UPLOAD_SEND_PACK:
 			compute_shallow_info(&data);
+			compute_packing_args(&data,
+					     data.uri_protocols.nr ?
+					     &data.uri_protocols : NULL,
+					     request->hash_algo);
 			send_object_map_info(&data, request->map_hash_algo, true);
 			send_wanted_ref_info(&data);
 			send_shallow_info(&data);
 
 			if (data.uri_protocols.nr) {
-				create_pack_file(&data, &data.uri_protocols,
-						 request->hash_algo);
+				create_pack_file(&data, &data.uri_protocols);
 			} else {
 				packet_writer_write(&data.writer, "packfile\n");
-				create_pack_file(&data, NULL,
-						 request->hash_algo);
+				create_pack_file(&data, NULL);
 			}
 			state = UPLOAD_DONE;
 			break;

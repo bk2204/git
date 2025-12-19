@@ -23,6 +23,9 @@ struct oidtree {
 /* Initialize the oidtree so that it is ready for use. */
 void oidtree_init(struct oidtree *ot);
 
+/* Return whether the oidtree is empty. */
+bool oidtree_is_empty(struct oidtree *t);
+
 /*
  * Release all memory associated with the oidtree and reinitialize it for
  * subsequent use.

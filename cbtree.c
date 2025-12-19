@@ -118,6 +118,11 @@ static int cb_descend(struct cb_node *p, cb_iter fn, void *arg)
 	}
 }
 
+bool cb_is_empty(struct cb_tree *t)
+{
+	return !t->root;
+}
+
 int cb_each(struct cb_tree *t, const uint8_t *kpfx, size_t klen,
 	    cb_iter fn, void *arg)
 {

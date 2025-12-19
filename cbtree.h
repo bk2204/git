@@ -42,6 +42,7 @@ static inline void cb_init(struct cb_tree *t,
 struct cb_node *cb_lookup(struct cb_tree *, const uint8_t *k, size_t klen);
 struct cb_node *cb_insert(struct cb_tree *, struct cb_node *, size_t klen);
 
+bool cb_is_empty(struct cb_tree *t);
 /*
  * Callback invoked by `cb_each()` for each node in the critbit tree. A return
  * value of 0 will cause the iteration to continue, a non-zero return code will

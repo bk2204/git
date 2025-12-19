@@ -112,6 +112,11 @@ static int iter(struct cb_node *n, void *cb_data)
 	return data->cb(&node->key, node->data, data->cb_data);
 }
 
+bool oidtree_is_empty(struct oidtree *ot)
+{
+	return cb_is_empty(&ot->tree);
+}
+
 int oidtree_each(struct oidtree *ot, const struct object_id *prefix,
 		 size_t prefix_hex_len, oidtree_each_cb cb, void *cb_data)
 {

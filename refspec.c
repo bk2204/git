@@ -102,7 +102,7 @@ static int parse_refspec(struct refspec_item *item, const char *refspec, int fet
 		if (!*item->src)
 			; /* empty is ok; it means "HEAD" */
 		else if (llen == the_hash_algo->hexsz && !get_oid_hex(item->src, &unused))
-			item->exact_sha1 = 1; /* ok */
+			item->exact_oid = 1; /* ok */
 		else if (!check_refname_format(item->src, flags))
 			; /* valid looking ref is ok */
 		else
@@ -179,7 +179,7 @@ void refspec_item_clear(struct refspec_item *item)
 	item->force = 0;
 	item->pattern = 0;
 	item->matching = 0;
-	item->exact_sha1 = 0;
+	item->exact_oid = 0;
 }
 
 void refspec_init_fetch(struct refspec *rs)
@@ -266,7 +266,7 @@ void refspec_ref_prefixes(const struct refspec *rs,
 			continue;
 
 		if (rs->fetch) {
-			if (item->exact_sha1)
+			if (item->exact_oid)
 				continue;
 			prefix = item->src;
 		} else {
@@ -277,7 +277,7 @@ void refspec_ref_prefixes(const struct refspec *rs,
 			 */
 			if (item->dst)
 				prefix = item->dst;
-			else if (item->src && !item->exact_sha1)
+			else if (item->src && !item->exact_oid)
 				prefix = item->src;
 		}
 

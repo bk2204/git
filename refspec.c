@@ -97,11 +97,14 @@ static int parse_refspec(struct refspec_item *item, const char *refspec, int fet
 
 	if (fetch) {
 		struct object_id unused;
+		const struct git_hash_algo *compat = the_repository->compat_hash_algo;
 
 		/* LHS */
 		if (!*item->src)
 			; /* empty is ok; it means "HEAD" */
 		else if (llen == the_hash_algo->hexsz && !get_oid_hex(item->src, &unused))
+			item->exact_oid = 1; /* ok */
+		else if (compat && llen == compat->hexsz && !get_oid_hex_algop(item->src, &unused, compat))
 			item->exact_oid = 1; /* ok */
 		else if (!check_refname_format(item->src, flags))
 			; /* valid looking ref is ok */

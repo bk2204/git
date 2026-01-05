@@ -2107,7 +2107,7 @@ int get_fetch_map(const struct ref *remote_refs,
 	} else {
 		const char *name = refspec->src[0] ? refspec->src : "HEAD";
 
-		if (refspec->exact_sha1) {
+		if (refspec->exact_oid) {
 			ref_map = alloc_ref(name);
 			get_oid_hex(name, &ref_map->old_oid);
 			ref_map->exact_oid = 1;

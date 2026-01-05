@@ -21,7 +21,7 @@ struct refspec_item {
 	unsigned force : 1;
 	unsigned pattern : 1;
 	unsigned matching : 1;
-	unsigned exact_sha1 : 1;
+	unsigned exact_oid : 1;
 	unsigned negative : 1;
 
 	char *src;

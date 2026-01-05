@@ -13,6 +13,7 @@
 #include "object-file-convert.h"
 #include "odb.h"
 #include "oid-array.h"
+#include "oidtree.h"
 #include "object.h"
 #include "commit.h"
 #include "diff.h"
@@ -86,6 +87,7 @@ struct upload_pack_data {
 	struct oid_array shallow_response;
 	struct oid_array unshallow_response;
 	struct oid_array shallow_references;
+	struct oidtree submodule_references;
 
 	unsigned int timeout;					/* v0 only */
 	enum {
@@ -107,6 +109,7 @@ struct upload_pack_data {
 
 	struct child_process pack_objects;
 	struct strvec stdin_objects;
+	struct strvec submodule_revision_args;
 
 	char *pack_objects_hook;
 
@@ -147,6 +150,7 @@ static void upload_pack_data_init(struct upload_pack_data *data)
 	struct object_array extra_edge_obj = OBJECT_ARRAY_INIT;
 	struct string_list allowed_filters = STRING_LIST_INIT_DUP;
 	struct strvec stdin_objects = STRVEC_INIT;
+	struct strvec submodule_revision_args = STRVEC_INIT;
 
 	memset(data, 0, sizeof(*data));
 	data->symref = symref;
@@ -162,8 +166,10 @@ static void upload_pack_data_init(struct upload_pack_data *data)
 	data->allow_filter_fallback = 1;
 	data->tree_filter_max_depth = ULONG_MAX;
 	data->stdin_objects = stdin_objects;
+	data->submodule_revision_args = submodule_revision_args;
 	packet_writer_init(&data->writer, 1);
 	list_objects_filter_init(&data->filter_options);
+	oidtree_init(&data->submodule_references);
 
 	data->keepalive = 5;
 	data->advertise_sid = 0;
@@ -187,6 +193,8 @@ static void upload_pack_data_clear(struct upload_pack_data *data)
 	oid_array_clear(&data->shallow_references);
 	oid_array_clear(&data->unshallow_response);
 	strvec_clear(&data->stdin_objects);
+	strvec_clear(&data->submodule_revision_args);
+	oidtree_clear(&data->submodule_references);
 
 	free((char *)data->pack_objects_hook);
 }

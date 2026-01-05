@@ -1270,6 +1270,7 @@ void parse_one_object_format_info(struct repository *r,
 {
 	const char *arg;
 	struct object_id oid, mapped;
+	int kind = 0;
 
 	if (!map_algo)
 		die(_("unexpected object-map-info with no requested algorithm"));
@@ -1282,7 +1283,12 @@ void parse_one_object_format_info(struct repository *r,
 		return;
 
 	if (skip_prefix(arg, "shallow ", &arg) ||
-	    skip_prefix(arg, "unshallow ", &arg)) {
+	    skip_prefix(arg, "unshallow ", &arg))
+		kind = LOOSE_TYPE_SHALLOW;
+	else if (skip_prefix(arg, "submodule ", &arg))
+		kind = LOOSE_TYPE_SUBMODULE;
+
+	if (kind) {
 		if (parse_oid_hex_algop(arg, &oid, &arg, hash_algo) ||
 		    *arg++ != ' ' ||
 		    get_oid_hex_algop(arg, &mapped, map_algo))
@@ -1294,7 +1300,7 @@ void parse_one_object_format_info(struct repository *r,
 		 */
 		repo_add_loose_object_map(r->objects->sources,
 					  &oid, &mapped,
-					  LOOSE_WRITE | LOOSE_TYPE_SHALLOW);
+					  LOOSE_WRITE | kind);
 	}
 	/* We allow unknown kinds here and ignore them. */
 }

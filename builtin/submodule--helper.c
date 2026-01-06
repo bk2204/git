@@ -27,6 +27,7 @@
 #include "diffcore.h"
 #include "diff.h"
 #include "object-file.h"
+#include "object-file-convert.h"
 #include "object-name.h"
 #include "odb.h"
 #include "odb/source.h"
@@ -2212,6 +2213,7 @@ struct update_data {
 
 	/* copied over from update_clone_data */
 	struct object_id oid;
+	struct object_id compat_oid;
 	unsigned int just_cloned;
 	const char *sm_path;
 };
@@ -2548,8 +2550,13 @@ static int fetch_in_submodule(const char *module_path, int depth, int quiet,
 static int run_update_command(const struct update_data *ud, int subforce)
 {
 	struct child_process cp = CHILD_PROCESS_INIT;
-	char *oid = oid_to_hex(&ud->oid);
+	char *oid;
 	int ret;
+
+	if (!is_null_oid(&ud->compat_oid))
+		oid = oid_to_hex(&ud->compat_oid);
+	else
+		oid = oid_to_hex(&ud->oid);
 
 	switch (ud->update_strategy.type) {
 	case SM_UPDATE_CHECKOUT:
@@ -2637,11 +2644,15 @@ static int run_update_command(const struct update_data *ud, int subforce)
 	return 0;
 }
 
-static int run_update_procedure(const struct update_data *ud)
+static int run_update_procedure(struct update_data *ud)
 {
 	int subforce = is_null_oid(&ud->suboid) || ud->force;
+	const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+
+	oidclr(&ud->compat_oid, compat ? compat : the_repository->hash_algo);
 
 	if (!ud->nofetch) {
+
 		/*
 		 * Run fetch only if `oid` isn't present or it
 		 * is not reachable from a ref.
@@ -2658,10 +2669,21 @@ static int run_update_procedure(const struct update_data *ud)
 		 * not be reachable from any of the refs.
 		 */
 		if (!is_tip_reachable(ud->sm_path, &ud->oid) &&
-		    fetch_in_submodule(ud->sm_path, ud->depth, ud->quiet, &ud->oid))
-			return die_message(_("Fetched in submodule path '%s', but it did not "
-					     "contain %s. Direct fetching of that commit failed."),
-					   ud->displaypath, oid_to_hex(&ud->oid));
+		    fetch_in_submodule(ud->sm_path, ud->depth, ud->quiet || !!compat, &ud->oid)) {
+			struct object_id oid;
+
+			if (!compat ||
+			    (compat &&
+			     (repo_oid_to_algop(the_repository, &ud->oid,
+					       the_repository->compat_hash_algo,
+					       &oid) ||
+			      fetch_in_submodule(ud->sm_path, ud->depth, ud->quiet, &oid))))
+				return die_message(_("Fetched in submodule path '%s', but it did not "
+						     "contain %s. Direct fetching of that commit failed."),
+						   ud->displaypath, oid_to_hex(&ud->oid));
+			if (compat)
+				oidcpy(&ud->compat_oid, &oid);
+		}
 	}
 
 	return run_update_command(ud, subforce);

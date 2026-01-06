@@ -343,6 +343,38 @@ test_fetch_push () {
 			push_shallow_verify_oids2 "$dest_compat_algo"
 		)
 	'
+
+	test_expect_success "$desc: setup of repository with submodules" '
+		create_repo subsource "$source_algo" "$source_compat_algo" &&
+		(
+			cd subsource &&
+			git fetch ../source dev:dev &&
+			git checkout dev &&
+			create_repo sub "$source_algo" "$source_compat_algo" &&
+			test_commit -C sub --annotate sub1 &&
+			git submodule add "$(pwd)/sub" sub &&
+			test_commit --annotate super
+		) &&
+		subsource_oid=$(git -C subsource rev-parse HEAD) &&
+		sub_commit=$(git -C subsource/sub rev-parse sub1^{commit}) &&
+		create_repo subdest "$dest_algo" "$dest_compat_algo"
+	'
+
+	test_expect_success SHARED_ALGOS "$desc: fetch from submodule repository" '
+		test_config_global protocol.file.allow always &&
+		(
+			cd subdest &&
+			GIT_TRACE=1 GIT_TRACE_PACKET=1 git fetch ../subsource dev:dev &&
+			git checkout dev &&
+			GIT_TRACE=1 GIT_TRACE_PACKET=1 git submodule update --init --recursive &&
+			dev=$(git rev-parse --output-object-format="$source_algo" dev) &&
+			commit=$(git -C sub rev-parse --output-object-format="$source_algo" HEAD) &&
+			submodule=$(git rev-parse --output-object-format="$source_algo" dev:sub) &&
+			test "$dev" = "$subsource_oid" &&
+			test "$commit" = "$sub_commit" &&
+			test "$submodule" = "$sub_commit"
+		)
+	'
 }
 
 test_fetch_push sha1-to-sha1 sha1: sha1: --fsck

@@ -139,7 +139,7 @@ struct transport {
 
 	enum transport_family family;
 
-	const struct git_hash_algo *hash_algo;
+	const struct git_hash_algo *hash_algo, *supported_map_hash_algo;
 };
 
 #define TRANSPORT_PUSH_ALL			(1<<0)
@@ -307,6 +307,12 @@ int transport_get_remote_bundle_uri(struct transport *transport);
  * This can only be called after fetching the remote refs.
  */
 const struct git_hash_algo *transport_get_hash_algo(struct transport *transport);
+/*
+ * Fetch the remote map hash algorithm offered by a remote.
+ *
+ * This can only be called after fetching the remote refs.
+ */
+const struct git_hash_algo *transport_get_supported_map_hash_algo(struct transport *transport);
 int transport_fetch_refs(struct transport *transport, struct ref *refs);
 
 /*

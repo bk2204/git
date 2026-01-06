@@ -265,6 +265,8 @@ static void process_capabilities(struct packet_reader *reader, size_t *linelen)
 		    (algop == the_repository->hash_algo ||
 		     algop == the_repository->compat_hash_algo))
 			reader->map_hash_algo = algop;
+		if (algop && algop != reader->hash_algo)
+			reader->supported_map_hash_algo = algop;
 		free(hash_name);
 	} else {
 		reader->map_hash_algo = NULL;

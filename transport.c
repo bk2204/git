@@ -388,6 +388,7 @@ static struct ref *handshake(struct transport *transport, int for_push,
 	}
 	data->finished_handshake = 1;
 	transport->hash_algo = reader.hash_algo;
+	transport->supported_map_hash_algo = reader.supported_map_hash_algo;
 
 	if (reader.line_peeked)
 		BUG("buffer must be empty at the end of handshake()");
@@ -1308,6 +1309,11 @@ void parse_one_object_format_info(struct repository *r,
 const struct git_hash_algo *transport_get_hash_algo(struct transport *transport)
 {
 	return transport->hash_algo;
+}
+
+const struct git_hash_algo *transport_get_supported_map_hash_algo(struct transport *transport)
+{
+	return transport->supported_map_hash_algo;
 }
 
 int transport_set_option(struct transport *transport,

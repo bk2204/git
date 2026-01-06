@@ -1956,6 +1956,14 @@ static int clone_submodule(const struct module_clone_data *clone_data,
 				    "--single-branch" :
 				    "--no-single-branch");
 
+		if (the_repository->compat_hash_algo)
+			strvec_pushf(&cp.args, "--object-format=%s:%s",
+				     the_repository->hash_algo->name,
+				     the_repository->compat_hash_algo->name);
+		else
+			strvec_pushf(&cp.args, "--object-format=%s",
+				     the_repository->hash_algo->name);
+
 		strvec_push(&cp.args, "--");
 		strvec_push(&cp.args, clone_data->url);
 		strvec_push(&cp.args, clone_data_path);

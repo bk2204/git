@@ -375,6 +375,16 @@ test_fetch_push () {
 			test "$submodule" = "$sub_commit"
 		)
 	'
+
+	test_expect_success !SHARED_ALGOS "$desc: fetch from submodule repository with mismatched algos" '
+		test_config_global protocol.file.allow always &&
+		(
+			cd subdest &&
+			test_must_fail git fetch ../subsource dev:dev 2>err &&
+			grep "could not map object.*due to missing submodule" err &&
+			grep "make sure that the remote side supports" err
+		)
+	'
 }
 
 test_fetch_push sha1-to-sha1 sha1: sha1: --fsck

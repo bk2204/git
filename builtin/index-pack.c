@@ -2399,7 +2399,7 @@ static void map_one_object(struct pack_ctx *c,
 	size_t hdrlen, base_unused;
 	size_t size, basesize;
 	struct object_id last_oid, base_oid;
-	struct missing_object missing;
+	struct missing_object missing = { 0 };
 	struct git_hash_ctx ctx;
 	char hdr[32];
 	int ret;
@@ -2430,6 +2430,8 @@ static void map_one_object(struct pack_ctx *c,
 	while (1) {
 		void *cvtbuf;
 		size_t cvtsz;
+
+		memset(&missing, 0, sizeof(missing));
 
 		if (obj->real_type == OBJ_BLOB) {
 			cvtbuf = buf;
@@ -2479,7 +2481,24 @@ static void map_one_object(struct pack_ctx *c,
 	free(buf);
 	return;
 err:
-	die(_("could not map object %s"), oid_to_hex(&obj->idx.oid));
+	if (S_ISGITLINK(missing.mode)) {
+		error(_("could not map object %s due to missing submodule %s"),
+		      oid_to_hex(&obj->idx.oid), oid_to_hex(&missing.oid));
+		if (from_stdin)
+			error(_("make sure that the remote side supports both %s and %s"),
+			      the_repository->hash_algo->name,
+			      the_repository->compat_hash_algo->name);
+
+	} else if (missing.mode && missing.type) {
+		error(_("could not map object %s due to missing object %s of type %s (mode %o)"),
+		      oid_to_hex(&obj->idx.oid), oid_to_hex(&missing.oid), type_name(missing.type), missing.mode);
+	} else if (missing.type) {
+		error(_("could not map object %s due to missing object %s of type %s"),
+		      oid_to_hex(&obj->idx.oid), oid_to_hex(&missing.oid), type_name(missing.type));
+	} else {
+		error(_("could not map object %s"), oid_to_hex(&obj->idx.oid));
+	}
+	die(_("failed to map objects"));
 }
 
 static void compute_compat_hashes(struct pack_ctx *orig)

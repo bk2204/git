@@ -13,14 +13,17 @@
 #include "environment.h"
 #include "gettext.h"
 #include "hex.h"
+#include "list-objects.h"
 #include "revision.h"
 #include "run-command.h"
 #include "diffcore.h"
 #include "refs.h"
 #include "string-list.h"
 #include "oid-array.h"
+#include "oidtree.h"
 #include "strvec.h"
 #include "thread-utils.h"
+#include "tree.h"
 #include "path.h"
 #include "remote.h"
 #include "worktree.h"
@@ -2768,4 +2771,101 @@ void submodule_name_to_gitdir(struct strbuf *buf, struct repository *r,
 		die(_("refusing to create/use '%s' in another submodule's "
 		      " git dir."), buf->buf);
 	}
+}
+
+static int process_tree_entry_for_maps(const struct object_id *oid,
+				       struct strbuf *name UNUSED,
+				       const char *path UNUSED,
+				       unsigned int mode, void *cbdata)
+{
+	struct oidtree *entries = cbdata;
+
+	if (S_ISGITLINK(mode))
+		oidtree_insert(entries, oid);
+	return 0;
+}
+
+static void add_object_to_maps(struct object *obj, const char *name UNUSED,
+			       void *cbdata)
+{
+	struct tree *tree;
+	struct pathspec ps = { 0 };
+
+	if (obj->type != OBJ_TREE)
+		return;
+
+	tree = (struct tree *)obj;
+
+	ps.recursive = 1;
+	ps.has_wildcard = 1;
+	ps.max_depth = -1;
+
+	read_tree(the_repository, tree, &ps, process_tree_entry_for_maps,
+		  cbdata);
+}
+
+void find_submodules_in_revisions(struct oidtree *submodules,
+				  struct list_objects_filter_options *filter_options,
+				  struct strvec *rev_args,
+				  struct strvec *stdin_objects)
+{
+	struct rev_info revs;
+	int flags = 0;
+	struct setup_revision_opt s_r_opt = {
+		.allow_exclude_promisor_objects = 1,
+	};
+
+	repo_init_revisions(the_repository, &revs, NULL);
+
+	/* We can't serve or map objects that are in a promisor pack, so make a
+	 * best-effort attempt to exclude them.
+	 */
+	revs.include_check = commit_is_not_in_promisor_pack;
+	revs.include_check_obj = object_is_not_in_promisor_pack;
+
+	if (filter_options)
+		list_objects_filter_copy(&revs.filter, filter_options);
+	else
+		list_objects_filter_init(&revs.filter);
+	/*
+	 * We are only interested in trees when converting submodules, since
+	 * they're the only objects which hold submodules, so exclude blobs.
+	 */
+	parse_list_objects_filter(&revs.filter, "blob:none");
+
+	setup_revisions_from_strvec(rev_args, &revs, &s_r_opt);
+
+	for (size_t i = 0; i < stdin_objects->nr; i++) {
+		const char *line = stdin_objects->v[i], *p;
+		int len = strlen(line);
+		if (!len)
+			break;
+		if (*line == '-') {
+			if (!strcmp(line, "--not")) {
+				flags ^= UNINTERESTING;
+				continue;
+			}
+			if (skip_prefix(line, "--shallow ", &p)) {
+				struct object_id oid;
+				if (get_oid_hex(p, &oid))
+					die("not an object name '%s'", p);
+				/*
+				 * We've already registered this shallow, so we
+				 * don't need to do anything else.
+				 */
+				continue;
+			}
+			die(_("not a rev '%s'"), line);
+		}
+		if (handle_revision_arg(line, &revs, flags, REVARG_CANNOT_BE_FILENAME))
+			die(_("bad revision '%s'"), line);
+	}
+
+	if (prepare_revision_walk(&revs))
+		die(_("revision walk setup failed"));
+	traverse_commit_list(&revs,
+			     NULL, add_object_to_maps,
+			     submodules);
+
+	release_revisions(&revs);
 }

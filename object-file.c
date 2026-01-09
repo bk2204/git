@@ -135,12 +135,20 @@ int check_object_signature(struct repository *r, const struct object_id *oid,
 
 int stream_object_signature(struct repository *r,
 			    struct odb_read_stream *st,
-			    const struct object_id *oid)
+			    const struct object_id *oid,
+			    const struct object_id *compat_oid)
 {
-	struct object_id real_oid;
-	struct git_hash_ctx c;
+	struct object_id real_oid, real_compat_oid;
+	struct git_hash_ctx c, compat_ctx, *compat_c = NULL;
 	char hdr[MAX_HEADER_LEN];
 	int hdrlen;
+
+	/*
+	 * This function only handles blobs, since other objects must be read
+	 * into memory to be converted to the compatibility algorithm..
+	 */
+	if (st->type != OBJ_BLOB)
+		return -1;
 
 	/* Generate the header */
 	hdrlen = format_object_header(hdr, sizeof(hdr), st->type, st->size);
@@ -148,6 +156,11 @@ int stream_object_signature(struct repository *r,
 	/* Sha1.. */
 	r->hash_algo->init_fn(&c);
 	git_hash_update(&c, hdr, hdrlen);
+	if (r->compat_hash_algo && compat_oid) {
+		compat_c = &compat_ctx;
+		r->compat_hash_algo->init_fn(compat_c);
+		git_hash_update(compat_c, hdr, hdrlen);
+	}
 	for (;;) {
 		char buf[1024 * 16];
 		ssize_t readlen = odb_read_stream_read(st, buf, sizeof(buf));
@@ -159,9 +172,14 @@ int stream_object_signature(struct repository *r,
 		if (!readlen)
 			break;
 		git_hash_update(&c, buf, readlen);
+		if (compat_c)
+			git_hash_update(compat_c, buf, readlen);
 	}
 	git_hash_final_oid(&real_oid, &c);
-	return !oideq(oid, &real_oid) ? -1 : 0;
+	if (compat_c)
+		git_hash_final_oid(&real_compat_oid, compat_c);
+	return !oideq(oid, &real_oid) ||
+	       (compat_c && !oideq(compat_oid, &real_compat_oid)) ? -1 : 0;
 }
 
 /*

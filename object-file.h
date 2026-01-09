@@ -191,7 +191,8 @@ int check_object_signature(struct repository *r, const struct object_id *oid,
  */
 int stream_object_signature(struct repository *r,
 			    struct odb_read_stream *stream,
-			    const struct object_id *oid);
+			    const struct object_id *oid,
+			    const struct object_id *compat_oid);
 
 enum finalize_object_file_flags {
 	FOF_SKIP_COLLISION_CHECK = 1,

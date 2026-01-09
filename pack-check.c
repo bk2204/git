@@ -8,6 +8,7 @@
 #include "progress.h"
 #include "packfile.h"
 #include "object-file.h"
+#include "object-file-convert.h"
 #include "odb.h"
 #include "odb/streaming.h"
 
@@ -110,7 +111,7 @@ static int verify_packfile(struct repository *r,
 	for (i = 0; i < nr_objects; i++) {
 		struct odb_read_stream *stream = NULL;
 		void *data;
-		struct object_id oid;
+		struct object_id oid, coid, *compat_oid = NULL;
 		enum object_type type;
 		size_t size;
 		off_t curpos;
@@ -129,6 +130,17 @@ static int verify_packfile(struct repository *r,
 					    "from %s at offset %"PRIuMAX"",
 					    oid_to_hex(&oid),
 					    p->pack_name, (uintmax_t)offset);
+		}
+
+		if (r->compat_hash_algo) {
+			compat_oid = &coid;
+			if (nth_packed_object_id_algop(compat_oid, p,
+						       entries[i].nr,
+						       r->hash_algo,
+						       r->compat_hash_algo))
+				err = error("unable to map object %s to %s",
+					    oid_to_hex(&oid),
+					    r->compat_hash_algo->name);
 		}
 
 		curpos = entries[i].offset;
@@ -161,7 +173,7 @@ static int verify_packfile(struct repository *r,
 				    oid_to_hex(&oid), p->pack_name);
 		else if (!data &&
 			 (packfile_read_object_stream(&stream, &oid, p, entries[i].offset) < 0 ||
-			  stream_object_signature(r, stream, &oid) < 0))
+			  stream_object_signature(r, stream, &oid, compat_oid) < 0))
 			err = error("packed %s from %s is corrupt",
 				    oid_to_hex(&oid), p->pack_name);
 		else if (fn) {

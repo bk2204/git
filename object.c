@@ -353,7 +353,7 @@ struct object *parse_object_with_flags(struct repository *r,
 				return NULL;
 			}
 
-			if (stream_object_signature(r, stream, repl) < 0) {
+			if (stream_object_signature(r, stream, repl, NULL) < 0) {
 				error(_("hash mismatch %s"), oid_to_hex(oid));
 				odb_read_stream_close(stream);
 				return NULL;

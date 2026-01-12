@@ -11,6 +11,7 @@
 #include "object-file-convert.h"
 #include "odb.h"
 #include "odb/streaming.h"
+#include "strbuf.h"
 
 struct idx_entry {
 	off_t                offset;
@@ -68,6 +69,7 @@ static int verify_packfile(struct repository *r,
 	uint32_t nr_objects, i;
 	int err = 0;
 	struct idx_entry *entries;
+	struct strbuf compat_buf = STRBUF_INIT;
 
 	if (!is_pack_valid(p))
 		return error("packfile %s cannot be accessed", p->pack_name);
@@ -110,10 +112,10 @@ static int verify_packfile(struct repository *r,
 
 	for (i = 0; i < nr_objects; i++) {
 		struct odb_read_stream *stream = NULL;
-		void *data;
+		void *data, *compat_data = NULL;
 		struct object_id oid, coid, *compat_oid = NULL;
 		enum object_type type;
-		size_t size;
+		size_t size, compat_size;
 		off_t curpos;
 		int data_valid;
 
@@ -161,6 +163,24 @@ static int verify_packfile(struct repository *r,
 			data = unpack_entry(r, p, entries[i].offset, &type, &sz);
 			size = sz;
 			data_valid = 1;
+
+			if (r->compat_hash_algo && data) {
+				if (type == OBJ_BLOB) {
+					compat_data = data;
+					compat_size = size;
+				} else if (!convert_object_file(r, &compat_buf,
+								r->hash_algo,
+								r->compat_hash_algo,
+								data, size,
+								type, NULL, 1)) {
+					compat_data = compat_buf.buf;
+					compat_size = compat_buf.len;
+				} else {
+					err = error("cannot convert %s from %s at offset %"PRIuMAX"",
+						    oid_to_hex(&oid), p->pack_name,
+						    (uintmax_t)entries[i].offset);
+				}
+			}
 		}
 
 		if (data_valid && !data)
@@ -171,6 +191,12 @@ static int verify_packfile(struct repository *r,
 							type) < 0)
 			err = error("packed %s from %s is corrupt",
 				    oid_to_hex(&oid), p->pack_name);
+		else if (compat_data &&
+			 check_object_signature(r, compat_oid, compat_data,
+						compat_size, type) < 0)
+			err = error("packed %s converted from %s from %s is corrupt",
+				    oid_to_hex(compat_oid), oid_to_hex(&oid),
+				    p->pack_name);
 		else if (!data &&
 			 (packfile_read_object_stream(&stream, &oid, p, entries[i].offset) < 0 ||
 			  stream_object_signature(r, stream, &oid, compat_oid) < 0))
@@ -188,10 +214,13 @@ static int verify_packfile(struct repository *r,
 		if (stream)
 			odb_read_stream_close(stream);
 		free(data);
+		strbuf_reset(&compat_buf);
 	}
 
 	display_progress(progress, base_count + i);
 	free(entries);
+	strbuf_release(&compat_buf);
+
 	return err;
 }
 

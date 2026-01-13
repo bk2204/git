@@ -2095,16 +2095,23 @@ static int check_stream_oid(git_zstream *stream,
 			    unsigned long size,
 			    const char *path,
 			    const struct object_id *expected_oid,
-			    const struct git_hash_algo *algop)
+			    const struct object_id *expected_compat_oid,
+			    const struct git_hash_algo *algop,
+			    const struct git_hash_algo *compat_algop)
 {
-	struct git_hash_ctx c;
-	struct object_id real_oid;
+	struct git_hash_ctx c, compatc;
+	struct object_id real_oid, real_compat_oid;
 	unsigned char buf[4096];
 	unsigned long total_read;
 	int status = Z_OK;
 
 	algop->init_fn(&c);
 	git_hash_update(&c, hdr, stream->total_out);
+
+	if (compat_algop) {
+		compat_algop->init_fn(&compatc);
+		git_hash_update(&compatc, hdr, stream->total_out);
+	}
 
 	/*
 	 * We already read some bytes into hdr, but the ones up to the NUL
@@ -2125,6 +2132,8 @@ static int check_stream_oid(git_zstream *stream,
 			stream->avail_out = size - total_read;
 		status = git_inflate(stream, Z_FINISH);
 		git_hash_update(&c, buf, stream->next_out - buf);
+		if (compat_algop)
+			git_hash_update(&compatc, buf, stream->next_out - buf);
 		total_read += stream->next_out - buf;
 	}
 
@@ -2145,13 +2154,24 @@ static int check_stream_oid(git_zstream *stream,
 		return -1;
 	}
 
+	if (compat_algop) {
+		git_hash_final_oid(&real_compat_oid, &compatc);
+		if (!oideq(expected_compat_oid, &real_compat_oid)) {
+			error(_("compatibility hash mismatch for %s (expected %s)"), path,
+			      oid_to_hex(expected_compat_oid));
+			return -1;
+		}
+	}
+
 	return 0;
 }
 
 int read_loose_object(struct repository *repo,
 		      const char *path,
 		      const struct object_id *expected_oid,
+		      const struct object_id *expected_compat_oid,
 		      struct object_id *real_oid,
+		      struct object_id *real_compat_oid,
 		      void **contents,
 		      struct object_info *oi)
 {
@@ -2190,7 +2210,8 @@ int read_loose_object(struct repository *repo,
 	if (*oi->typep == OBJ_BLOB &&
 	    *size > repo_settings_get_big_file_threshold(repo)) {
 		if (check_stream_oid(&stream, hdr, *size, path, expected_oid,
-				     repo->hash_algo) < 0)
+				     expected_compat_oid, repo->hash_algo,
+				     repo->compat_hash_algo) < 0)
 			goto out_inflate;
 	} else {
 		*contents = unpack_loose_rest(&stream, hdr, *size, expected_oid);
@@ -2203,6 +2224,31 @@ int read_loose_object(struct repository *repo,
 				 *oi->typep, real_oid);
 		if (!oideq(expected_oid, real_oid))
 			goto out_inflate;
+
+		if (repo->compat_hash_algo) {
+			struct strbuf buf = STRBUF_INIT;
+
+			if (*oi->typep == OBJ_BLOB) {
+				hash_object_file(repo->compat_hash_algo,
+						 *contents, *size,
+						 *oi->typep, real_compat_oid);
+			} else if (convert_object_file(repo, &buf,
+						       repo->hash_algo,
+						       repo->compat_hash_algo,
+						       *contents, *size,
+						       *oi->typep, NULL, 1)) {
+				error(_("unable to convert contents of %s"), path);
+				strbuf_release(&buf);
+				goto out_inflate;
+			} else {
+				hash_object_file(repo->compat_hash_algo,
+						 buf.buf, buf.len, *oi->typep,
+						 real_compat_oid);
+			}
+			strbuf_release(&buf);
+			if (!oideq(expected_compat_oid, real_compat_oid))
+				goto out_inflate;
+		}
 	}
 
 	ret = 0; /* everything checks out */

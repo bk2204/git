@@ -222,7 +222,9 @@ int check_and_freshen_file(const char *fn, int freshen);
 int read_loose_object(struct repository *repo,
 		      const char *path,
 		      const struct object_id *expected_oid,
+		      const struct object_id *expected_compat_oid,
 		      struct object_id *real_oid,
+		      struct object_id *compat_real_oid,
 		      void **contents,
 		      struct object_info *oi);
 

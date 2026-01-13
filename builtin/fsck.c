@@ -10,6 +10,7 @@
 #include "pack.h"
 #include "cache-tree.h"
 #include "fsck.h"
+#include "loose.h"
 #include "parse-options.h"
 #include "progress.h"
 #include "packfile.h"
@@ -728,16 +729,39 @@ static int fsck_loose(const struct object_id *oid, const char *path,
 	void *contents = NULL;
 	int eaten;
 	struct object_info oi = OBJECT_INFO_INIT;
-	struct object_id real_oid = *null_oid(data->repo->hash_algo);
+	struct object_id real_oid = *null_oid(data->repo->hash_algo), compat_real_oid,
+			 compat_oid, *compat_oidp = NULL;
 	int err = 0;
 
 	oi.sizep = &size;
 	oi.typep = &type;
 
-	if (read_loose_object(data->repo, path, oid, &real_oid, &contents, &oi) < 0) {
+	if (data->repo->compat_hash_algo) {
+		int ret = repo_loose_object_map_oid(data->repo, oid,
+						    data->repo->compat_hash_algo,
+						    &compat_oid,
+						    LOOSE_MAP_VERIFY);
+		if (ret == -1)
+			err = error(_("%s: cannot find mapping to %s"),
+				    oid_to_hex(oid),
+				    data->repo->compat_hash_algo->name);
+		else if (ret < 0)
+			err = error(_("%s: inconsistent mapping to %s"),
+				    oid_to_hex(oid),
+				    data->repo->compat_hash_algo->name);
+		else
+			compat_oidp = &compat_oid;
+	}
+
+	if (!err && read_loose_object(data->repo, path, oid, compat_oidp, &real_oid,
+				      &compat_real_oid, &contents, &oi) < 0) {
 		if (contents && !oideq(&real_oid, oid))
 			err = error(_("%s: hash-path mismatch, found at: %s"),
 				    oid_to_hex(&real_oid), path);
+		else if (contents && compat_oidp &&
+			 !oideq(&compat_real_oid, compat_oidp))
+			err = error(_("%s: compatibility object ID mismatch"),
+				    oid_to_hex(&real_oid));
 		else
 			err = error(_("%s: object corrupt or missing: %s"),
 				    oid_to_hex(oid), path);

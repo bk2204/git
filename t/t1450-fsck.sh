@@ -1070,7 +1070,13 @@ test_expect_success 'fsck error and recovery on invalid object type' '
 
 		test_must_fail git fsck 2>err &&
 		grep -e "^error" -e "^fatal" err >errors &&
-		test_line_count = 2 errors &&
+		if test_have_prereq COMPAT_HASH
+		then
+			test_line_count = 3 errors &&
+			test_grep "$garbage_blob: cannot find mapping" err
+		else
+			test_line_count = 2 errors
+		fi &&
 		test_grep "unable to parse type from header .garbage" err &&
 		test_grep "$garbage_blob: object corrupt or missing:" err
 	)

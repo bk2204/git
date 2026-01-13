@@ -59,7 +59,7 @@ int repo_oid_to_algop(struct repository *repo, const struct object_id *srcoid,
 			oidcpy(dest, src);
 		return 0;
 	}
-	if (repo_loose_object_map_oid(repo, src, to, dest)) {
+	if (repo_loose_object_map_oid(repo, src, to, dest, 0)) {
 		/*
 		 * It's not in the loose object map, so let's see if it's in a
 		 * pack.
@@ -74,7 +74,7 @@ int repo_oid_to_algop(struct repository *repo, const struct object_id *srcoid,
 		 * let's reload the map to see if the object has appeared.
 		 */
 		repo_read_loose_object_map(repo);
-		if (repo_loose_object_map_oid(repo, src, to, dest))
+		if (repo_loose_object_map_oid(repo, src, to, dest, 0))
 			return -1;
 	}
 	return 0;

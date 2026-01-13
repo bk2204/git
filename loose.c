@@ -415,11 +415,14 @@ int repo_loose_object_map_finish_batch(struct odb_source *source MAYBE_UNUSED,
 int repo_loose_object_map_oid(struct repository *repo MAYBE_UNUSED,
 			      const struct object_id *src MAYBE_UNUSED,
 			      const struct git_hash_algo *to MAYBE_UNUSED,
-			      struct object_id *dest MAYBE_UNUSED)
+			      struct object_id *dest MAYBE_UNUSED,
+			      int flags MAYBE_UNUSED)
 {
 #ifdef WITH_RUST
 	struct odb_source *source;
 	uint32_t algo = hash_algo_by_ptr(to);
+	struct object_id cur;
+	bool seen = false;
 
 	for (source = repo->objects->sources; source; source = source->next) {
 		struct odb_source_files *files = odb_source_files_downcast(source);
@@ -428,15 +431,37 @@ int repo_loose_object_map_oid(struct repository *repo MAYBE_UNUSED,
 		struct loose_object_map_bin_entry *entry;
 
 		if (loose_map &&
-		    !repo_loose_object_map_oid_1(loose_map, src, algo, dest))
-			return 0;
+		    !repo_loose_object_map_oid_1(loose_map, src, algo, dest)) {
+			if (flags & LOOSE_MAP_VERIFY) {
+				if (!seen) {
+					oidcpy(&cur, dest);
+					seen = true;
+				} else if (!oideq(&cur, dest)) {
+					return -2;
+				}
+			} else {
+				return 0;
+			}
+		}
 		if (!bin)
 			continue;
 		for (entry = bin->entries; entry; entry = entry->next)
 			if (!loose_object_map_oid_bin_1(entry->ptr, src,
-							algo, dest))
-				return 0;
+							algo, dest)) {
+				if (flags & LOOSE_MAP_VERIFY) {
+					if (!seen) {
+						oidcpy(&cur, dest);
+						seen = true;
+					} else if (!oideq(&cur, dest)) {
+						return -2;
+					}
+				} else {
+					return 0;
+				}
+			}
 	}
+	if ((flags & LOOSE_MAP_VERIFY) && seen)
+		return 0;
 #endif
 	return -1;
 }

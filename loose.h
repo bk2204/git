@@ -40,13 +40,25 @@ struct loose_object_map_bin {
 #define LOOSE_TYPE_SUBMODULE	3
 #define LOOSE_TYPE_MASK		0x3f
 
+/*
+ * If this flag is passed to repo_loose_object_map_oid, verifies that all loose
+ * object maps share the same object ID mapping.
+ */
+#define LOOSE_MAP_VERIFY	1
+
 void loose_object_map_init(struct loose_object_map **map, uint32_t algo,
 			   uint32_t compat_algo);
 void loose_object_map_clear(struct loose_object_map **map);
+/*
+ * Map the object ID in src into the algorithm dest_algo, storing the result in
+ * dest.  Returns 0 on success, -1 if the object cannot be mapped, or -2 if
+ * LOOSE_MAP_VERIFY is passed and the object maps are inconsistent.
+ */
 int repo_loose_object_map_oid(struct repository *repo,
 			      const struct object_id *src,
 			      const struct git_hash_algo *dest_algo,
-			      struct object_id *dest);
+			      struct object_id *dest,
+			      int flags);
 int repo_add_loose_object_map(struct odb_source *source,
 			      const struct object_id *oid,
 			      const struct object_id *compat_oid, int flags);

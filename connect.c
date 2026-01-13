@@ -23,6 +23,7 @@
 #include "alias.h"
 #include "bundle-uri.h"
 #include "promisor-remote.h"
+#include "fetch-pack.h"
 
 static char *server_capabilities_v1;
 static struct strvec server_capabilities_v2 = STRVEC_INIT;
@@ -352,7 +353,8 @@ static int process_map_object(const struct packet_reader *reader)
 		return 0;
 
 	parse_one_object_format_info(the_repository, line, reader->hash_algo,
-				     reader->map_hash_algo);
+				     reader->map_hash_algo,
+				     fetch_pack_allow_mapped_submodules());
 	return 1;
 }
 

@@ -2232,7 +2232,8 @@ static struct command *read_head_info(struct packet_reader *reader,
 		if (reader->pktlen > 12 && starts_with(reader->line, "map-object ")) {
 			parse_one_object_format_info(the_repository, reader->line,
 						     the_repository->hash_algo,
-						     the_repository->compat_hash_algo);
+						     the_repository->compat_hash_algo,
+						     true);
 			continue;
 		}
 

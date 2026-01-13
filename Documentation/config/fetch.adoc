@@ -1,3 +1,18 @@
+`fetch.allowMappedSubmodules`::
+	Boolean. When true, clients which support a compatibility object formats
+	(from `extensions.compatObjectFormat`) will accept submodule mappings when
+	fetching, pushing, or cloning.  Defaults to the value of
+	`transfer.allowMappedSubmodules` if set and to the inverse of the first of
+	`fetch.fsckObjects` or `transfer.fsckObjects` which is set.  If none of those
+	are set, defaults to true.
++
+Note that a malicious peer can use this extension to provide differing
+histories in different algorithms.  For instance, a malicious server could
+provide a submodule in SHA-256 that was up to date but provide an older version
+with a security vulnerability in SHA-1 mode.  This attack can be defeated if
+both sides have access to the submodule history, since the corresponding
+mappings can then be verified.
+
 `fetch.recurseSubmodules`::
 	This option controls whether `git fetch` (and the underlying fetch
 	in `git pull`) will recursively fetch into populated submodules.

@@ -119,4 +119,6 @@ int fetch_pack_fsck_objects(void);
 int fetch_pack_fsck_config(const char *var, const char *value,
 			   struct strbuf *msg_types);
 
+bool fetch_pack_allow_mapped_submodules(void);
+
 #endif

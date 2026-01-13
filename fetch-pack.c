@@ -50,6 +50,8 @@ static int deepen_since_ok;
 static int deepen_not_ok;
 static int fetch_fsck_objects = -1;
 static int transfer_fsck_objects = -1;
+static int fetch_allow_mapped_submodules = -1;
+static int transfer_allow_mapped_submodules = -1;
 static int agent_supported;
 static int server_supports_filtering;
 static int advertise_sid;
@@ -356,6 +358,15 @@ static void add_oids_to_set(const struct oid_array *array,
 	}
 }
 
+bool fetch_pack_allow_mapped_submodules(void)
+{
+	if (fetch_allow_mapped_submodules >= 0)
+		return fetch_allow_mapped_submodules;
+	if (transfer_allow_mapped_submodules >= 0)
+		return transfer_allow_mapped_submodules;
+	return !fetch_pack_fsck_objects();
+}
+
 static int find_common(struct fetch_negotiator *negotiator,
 		       struct fetch_pack_args *args,
 		       int fd[2], struct object_id *result_oid,
@@ -479,7 +490,8 @@ static int find_common(struct fetch_negotiator *negotiator,
 			if (skip_prefix(reader.line, "map-object ", &arg)) {
 				parse_one_object_format_info(the_repository,
 							     reader.line, reader.hash_algo,
-							     reader.map_hash_algo);
+							     reader.map_hash_algo,
+							     fetch_pack_allow_mapped_submodules());
 				continue;
 			}
 			if (skip_prefix(reader.line, "shallow ", &arg)) {
@@ -1692,7 +1704,8 @@ static void receive_object_format_info(struct fetch_pack_args *args UNUSED,
 	while (packet_reader_read(reader) == PACKET_READ_NORMAL)
 		parse_one_object_format_info(the_repository, reader->line,
 					     reader->hash_algo,
-					     reader->map_hash_algo);
+					     reader->map_hash_algo,
+					     fetch_pack_allow_mapped_submodules());
 
 	if (reader->status != PACKET_READ_FLUSH &&
 	    reader->status != PACKET_READ_DELIM)
@@ -2140,6 +2153,8 @@ static void fetch_pack_config(void)
 	repo_config_get_bool(the_repository, "fetch.fsckobjects", &fetch_fsck_objects);
 	repo_config_get_bool(the_repository, "transfer.fsckobjects", &transfer_fsck_objects);
 	repo_config_get_bool(the_repository, "transfer.advertisesid", &advertise_sid);
+	repo_config_get_bool(the_repository, "transfer.allowmappedsubmodules", &transfer_allow_mapped_submodules);
+	repo_config_get_bool(the_repository, "fetch.allowmappedsubmodules", &fetch_allow_mapped_submodules);
 	if (!uri_protocols.nr) {
 		char *str;
 

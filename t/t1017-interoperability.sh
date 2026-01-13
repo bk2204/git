@@ -163,6 +163,12 @@ test_fetch_push () {
 		test_set_prereq SHARED_ALGOS
 	fi
 
+	test_unset_prereq COMPAT_ALGO
+	if test -n "$source_compat_algo" && test -n "$dest_compat_algo"
+	then
+		test_set_prereq COMPAT_ALGO
+	fi
+
 	test_expect_success "$desc: setup" '
 		sane_unset GIT_DEFAULT_HASH &&
 		cd &&
@@ -357,7 +363,8 @@ test_fetch_push () {
 		) &&
 		subsource_oid=$(git -C subsource rev-parse HEAD) &&
 		sub_commit=$(git -C subsource/sub rev-parse sub1^{commit}) &&
-		create_repo subdest "$dest_algo" "$dest_compat_algo"
+		create_repo subdest "$dest_algo" "$dest_compat_algo" &&
+		create_repo subdest2 "$dest_algo" "$dest_compat_algo"
 	'
 
 	test_expect_success SHARED_ALGOS "$desc: fetch from submodule repository" '
@@ -373,6 +380,16 @@ test_fetch_push () {
 			test "$dev" = "$subsource_oid" &&
 			test "$commit" = "$sub_commit" &&
 			test "$submodule" = "$sub_commit"
+		)
+	'
+
+	test_expect_success COMPAT_ALGO,SHARED_ALGOS "$desc: fetch from submodule repository with transfer.allowmappedsubmodules" '
+		test_config -C subdest2 transfer.allowmappedsubmodules false &&
+		test_config_global protocol.file.allow always &&
+		(
+			cd subdest2 &&
+			test_must_fail git fetch ../subsource dev:unsuccessful 2>err &&
+			grep -E "could not map object|cannot map object" err
 		)
 	'
 

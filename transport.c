@@ -1267,7 +1267,8 @@ struct transport *transport_get(struct remote *remote, const char *url)
 void parse_one_object_format_info(struct repository *r,
 				  const char *line,
 				  const struct git_hash_algo *hash_algo,
-				  const struct git_hash_algo *map_algo)
+				  const struct git_hash_algo *map_algo,
+				  bool allow_submodules)
 {
 	const char *arg;
 	struct object_id oid, mapped;
@@ -1286,7 +1287,7 @@ void parse_one_object_format_info(struct repository *r,
 	if (skip_prefix(arg, "shallow ", &arg) ||
 	    skip_prefix(arg, "unshallow ", &arg))
 		kind = LOOSE_TYPE_SHALLOW;
-	else if (skip_prefix(arg, "submodule ", &arg))
+	else if (skip_prefix(arg, "submodule ", &arg) && allow_submodules)
 		kind = LOOSE_TYPE_SUBMODULE;
 
 	if (kind) {

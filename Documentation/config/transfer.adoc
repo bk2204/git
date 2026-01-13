@@ -126,6 +126,20 @@ transfer.advertiseCompatObjectMapping::
 	object formats to their remote counterpart, allowing shallow fetches and
 	pushes in either hash algorithm. Defaults to true.
 
+transfer.allowMappedSubmodules::
+	Boolean. When true, clients and servers which support a compatibility
+	object formats (from `extensions.compatObjectFormat`) will send and
+	accept submodule mappings when fetching, pushing, or cloning.  Defaults
+	to true unless `transfer.fsckObjects` is set, in which case it defaults
+	to false.
++
+Note that a malicious peer can use this extension to provide differing
+histories in different algorithms.  For instance, a malicious server could
+provide a submodule in SHA-256 that was up to date but provide an older version
+with a security vulnerability in SHA-1 mode.  This attack can be defeated if
+both sides have access to the submodule history, since the corresponding
+mappings can then be verified.
+
 transfer.bundleURI::
 	When `true`, local `git clone` commands will request bundle
 	information from the remote server (if advertised) and download

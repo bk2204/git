@@ -358,6 +358,7 @@ int parse_transport_option(const char *var, const char *value,
 void parse_one_object_format_info(struct repository *r,
 				  const char *line,
 				  const struct git_hash_algo *hash_algo,
-				  const struct git_hash_algo *map_algo);
+				  const struct git_hash_algo *map_algo,
+				  bool allow_submodules);
 
 #endif

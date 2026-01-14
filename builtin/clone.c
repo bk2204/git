@@ -25,6 +25,7 @@
 #include "refs.h"
 #include "refspec.h"
 #include "object-file.h"
+#include "object-file-convert.h"
 #include "odb.h"
 #include "tree.h"
 #include "tree-walk.h"
@@ -476,6 +477,7 @@ static void write_remote_refs(const struct ref *local_refs)
 
 	struct ref_transaction *t;
 	struct strbuf err = STRBUF_INIT;
+	struct object_id oid;
 
 	t = ref_store_transaction_begin(get_main_ref_store(the_repository),
 					REF_TRANSACTION_FLAG_INITIAL, &err);
@@ -485,7 +487,10 @@ static void write_remote_refs(const struct ref *local_refs)
 	for (r = local_refs; r; r = r->next) {
 		if (!r->peer_ref)
 			continue;
-		if (ref_transaction_create(t, r->peer_ref->name, &r->old_oid,
+		if (repo_oid_to_algop(the_repository, &r->old_oid,
+				      the_repository->hash_algo, &oid))
+			die(_("cannot map object ID for ref '%s'"), r->peer_ref->name);
+		if (ref_transaction_create(t, r->peer_ref->name, &oid,
 					   NULL, 0, NULL, &err))
 			die("%s", err.buf);
 	}
@@ -500,15 +505,20 @@ static void write_remote_refs(const struct ref *local_refs)
 static void write_followtags(const struct ref *refs, const char *msg)
 {
 	const struct ref *ref;
+	struct object_id oid;
+
 	for (ref = refs; ref; ref = ref->next) {
 		if (!starts_with(ref->name, "refs/tags/"))
 			continue;
 		if (ends_with(ref->name, "^{}"))
 			continue;
-		if (!odb_has_object(the_repository->objects, &ref->old_oid, 0))
+		if (repo_oid_to_algop(the_repository, &ref->old_oid,
+				      the_repository->hash_algo, &oid))
+			continue;
+		if (!odb_has_object(the_repository->objects, &oid, 0))
 			continue;
 		refs_update_ref(get_main_ref_store(the_repository), msg,
-				ref->name, &ref->old_oid, NULL, 0,
+				ref->name, &oid, NULL, 0,
 				UPDATE_REFS_DIE_ON_ERR);
 	}
 }
@@ -573,19 +583,26 @@ static void update_head(struct clone_opts *opts, const struct ref *our, const st
 			const char *unborn, const char *msg)
 {
 	const char *head;
+	struct object_id oid;
 	if (our && !opts->detach && skip_prefix(our->name, "refs/heads/", &head)) {
 		/* Local default branch link */
 		if (refs_update_symref(get_main_ref_store(the_repository), "HEAD", our->name, NULL) < 0)
 			die(_("unable to update HEAD"));
 		if (!option_bare) {
+			repo_oid_to_algop(the_repository, &our->old_oid,
+					  the_repository->hash_algo, &oid);
 			refs_update_ref(get_main_ref_store(the_repository),
-					msg, "HEAD", &our->old_oid, NULL, 0,
+					msg, "HEAD", &oid, NULL, 0,
 					UPDATE_REFS_DIE_ON_ERR);
 			install_branch_config(0, head, remote_name, our->name);
 		}
 	} else if (our) {
-		struct commit *c = lookup_commit_or_die(&our->old_oid,
-							our->name);
+		struct commit *c;
+
+		repo_oid_to_algop(the_repository, &our->old_oid,
+				  the_repository->hash_algo, &oid);
+
+		c = lookup_commit_or_die(&oid, our->name);
 
 		/* --branch specifies a non-branch (i.e. tags), detach HEAD */
 		refs_update_ref(get_main_ref_store(the_repository), msg,
@@ -597,8 +614,10 @@ static void update_head(struct clone_opts *opts, const struct ref *our, const st
 		 * HEAD points to a branch but we don't know which one.
 		 * Detach HEAD in all these cases.
 		 */
+		repo_oid_to_algop(the_repository, &remote->old_oid,
+				  the_repository->hash_algo, &oid);
 		refs_update_ref(get_main_ref_store(the_repository), msg,
-				"HEAD", &remote->old_oid, NULL, REF_NO_DEREF,
+				"HEAD", &oid, NULL, REF_NO_DEREF,
 				UPDATE_REFS_DIE_ON_ERR);
 	} else if (unborn && skip_prefix(unborn, "refs/heads/", &head)) {
 		/*
@@ -893,7 +912,7 @@ int cmd_clone(int argc,
 	int submodule_progress;
 	int filter_submodules = 0;
 	const char *env;
-	int hash_algo, compat_hash_algo = GIT_HASH_UNKNOWN;
+	int hash_algo = GIT_HASH_UNKNOWN, compat_hash_algo = GIT_HASH_UNKNOWN;
 	enum ref_storage_format ref_storage_format = REF_STORAGE_FORMAT_UNKNOWN;
 	const int do_not_override_repo_unix_permissions = -1;
 	int option_reject_shallow = -1; /* unspecified */
@@ -903,6 +922,7 @@ int cmd_clone(int argc,
 	struct string_list option_not = STRING_LIST_INIT_NODUP;
 	const char *real_git_dir = NULL;
 	const char *ref_format = NULL;
+	const char *object_format = NULL;
 	const char *option_upload_pack = "git-upload-pack";
 	int option_progress = -1;
 	int option_sparse_checkout = 0;
@@ -984,6 +1004,8 @@ int cmd_clone(int argc,
 			   N_("separate git dir from working tree")),
 		OPT_STRING(0, "ref-format", &ref_format, N_("format"),
 			   N_("specify the reference format to use")),
+		OPT_STRING(0, "object-format", &object_format, N_("format"),
+			   N_("specify the hash algorithm to use")),
 		OPT_STRING_LIST('c', "config", &option_config, N_("key=value"),
 				N_("set config inside the new repository")),
 		OPT_STRING_LIST(0, "server-option", &server_options,
@@ -1181,13 +1203,33 @@ int cmd_clone(int argc,
 		strbuf_release(&sb);
 	}
 
+	if (object_format) {
+		char *objfmt = xstrdup(object_format);
+		char *split = strchr(objfmt, ':');
+
+		if (split) {
+			*split++ = 0;
+			compat_hash_algo = hash_algo_by_name(split);
+			if (!compat_hash_algo)
+				die(_("'%s' is not a valid hash algorithm"), split);
+		}
+
+		hash_algo = hash_algo_by_name(objfmt);
+		if (!hash_algo)
+			die(_("'%s' is not a valid hash algorithm"), objfmt);
+
+		option_local = 0;
+
+		free(objfmt);
+	}
+
 	/*
 	 * Initialize the repository, but skip initializing the reference
 	 * database. We do not yet know about the object format of the
 	 * repository, and reference backends may persist that information into
 	 * their on-disk data structures.
 	 */
-	init_db(the_repository, git_dir, real_git_dir, option_template, GIT_HASH_UNKNOWN,
+	init_db(the_repository, git_dir, real_git_dir, option_template, hash_algo,
 		ref_storage_format, NULL,
 		do_not_override_repo_unix_permissions, INIT_DB_QUIET | INIT_DB_SKIP_REFDB);
 
@@ -1195,6 +1237,11 @@ int cmd_clone(int argc,
 		free((char *)git_dir);
 		git_dir = real_git_dir;
 	}
+
+	if (hash_algo)
+		repo_set_hash_algo(the_repository, hash_algo);
+	if (compat_hash_algo)
+		repo_set_compat_hash_algo(the_repository, compat_hash_algo);
 
 	/*
 	 * We have a chicken-and-egg situation between initializing the refdb
@@ -1230,8 +1277,8 @@ int cmd_clone(int argc,
 	 *
 	 * This is sufficient for Git commands to discover the Git directory.
 	 */
-	initialize_repository_version(the_repository, GIT_HASH_UNKNOWN,
-				      GIT_HASH_UNKNOWN,
+	initialize_repository_version(the_repository, hash_algo,
+				      compat_hash_algo,
 				      the_repository->ref_storage_format, 1);
 
 	refs_create_refdir_stubs(the_repository, git_dir, NULL);
@@ -1323,7 +1370,7 @@ int cmd_clone(int argc,
 				branch_top.buf);
 
 	path = get_repo_path(remote->url.v[0], &is_bundle);
-	is_local = option_local != 0 && path && !is_bundle;
+	is_local = option_local != 0 && path && !is_bundle && !object_format;
 	if (is_local) {
 		if (option_depth)
 			warning(_("--depth is ignored in local clones; use file:// instead."));
@@ -1443,13 +1490,18 @@ int cmd_clone(int argc,
 	 * Now that we know what algorithm the remote side is using, let's set
 	 * ours to the same thing.
 	 */
-	hash_algo = hash_algo_by_ptr(transport_get_hash_algo(transport));
-	env = getenv(GIT_DEFAULT_HASH_ENVIRONMENT);
-	if (env && strchr(env, ':')) {
-		compat_hash_algo = 3 - hash_algo;
+	if (!hash_algo)
+		hash_algo = hash_algo_by_ptr(transport_get_hash_algo(transport));
+	if (!object_format) {
+		env = getenv(GIT_DEFAULT_HASH_ENVIRONMENT);
+		if (env && strchr(env, ':')) {
+			compat_hash_algo = 3 - hash_algo;
+		}
 	}
 	initialize_repository_version(the_repository, hash_algo, compat_hash_algo, the_repository->ref_storage_format, 1);
 	repo_set_hash_algo(the_repository, hash_algo);
+	if (compat_hash_algo)
+		repo_set_compat_hash_algo(the_repository, compat_hash_algo);
 	create_reference_database(the_repository, NULL, 1);
 
 	/*

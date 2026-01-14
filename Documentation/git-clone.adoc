@@ -354,6 +354,12 @@ Specify the given ref storage format for the repository. The valid values are:
 +
 include::ref-storage-format.adoc[]
 
+`--object-format=<hash-algo>`::
+	Specify the given hash algorithm for the repository.  The default is to use
+	the remote server's default algorithm.  Note that if you set this to a value
+	that the remote side does not support, the clone will fail, so this option
+	should be omitted (and the default value used) in almost all cases.
+
 `-j<n>`::
 `--jobs=<n>`::
 	The number of submodules fetched at the same time.

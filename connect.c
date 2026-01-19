@@ -13,6 +13,8 @@
 #include "connect.h"
 #include "url.h"
 #include "string-list.h"
+#include "loose.h"
+#include "odb.h"
 #include "oid-array.h"
 #include "path.h"
 #include "transport.h"
@@ -408,10 +410,12 @@ struct ref **get_remote_heads(struct packet_reader *reader,
 			if (process_ref(reader, len, &list, flags, extra_have))
 				break;
 			state = EXPECTING_MAP_OBJECT;
+			repo_loose_object_map_start_batch(the_repository->objects->sources);
 			/* fallthrough */
 		case EXPECTING_MAP_OBJECT:
 			if (process_map_object(reader))
 				break;
+			repo_loose_object_map_finish_batch(the_repository->objects->sources, true, NULL);
 			state = EXPECTING_SHALLOW;
 			/* fallthrough */
 		case EXPECTING_SHALLOW:

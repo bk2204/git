@@ -17,6 +17,7 @@
 #include "hex.h"
 #include "hook.h"
 #include "lockfile.h"
+#include "loose.h"
 #include "object.h"
 #include "object-file.h"
 #include "object-file-convert.h"
@@ -2223,6 +2224,8 @@ static struct command *read_head_info(struct packet_reader *reader,
 {
 	struct command *commands = NULL;
 	struct command **p = &commands;
+
+	repo_loose_object_map_start_batch(the_repository->objects->sources);
 	for (;;) {
 		int linelen;
 
@@ -2317,6 +2320,7 @@ static struct command *read_head_info(struct packet_reader *reader,
 
 		p = queue_command(p, reader->line, linelen);
 	}
+	repo_loose_object_map_finish_batch(the_repository->objects->sources, true, NULL);
 
 	if (push_cert.len)
 		queue_commands_from_cert(p, &push_cert);

@@ -486,6 +486,7 @@ static int find_common(struct fetch_negotiator *negotiator,
 		struct object_id oid;
 
 		send_request(args, fd[1], &req_buf);
+		repo_loose_object_map_start_batch(the_repository->objects->sources);
 		while (packet_reader_read(&reader) == PACKET_READ_NORMAL) {
 			if (skip_prefix(reader.line, "map-object ", &arg)) {
 				parse_one_object_format_info(the_repository,
@@ -518,6 +519,7 @@ static int find_common(struct fetch_negotiator *negotiator,
 			}
 			die(_("expected shallow/unshallow, got %s"), reader.line);
 		}
+		repo_loose_object_map_finish_batch(the_repository->objects->sources, true, NULL);
 	} else if (!args->stateless_rpc)
 		send_request(args, fd[1], &req_buf);
 
@@ -1700,12 +1702,16 @@ static int process_ack(struct fetch_negotiator *negotiator,
 static void receive_object_format_info(struct fetch_pack_args *args UNUSED,
 				       struct packet_reader *reader)
 {
+
 	process_section_header(reader, "object-map-info", 0);
+
+	repo_loose_object_map_start_batch(the_repository->objects->sources);
 	while (packet_reader_read(reader) == PACKET_READ_NORMAL)
 		parse_one_object_format_info(the_repository, reader->line,
 					     reader->hash_algo,
 					     reader->map_hash_algo,
 					     fetch_pack_allow_mapped_submodules());
+	repo_loose_object_map_finish_batch(the_repository->objects->sources, true, NULL);
 
 	if (reader->status != PACKET_READ_FLUSH &&
 	    reader->status != PACKET_READ_DELIM)

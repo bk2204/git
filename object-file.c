@@ -2266,6 +2266,7 @@ static void odb_transaction_files_commit(struct odb_transaction *base)
 	struct odb_transaction_files *transaction =
 		container_of(base, struct odb_transaction_files, base);
 
+	repo_loose_object_map_finish_batch(transaction->base.source, true, NULL);
 	flush_loose_object_transaction(transaction);
 	flush_packfile_transaction(transaction);
 }
@@ -2282,6 +2283,7 @@ struct odb_transaction *odb_transaction_files_begin(struct odb_source *source)
 	transaction->base.source = source;
 	transaction->base.commit = odb_transaction_files_commit;
 	transaction->base.write_object_stream = odb_transaction_files_write_object_stream;
+	repo_loose_object_map_start_batch(source);
 
 	return &transaction->base;
 }

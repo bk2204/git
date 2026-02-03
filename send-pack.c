@@ -12,9 +12,11 @@
 #include "remote.h"
 #include "connect.h"
 #include "send-pack.h"
+#include "submodule.h"
 #include "transport.h"
 #include "version.h"
 #include "oid-array.h"
+#include "oidtree.h"
 #include "gpg-interface.h"
 #include "shallow.h"
 #include "parse-options.h"
@@ -500,6 +502,96 @@ static void get_commons_through_negotiation(struct repository *r,
 	}
 }
 
+struct subadv {
+	struct repository *r;
+	struct strbuf *buf;
+	const struct git_hash_algo *algo, *map_algo;
+};
+
+static int write_one_mapped_submodule(const struct object_id *oid, void *unused UNUSED, void *data)
+{
+	struct object_id main_oid, map_oid;
+	struct subadv *adv = data;
+
+	if (repo_oid_to_algop(adv->r, oid, adv->algo, &main_oid) ||
+	    repo_oid_to_algop(adv->r, oid, adv->map_algo, &map_oid))
+		return 1;
+
+	packet_buf_write(adv->buf, "map-object %s submodule %s %s",
+			 adv->map_algo->name, oid_to_hex(&main_oid),
+			 oid_to_hex(&map_oid));
+	return 0;
+}
+
+static void advertise_submodules(struct repository *r, struct strbuf *buf,
+				 struct ref *refs,
+				 struct oid_array *advertised,
+				 struct oid_array *negotiated,
+				 const struct git_hash_algo *algo,
+				 const struct git_hash_algo *map_algo)
+{
+	struct object_id oid;
+	struct oidtree submodules;
+	struct strvec rev_args = STRVEC_INIT, stdin_objects = STRVEC_INIT,
+		      unwanted = STRVEC_INIT;
+	struct subadv adv = {
+		.r = r,
+		.buf = buf,
+		.algo = algo,
+		.map_algo = map_algo,
+	};
+
+	if (!map_algo)
+		return;
+
+	oidtree_init(&submodules);
+	strvec_pushl(&rev_args, "rev-list", "--objects", NULL);
+
+	for (size_t i = 0; i < advertised->nr; i++)
+		if (!repo_oid_to_algop(r, &advertised->oid[i], r->hash_algo,
+				       &oid) &&
+		    odb_has_object(r->objects, &oid, 0))
+			strvec_push(&unwanted, oid_to_hex(&oid));
+	for (size_t i = 0; i < negotiated->nr; i++)
+		if (!repo_oid_to_algop(r, &negotiated->oid[i], r->hash_algo,
+				       &oid) &&
+		    odb_has_object(r->objects, &oid, 0))
+			strvec_push(&unwanted, oid_to_hex(&oid));
+
+	while (refs) {
+		if (!is_null_oid(&refs->old_oid) &&
+		    !repo_oid_to_algop(r, &refs->old_oid, r->hash_algo,
+				       &oid) &&
+		    odb_has_object(r->objects, &oid, 0))
+			strvec_push(&unwanted, oid_to_hex(&oid));
+		if (!is_null_oid(&refs->new_oid) &&
+		    !repo_oid_to_algop(r, &refs->new_oid, r->hash_algo,
+				       &oid) &&
+		    odb_has_object(r->objects, &oid, 0))
+			strvec_push(&stdin_objects, oid_to_hex(&oid));
+		refs = refs->next;
+	}
+
+	strvec_push(&stdin_objects, "--not");
+	strvec_pushv(&stdin_objects, unwanted.v);
+
+	find_submodules_in_revisions(
+		&submodules,
+		NULL,
+		&rev_args,
+		&stdin_objects
+	);
+
+	oidtree_each(&submodules,
+		     null_oid(r->hash_algo),
+		     0, write_one_mapped_submodule, &adv);
+
+	oidtree_clear(&submodules);
+	strvec_clear(&rev_args);
+	strvec_clear(&stdin_objects);
+	strvec_clear(&unwanted);
+}
+
 int send_pack(struct repository *r,
 	      struct send_pack_args *args,
 	      int fd[], struct child_process *conn,
@@ -694,8 +786,10 @@ int send_pack(struct repository *r,
 			ref->status = REF_STATUS_EXPECTING_REPORT;
 	}
 
-	if (!args->dry_run)
+	if (!args->dry_run) {
+		advertise_submodules(r, &req_buf, remote_refs, extra_have, &commons, algo, map_algo);
 		advertise_shallow_grafts_buf(r, &req_buf, algo, map_algo);
+	}
 
 	/*
 	 * Finally, tell the other end!

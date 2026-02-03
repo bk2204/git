@@ -402,6 +402,33 @@ test_fetch_push () {
 			grep "make sure that the remote side supports" err
 		)
 	'
+
+	test_expect_success SHARED_ALGOS "$desc: push to submodule repository" '
+		test_config_global protocol.file.allow always &&
+		(
+			cd subsource &&
+			git checkout dev &&
+			git submodule update --init --recursive &&
+			git init --object-format="$source_algo" sub &&
+			test_commit -C sub --annotate sub2 &&
+			git add -u &&
+			test_commit --annotate super2 &&
+			git -C sub push ../../subdest/sub HEAD:other &&
+			git push ../subdest dev:other
+		) &&
+		subsource_oid=$(git -C subsource rev-parse HEAD) &&
+		sub_commit=$(git -C subsource/sub rev-parse sub2^{commit}) &&
+		(
+			cd subdest &&
+			git checkout --recurse-submodules other &&
+			dev=$(git rev-parse --output-object-format="$source_algo" other) &&
+			commit=$(git -C sub rev-parse --output-object-format="$source_algo" HEAD) &&
+			submodule=$(git rev-parse --output-object-format="$source_algo" other:sub) &&
+			test "$dev" = "$subsource_oid" &&
+			test "$commit" = "$sub_commit" &&
+			test "$submodule" = "$sub_commit"
+		)
+	'
 }
 
 test_fetch_push sha1-to-sha1 sha1: sha1: --fsck

@@ -2236,7 +2236,8 @@ int read_loose_object(struct repository *repo,
 						       repo->hash_algo,
 						       repo->compat_hash_algo,
 						       *contents, *size,
-						       *oi->typep, NULL, 1)) {
+						       *oi->typep, NULL,
+						       OBJ_CONVERT_GENTLE)) {
 				error(_("unable to convert contents of %s"), path);
 				strbuf_release(&buf);
 				goto out_inflate;

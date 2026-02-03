@@ -561,7 +561,8 @@ static void *unpack_entry_data(off_t offset, size_t size,
 			ret = convert_object_file(the_repository, &outbuf,
 						  ctx->src_algo,
 						  ctx->compat_algo,
-						  buf, size, type, &missing, 1);
+						  buf, size, type, &missing,
+						  OBJ_CONVERT_GENTLE);
 			repo_unlock();
 			/* If we have a missing object, we'll get to it later. */
 			if (ret == -2) {
@@ -1157,7 +1158,8 @@ static struct base_data *resolve_delta(struct object_entry *delta_obj,
 						  c->src_algo,
 						  c->compat_algo,
 						  result_data, result_size,
-						  delta_obj->real_type, &missing, 1);
+						  delta_obj->real_type, &missing,
+						  OBJ_CONVERT_GENTLE);
 			repo_unlock();
 			buf = outbuf.buf;
 			len = outbuf.len;

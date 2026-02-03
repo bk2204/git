@@ -172,7 +172,8 @@ static int verify_packfile(struct repository *r,
 								r->hash_algo,
 								r->compat_hash_algo,
 								data, size,
-								type, NULL, 1)) {
+								type, NULL,
+								OBJ_CONVERT_GENTLE)) {
 					compat_data = compat_buf.buf;
 					compat_size = compat_buf.len;
 				} else {

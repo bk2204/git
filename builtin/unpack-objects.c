@@ -242,7 +242,7 @@ static void map_object(struct object *obj, struct obj_buffer *obj_buf)
 						  the_repository->compat_hash_algo,
 						  obj_buf->buffer,
 						  obj_buf->size, obj->type,
-						  &missing, 1);
+						  &missing, OBJ_CONVERT_GENTLE);
 			cvtbuf = outbuf.buf;
 			cvtsz = outbuf.len;
 		}

@@ -1444,7 +1444,8 @@ static int convert_commit_extra_headers(const struct commit_extra_header *orig,
 		if (!strcmp(orig->key, "mergetag")) {
 			if (convert_object_file(the_repository, &out, algo, compat,
 						orig->value, orig->len,
-						OBJ_TAG, NULL, 1)) {
+						OBJ_TAG, NULL,
+						OBJ_CONVERT_GENTLE)) {
 				free(new);
 				free_commit_extra_headers(extra);
 				return -1;

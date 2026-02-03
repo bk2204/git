@@ -16,6 +16,11 @@ struct missing_object {
 int repo_oid_to_algop(struct repository *repo, const struct object_id *src,
 		      const struct git_hash_algo *to, struct object_id *dest);
 
+/* If missing, die on inability to convert the object. */
+#define OBJ_CONVERT_GENTLE 1
+/* If set, do not attempt to convert signatures in the tag. */
+#define OBJ_CONVERT_SKIP_TAG_SIG 2
+
 /*
  * Convert an object file from one hash algorithm to another algorithm.
  * Return -1 on failure, 0 on success.
@@ -27,6 +32,6 @@ int convert_object_file(struct repository *repo,
 			const void *buf, size_t len,
 			enum object_type type,
 			struct missing_object *missing,
-			int gentle);
+			int flags);
 
 #endif /* OBJECT_CONVERT_H */

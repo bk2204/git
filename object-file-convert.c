@@ -140,7 +140,8 @@ static int convert_tag_object(struct repository *repo,
 			      const struct git_hash_algo *from,
 			      const struct git_hash_algo *to,
 			      const char *buffer, size_t size,
-			      struct missing_object *missing)
+			      struct missing_object *missing,
+			      int flags)
 {
 	struct strbuf payload = STRBUF_INIT, oursig = STRBUF_INIT, othersig = STRBUF_INIT;
 	const int entry_len = from->hexsz + 7;
@@ -168,7 +169,10 @@ static int convert_tag_object(struct repository *repo,
 	buffer = p + 1;
 
 	/* Is there a signature for our algorithm? */
-	payload_size = parse_signed_buffer(buffer, size);
+	if (flags & OBJ_CONVERT_SKIP_TAG_SIG)
+		payload_size = size;
+	else
+		payload_size = parse_signed_buffer(buffer, size);
 	if (payload_size != size) {
 		/* Yes, there is. */
 		strbuf_add(&oursig, buffer + payload_size, size - payload_size);
@@ -274,7 +278,7 @@ static int convert_commit_object(struct repository *repo,
 			}
 
 			/* Compute the new tag object */
-			if (convert_tag_object(repo, &new_tag, from, to, tag.buf, tag.len, missing)) {
+			if (convert_tag_object(repo, &new_tag, from, to, tag.buf, tag.len, missing, 0)) {
 				strbuf_release(&tag);
 				strbuf_release(&new_tag);
 				return -1;
@@ -320,7 +324,7 @@ int convert_object_file(struct repository *repo,
 			const void *buf, size_t len,
 			enum object_type type,
 			struct missing_object *missing,
-			int gentle)
+			int flags)
 {
 	int ret;
 
@@ -336,7 +340,7 @@ int convert_object_file(struct repository *repo,
 		ret = convert_tree_object(repo, outbuf, from, to, buf, len, missing);
 		break;
 	case OBJ_TAG:
-		ret = convert_tag_object(repo, outbuf, from, to, buf, len, missing);
+		ret = convert_tag_object(repo, outbuf, from, to, buf, len, missing, flags);
 		break;
 	default:
 		/* Not implemented yet, so fail. */
@@ -345,7 +349,7 @@ int convert_object_file(struct repository *repo,
 	}
 	if (!ret)
 		return 0;
-	if (gentle) {
+	if (flags & OBJ_CONVERT_GENTLE) {
 		strbuf_release(outbuf);
 		return ret;
 	}

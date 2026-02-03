@@ -174,7 +174,8 @@ static int do_sign(struct strbuf *buffer, struct object_id **compat_oid,
 		const struct git_hash_algo *algo = the_repository->hash_algo;
 
 		if (convert_object_file(the_repository, &compat_buf, algo, compat,
-					buffer->buf, buffer->len, OBJ_TAG, NULL, 1))
+					buffer->buf, buffer->len, OBJ_TAG, NULL,
+					OBJ_CONVERT_GENTLE | OBJ_CONVERT_SKIP_TAG_SIG))
 			goto out;
 		if (sign_buffer(&compat_buf, &compat_sig, keyid, 0))
 			goto out;

@@ -470,7 +470,7 @@ static void chmod_path(char flip, const char *path)
 	die("git update-index: cannot chmod %cx '%s'", flip, path);
 }
 
-static void update_one(const char *path)
+static void update_one(struct odb_transaction *txn, const char *path)
 {
 	int stat_errno = 0;
 	struct stat st;
@@ -509,8 +509,10 @@ static void update_one(const char *path)
 		report("remove '%s'", path);
 		return;
 	}
-	if (process_path(path, &st, stat_errno))
+	if (process_path(path, &st, stat_errno)) {
+		odb_transaction_commit(txn);
 		die("Unable to process path %s", path);
+	}
 	report("add '%s'", path);
 }
 
@@ -726,7 +728,7 @@ static int do_reupdate(const char **paths,
 		 */
 		save_nr = the_repository->index->cache_nr;
 		path = xstrdup(ce->name);
-		update_one(path);
+		update_one(NULL, path);
 		free(path);
 		discard_cache_entry(old);
 		if (save_nr != the_repository->index->cache_nr)
@@ -1170,7 +1172,7 @@ int cmd_update_index(int argc,
 
 			setup_work_tree(the_repository);
 			p = prefix_path(the_repository, prefix, prefix_length, path);
-			update_one(p);
+			update_one(transaction, p);
 			if (set_executable_bit)
 				chmod_path(set_executable_bit, p);
 			free(p);
@@ -1220,7 +1222,7 @@ int cmd_update_index(int argc,
 				strbuf_swap(&buf, &unquoted);
 			}
 			p = prefix_path(the_repository, prefix, prefix_length, buf.buf);
-			update_one(p);
+			update_one(transaction, p);
 			if (set_executable_bit)
 				chmod_path(set_executable_bit, p);
 			free(p);

@@ -25,12 +25,12 @@ test_expect_success "setup proc-receive hook" '
 # git push         : (B)                   refs/for/main/topic1(A)  foo(A)  refs/for/next/topic(A)  refs/for/main/topic2(A)
 test_expect_success "proc-receive: report status v1" '
 	{
-		if test -z "$GIT_DEFAULT_HASH" || test "$GIT_DEFAULT_HASH" = "sha1"
+		if test -z "$test_hash_algo" || test "$test_hash_algo" = "sha1"
 		then
 			printf "%s %s refs/heads/main\0report-status\n" \
 				$A $B | packetize_raw
 		else
-			printf "%s %s refs/heads/main\0report-status object-format=$GIT_DEFAULT_HASH\n" \
+			printf "%s %s refs/heads/main\0report-status object-format=$test_hash_algo\n" \
 				$A $B | packetize_raw
 		fi &&
 		printf "%s %s refs/for/main/topic1\n" \

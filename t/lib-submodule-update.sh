@@ -139,11 +139,14 @@ create_lib_submodule_repo () {
 		git checkout -b replace_file_with_sub1 &&
 		git revert HEAD &&
 
-		git checkout -b invalid_sub1 add_sub1 &&
-		git update-index --cacheinfo 160000 $(test_oid numeric) sub1 &&
-		git commit -m "Invalid sub1 commit" &&
-		git checkout -b valid_sub1 &&
-		git revert HEAD &&
+		if test_have_prereq BROKEN_OBJECTS
+		then
+			git checkout -b invalid_sub1 add_sub1 &&
+			git update-index --cacheinfo 160000 $(test_oid numeric) sub1 &&
+			git commit -m "Invalid sub1 commit" &&
+			git checkout -b valid_sub1 &&
+			git revert HEAD
+		fi &&
 
 		git checkout "$branch"
 	)
@@ -520,7 +523,7 @@ test_submodule_switch_common () {
 	'
 	# Updating a submodule to an invalid sha1 doesn't update the
 	# submodule's work tree, subsequent update will fail
-	test_expect_$RESULT "$command: modified submodule does not update submodule work tree to invalid commit" '
+	test_expect_$RESULT BROKEN_OBJECTS "$command: modified submodule does not update submodule work tree to invalid commit" '
 		prolog &&
 		reset_work_tree_to add_sub1 &&
 		(
@@ -535,7 +538,7 @@ test_submodule_switch_common () {
 	'
 	# Updating a submodule from an invalid sha1 doesn't update the
 	# submodule's work tree, subsequent update will succeed
-	test_expect_$RESULT "$command: modified submodule does not update submodule work tree from invalid commit" '
+	test_expect_$RESULT BROKEN_OBJECTS "$command: modified submodule does not update submodule work tree from invalid commit" '
 		prolog &&
 		reset_work_tree_to invalid_sub1 &&
 		(
@@ -823,7 +826,7 @@ test_submodule_recursing_with_args_common () {
 	'
 	# Updating a submodule to an invalid sha1 doesn't update the
 	# superproject nor the submodule's work tree.
-	test_expect_success "$command: updating to a missing submodule commit fails" '
+	test_expect_success BROKEN_OBJECTS "$command: updating to a missing submodule commit fails" '
 		prolog &&
 		reset_work_tree_to_interested add_sub1 &&
 		(
@@ -1055,7 +1058,7 @@ test_submodule_forced_switch_recursing_with_args () {
 	'
 
 	# Updating a submodule from an invalid sha1 updates
-	test_expect_success "$command: modified submodule does update submodule work tree from invalid commit" '
+	test_expect_success BROKEN_OBJECTS "$command: modified submodule does update submodule work tree from invalid commit" '
 		prolog &&
 		reset_work_tree_to_interested invalid_sub1 &&
 		(

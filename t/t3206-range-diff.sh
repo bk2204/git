@@ -11,6 +11,7 @@ export GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME
 # harm than good.  We need some real history.
 
 test_expect_success 'setup' '
+	git config gc.auto 0 &&
 	git fast-import <"$TEST_DIRECTORY"/t3206/history.export &&
 	test_oid_cache <<-\EOF
 	# topic

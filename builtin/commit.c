@@ -26,6 +26,7 @@
 #include "run-command.h"
 #include "strbuf.h"
 #include "object-name.h"
+#include "odb/transaction.h"
 #include "parse-options.h"
 #include "path.h"
 #include "preload-index.h"
@@ -1794,6 +1795,7 @@ int cmd_commit(int argc,
 	struct commit *current_head = NULL;
 	struct commit_extra_header *extra = NULL;
 	struct strbuf err = STRBUF_INIT;
+	struct odb_transaction *transaction = NULL;
 	int ret = 0;
 
 	show_usage_with_options_if_asked(argc, argv,
@@ -1835,6 +1837,10 @@ int cmd_commit(int argc,
 
 	if (dry_run)
 		return dry_run_commit(argv, prefix, current_head, &s);
+
+	/* TODO: enable this but in a way that doesn't break tests */
+	/* transaction = odb_transaction_begin(the_repository->objects); */
+
 	index_file = prepare_index(argv, prefix, current_head, 0);
 
 	/* Set up everything for writing the commit object.  This includes
@@ -1898,6 +1904,7 @@ int cmd_commit(int argc,
 	if (strbuf_read_file(&sb, git_path_commit_editmsg(), 0) < 0) {
 		int saved_errno = errno;
 		rollback_index_files();
+		odb_transaction_commit(transaction);
 		die(_("could not read commit message: %s"), strerror(saved_errno));
 	}
 
@@ -1905,11 +1912,13 @@ int cmd_commit(int argc,
 
 	if (message_is_empty(&sb, cleanup_mode) && !allow_empty_message) {
 		rollback_index_files();
+		odb_transaction_commit(transaction);
 		fprintf(stderr, _("Aborting commit due to empty commit message.\n"));
 		exit(1);
 	}
 	if (template_untouched(&sb, template_file, cleanup_mode) && !allow_empty_message) {
 		rollback_index_files();
+		odb_transaction_commit(transaction);
 		fprintf(stderr, _("Aborting commit; you did not edit the message.\n"));
 		exit(1);
 	}
@@ -1921,6 +1930,7 @@ int cmd_commit(int argc,
 		strbuf_addstr(&body, sb.buf + len);
 		if (message_is_empty(&body, cleanup_mode)) {
 			rollback_index_files();
+			odb_transaction_commit(transaction);
 			fprintf(stderr, _("Aborting commit due to empty commit message body.\n"));
 			exit(1);
 		}
@@ -1939,8 +1949,11 @@ int cmd_commit(int argc,
 				 parents, &oid, author_ident.buf, NULL,
 				 sign_commit, extra)) {
 		rollback_index_files();
+		odb_transaction_commit(transaction);
 		die(_("failed to write commit object"));
 	}
+	odb_transaction_commit(transaction);
+	transaction = NULL;
 
 	if (update_head_with_reflog(current_head, &oid, reflog_msg, &sb,
 				    &err)) {
@@ -1983,6 +1996,8 @@ int cmd_commit(int argc,
 			    NULL, NULL, NULL, NULL);
 
 cleanup:
+	if (transaction)
+		odb_transaction_commit(transaction);
 	free_commit_extra_headers(extra);
 	commit_list_free(parents);
 	strbuf_release(&author_ident);

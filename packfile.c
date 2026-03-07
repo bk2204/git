@@ -342,6 +342,20 @@ int open_pack_index(struct packed_git *p)
 	return ret;
 }
 
+static uint32_t get_pack_fanout_v3(struct packed_git *p, uint32_t value)
+{
+	uint32_t result = 0;
+	struct object_id oid = { .algo = hash_algo_by_ptr(p->repo->hash_algo) };
+
+	if (value == 0xff)
+		return p->num_objects;
+
+	oid.hash[0] = value + 1;
+	bsearch_pack(&oid, p, &result);
+
+	return result;
+}
+
 uint32_t get_pack_fanout(struct packed_git *p, uint32_t value)
 {
 	const uint32_t *level1_ofs = p->index_data;
@@ -351,6 +365,9 @@ uint32_t get_pack_fanout(struct packed_git *p, uint32_t value)
 			return 0;
 		level1_ofs = p->index_data;
 	}
+
+	if (p->index_version == 3)
+		return get_pack_fanout_v3(p, value);
 
 	if (p->index_version > 1) {
 		level1_ofs += 2;

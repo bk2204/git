@@ -16,7 +16,7 @@ objpath () {
 # show objects present in pack ($1 should be associated *.idx)
 list_packed_objects () {
 	git show-index <"$1" >object-list &&
-	cut -d' ' -f2 object-list
+	cut -d' ' -f2 object-list | sort
 }
 
 # has_any pattern-file content-file

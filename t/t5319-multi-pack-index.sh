@@ -684,7 +684,7 @@ corrupt_data () {
 
 # Force 64-bit offsets by manipulating the idx file.
 # This makes the IDX file _incorrect_ so be careful to clean up after!
-test_expect_success 'force some 64-bit offsets with pack-objects' '
+test_expect_success !COMPAT_HASH 'force some 64-bit offsets with pack-objects' '
 	mkdir objects64 &&
 	mkdir objects64/pack &&
 	for i in $(test_seq 1 11)
@@ -708,7 +708,7 @@ test_expect_success 'force some 64-bit offsets with pack-objects' '
 	midx_read_expect 1 63 5 "$(pwd)/objects64" " large-offsets"
 '
 
-test_expect_success 'verify multi-pack-index with 64-bit offsets' '
+test_expect_success !COMPAT_HASH 'verify multi-pack-index with 64-bit offsets' '
 	git multi-pack-index verify --object-dir=objects64
 '
 
@@ -719,7 +719,7 @@ MIDX_OFFSET_OBJECT_OFFSETS=$(($MIDX_OFFSET_OID_LOOKUP + $NUM_OBJECTS * $HASH_LEN
 MIDX_OFFSET_LARGE_OFFSETS=$(($MIDX_OFFSET_OBJECT_OFFSETS + $NUM_OBJECTS * $MIDX_OFFSET_WIDTH))
 MIDX_BYTE_LARGE_OFFSET=$(($MIDX_OFFSET_LARGE_OFFSETS + 3))
 
-test_expect_success 'verify incorrect 64-bit offset' '
+test_expect_success !COMPAT_HASH 'verify incorrect 64-bit offset' '
 	corrupt_midx_and_verify $MIDX_BYTE_LARGE_OFFSET "\07" objects64 \
 		"incorrect object offset"
 '
@@ -1261,7 +1261,7 @@ test_expect_success PERL_TEST_HELPERS 'reader notices too-small object offset ch
 	test_cmp expect err
 '
 
-test_expect_success PERL_TEST_HELPERS 'reader bounds-checks large offset table' '
+test_expect_success PERL_TEST_HELPERS,!COMPAT_HASH 'reader bounds-checks large offset table' '
 	# re-use the objects64 dir here to cheaply get access to a midx
 	# with large offsets.
 	git init repo &&

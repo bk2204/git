@@ -6,6 +6,7 @@
 #include "list-objects-filter-options.h"
 #include "string-list.h"
 #include "connect.h"
+#include "oidtree.h"
 
 struct git_transport_options {
 	unsigned thin : 1;
@@ -360,5 +361,10 @@ void parse_one_object_format_info(struct repository *r,
 				  const struct git_hash_algo *hash_algo,
 				  const struct git_hash_algo *map_algo,
 				  bool allow_submodules);
+
+void compute_object_mappings(struct oidtree *submodules,
+			     struct list_objects_filter_options *filter_options,
+			     struct strvec *rev_args,
+			     struct strvec *stdin_objects);
 
 #endif

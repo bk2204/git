@@ -575,7 +575,7 @@ static void advertise_submodules(struct repository *r, struct strbuf *buf,
 	strvec_push(&stdin_objects, "--not");
 	strvec_pushv(&stdin_objects, unwanted.v);
 
-	find_submodules_in_revisions(
+	compute_object_mappings(
 		&submodules,
 		NULL,
 		&rev_args,

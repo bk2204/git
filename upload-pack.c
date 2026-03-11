@@ -35,6 +35,7 @@
 #include "shallow.h"
 #include "submodule.h"
 #include "trace.h"
+#include "transport.h"
 #include "object-file-convert.h"
 #include "write-or-die.h"
 #include "json-writer.h"
@@ -1902,7 +1903,7 @@ static void compute_submodule_maps(struct upload_pack_data *data,
 	if (!map_hash_algo)
 		return;
 
-	find_submodules_in_revisions(
+	compute_object_mappings(
 		&data->submodule_references,
 		&data->filter_options,
 		&data->submodule_revision_args,

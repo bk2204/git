@@ -174,9 +174,5 @@ int get_superproject_working_tree(struct strbuf *buf);
 
 struct oidtree;
 struct list_objects_filter_options;
-void find_submodules_in_revisions(struct oidtree *submodules,
-				  struct list_objects_filter_options *filter_options,
-				  struct strvec *rev_args,
-				  struct strvec *stdin_objects);
 
 #endif

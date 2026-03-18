@@ -29,6 +29,7 @@ pub enum MapType {
     LooseObject = 1,
     Shallow = 2,
     Submodule = 3,
+    Filter = 4,
 }
 
 impl MapType {
@@ -38,6 +39,7 @@ impl MapType {
             1 => Some(Self::LooseObject),
             2 => Some(Self::Shallow),
             3 => Some(Self::Submodule),
+            4 => Some(Self::Filter),
             _ => None,
         }
     }

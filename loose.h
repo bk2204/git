@@ -38,6 +38,8 @@ struct loose_object_map_bin {
 #define LOOSE_TYPE_SHALLOW	2
 /* This is a submodule. */
 #define LOOSE_TYPE_SUBMODULE	3
+/* This is a filtered object. */
+#define LOOSE_TYPE_FILTER	4
 #define LOOSE_TYPE_MASK		0x3f
 
 /*

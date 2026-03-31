@@ -350,7 +350,7 @@ static struct ref *handshake(struct transport *transport, int for_push,
 	struct ref *refs = NULL;
 	struct packet_reader reader;
 	size_t sid_len;
-	const char *server_sid;
+	const char *server_sid, *hash_name;
 
 	connect_setup(transport, for_push);
 
@@ -367,11 +367,17 @@ static struct ref *handshake(struct transport *transport, int for_push,
 			transport->server_options = &transport->remote->server_options;
 		if (server_feature_v2("session-id", &server_sid))
 			trace2_data_string("transfer", NULL, "server-sid", server_sid);
-		if (must_list_refs)
+		if (must_list_refs) {
 			get_remote_refs(data->fd[1], &reader, &refs, for_push,
 					options,
 					transport->server_options,
 					transport->stateless_rpc);
+		} else if (server_feature_v2("object-format", &hash_name)) {
+			int hash_algo = hash_algo_by_name(hash_name);
+			if (hash_algo == GIT_HASH_UNKNOWN)
+				die(_("unknown object format '%s' specified by server"), hash_name);
+			reader.hash_algo = &hash_algos[hash_algo];
+		}
 		break;
 	case protocol_v1:
 	case protocol_v0:

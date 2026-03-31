@@ -984,6 +984,14 @@ static struct ref *alloc_ref_with_prefix(const char *prefix, size_t prefixlen,
 	return ref;
 }
 
+static struct ref *alloc_oid_ref(const char *name)
+{
+	size_t len = strlen(name);
+	struct ref *ref = xcalloc(1, st_add3(sizeof(*ref), GIT_MAX_HEXSZ, 1));
+	memcpy(ref->name, name, len);
+	return ref;
+}
+
 struct ref *alloc_ref(const char *name)
 {
 	return alloc_ref_with_prefix("", 0, name);
@@ -2108,7 +2116,7 @@ int get_fetch_map(const struct ref *remote_refs,
 		const char *name = refspec->src[0] ? refspec->src : "HEAD";
 
 		if (refspec->exact_oid) {
-			ref_map = alloc_ref(name);
+			ref_map = alloc_oid_ref(name);
 			get_oid_hex(name, &ref_map->old_oid);
 			ref_map->exact_oid = 1;
 		} else {

@@ -24,6 +24,8 @@ struct fetch_pack_args {
 	const struct oid_array *negotiation_restrict_tips;
 	const struct oid_array *negotiation_include_tips;
 
+	const struct git_hash_algo *hash_algo, *supported_map_hash_algo;
+
 	unsigned deepen_relative:1;
 	unsigned quiet:1;
 	unsigned keep_pack:1;

@@ -493,6 +493,9 @@ static int fetch_refs_via_pack(struct transport *transport,
 		refs_tmp = handshake(transport, 0, NULL, must_list_refs);
 	}
 
+	args.hash_algo = transport->hash_algo;
+	args.supported_map_hash_algo = transport->supported_map_hash_algo;
+
 	if (data->version == protocol_unknown_version)
 		BUG("unknown protocol version");
 	else if (data->version <= protocol_v1)

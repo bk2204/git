@@ -728,19 +728,20 @@ static void add_refs_to_oidset(struct oidset *oids, struct ref *refs)
 		oidset_insert(oids, &refs->old_oid);
 }
 
-static int is_unmatched_ref(const struct ref *ref)
+static int is_unmatched_ref(const struct ref *ref, const struct git_hash_algo *algop)
 {
 	struct object_id oid;
 	const char *p;
 	return	ref->match_status == REF_NOT_MATCHED &&
-		!parse_oid_hex(ref->name, &oid, &p) &&
+		!parse_oid_hex_algop(ref->name, &oid, &p, algop) &&
 		*p == '\0' &&
 		oideq(&oid, &ref->old_oid);
 }
 
 static void filter_refs(struct fetch_pack_args *args,
 			struct ref **refs,
-			struct ref **sought, int nr_sought)
+			struct ref **sought, int nr_sought,
+			const struct git_hash_algo *algop)
 {
 	struct ref *newlist = NULL;
 	struct ref **newtail = &newlist;
@@ -794,7 +795,7 @@ static void filter_refs(struct fetch_pack_args *args,
 	if (strict) {
 		for (i = 0; i < nr_sought; i++) {
 			ref = sought[i];
-			if (!is_unmatched_ref(ref))
+			if (!is_unmatched_ref(ref, algop))
 				continue;
 
 			add_refs_to_oidset(&tip_oids, unmatched);
@@ -806,7 +807,7 @@ static void filter_refs(struct fetch_pack_args *args,
 	/* Append unmatched requests to the list */
 	for (i = 0; i < nr_sought; i++) {
 		ref = sought[i];
-		if (!is_unmatched_ref(ref))
+		if (!is_unmatched_ref(ref, algop))
 			continue;
 
 		if (!strict || oidset_contains(&tip_oids, &ref->old_oid)) {
@@ -1323,7 +1324,7 @@ static struct ref *do_fetch_pack(struct fetch_pack_args *args,
 		die(_("remote side does not support shallow clones in compatibility mode"));
 
 	mark_complete_and_common_ref(negotiator, args, &ref);
-	filter_refs(args, &ref, sought, nr_sought);
+	filter_refs(args, &ref, sought, nr_sought, algo);
 	if (!args->refetch && everything_local(args, &ref)) {
 		packet_flush(fd[1]);
 		goto all_done;
@@ -1384,12 +1385,14 @@ static void add_shallow_requests(struct strbuf *req_buf,
 		packet_buf_write(req_buf, "deepen-relative\n");
 }
 
-static void add_wants(const struct ref *wants, struct strbuf *req_buf)
+static void add_wants(const struct ref *wants, struct strbuf *req_buf,
+		      const struct git_hash_algo *algo)
 {
 	int use_ref_in_want = server_supports_feature("fetch", "ref-in-want", 0);
 
 	for ( ; wants ; wants = wants->next) {
 		const struct object_id *remote = &wants->old_oid;
+		struct object_id oid;
 		struct object *o;
 
 
@@ -1407,6 +1410,9 @@ static void add_wants(const struct ref *wants, struct strbuf *req_buf)
 		    (o->flags & COMPLETE)) {
 			continue;
 		}
+
+		if (!repo_oid_to_algop(the_repository, remote, algo, &oid))
+			remote = &oid;
 
 		if (!use_ref_in_want || wants->exact_oid)
 			packet_buf_write(req_buf, "want %s\n", oid_to_hex(remote));
@@ -1586,7 +1592,7 @@ static int send_fetch_request(struct fetch_negotiator *negotiator, int fd_out,
 	}
 
 	/* add wants */
-	add_wants(wants, &req_buf);
+	add_wants(wants, &req_buf, *hash_algo);
 
 	/* Add all of the common commits we've found in previous rounds */
 	add_common(&req_buf, common, *hash_algo);
@@ -1881,6 +1887,10 @@ static struct ref *do_fetch_pack_v2(struct fetch_pack_args *args,
 	int i;
 	struct strvec index_pack_args = STRVEC_INIT;
 	const char *promisor_remote_config;
+	const struct git_hash_algo *algop = args->hash_algo;
+
+	if (!algop)
+		algop = r->hash_algo;
 
 	fsck_options_init(&fsck_options, the_repository, FSCK_OPTIONS_MISSING_GITMODULES);
 
@@ -1935,7 +1945,7 @@ static struct ref *do_fetch_pack_v2(struct fetch_pack_args *args,
 
 			/* Filter 'ref' by 'sought' and those that aren't local */
 			mark_complete_and_common_ref(negotiator, args, &ref);
-			filter_refs(args, &ref, sought, nr_sought);
+			filter_refs(args, &ref, sought, nr_sought, algop);
 			if (!args->refetch && everything_local(args, &ref))
 				state = FETCH_DONE;
 			else

@@ -363,6 +363,7 @@ void parse_one_object_format_info(struct repository *r,
 				  bool allow_submodules);
 
 void compute_object_mappings(struct oidtree *submodules,
+			     struct oidset *filtered,
 			     struct list_objects_filter_options *filter_options,
 			     struct strvec *rev_args,
 			     struct strvec *stdin_objects);

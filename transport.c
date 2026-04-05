@@ -24,6 +24,7 @@
 #include "strbuf.h"
 #include "string-list.h"
 #include "oid-array.h"
+#include "object-file-convert.h"
 #include "sigchain.h"
 #include "trace2.h"
 #include "transport-internal.h"
@@ -445,6 +446,22 @@ static int get_bundle_uri(struct transport *transport)
 				     transport->bundles, stateless_rpc);
 }
 
+static void map_object_ids(struct repository *repo, struct ref **to_fetch,
+			   size_t nr_heads, const struct git_hash_algo *algop)
+{
+	for (size_t i = 0; i < nr_heads; i++) {
+		if (to_fetch[i]->exact_oid) {
+			struct object_id oid;
+
+			if (!repo_oid_to_algop(repo, &to_fetch[i]->old_oid,
+					       algop, &oid)) {
+				oidcpy(&to_fetch[i]->old_oid, &oid);
+				oid_to_hex_r(to_fetch[i]->name, &oid);
+			}
+		}
+	}
+}
+
 static int fetch_refs_via_pack(struct transport *transport,
 			       int nr_heads, struct ref **to_fetch)
 {
@@ -475,6 +492,7 @@ static int fetch_refs_via_pack(struct transport *transport,
 	list_objects_filter_copy(&args.filter_options,
 				 &data->options.filter_options);
 	args.refetch = data->options.refetch;
+	args.fetch_map_object_ids = transport->fetch_map_object_ids;
 	args.stateless_rpc = transport->stateless_rpc;
 	args.server_options = transport->server_options;
 	args.negotiation_restrict_tips = data->options.negotiation_restrict_tips;
@@ -519,6 +537,11 @@ static int fetch_refs_via_pack(struct transport *transport,
 		}
 		goto cleanup;
 	}
+
+	if (transport->fetch_map_object_ids &&
+	    transport->hash_algo != the_repository->hash_algo)
+		map_object_ids(the_repository, to_fetch, nr_heads,
+			       transport->hash_algo);
 
 	/*
 	 * Create a shallow copy of `sought` so that we can free all of its entries.

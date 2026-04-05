@@ -45,6 +45,7 @@ struct fetch_pack_args {
 	unsigned reject_shallow_remote:1;
 	unsigned deepen:1;
 	unsigned refetch:1;
+	unsigned fetch_map_object_ids:1;
 
 	/*
 	 * Indicate that the remote of this request is a promisor remote. The

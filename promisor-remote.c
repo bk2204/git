@@ -45,7 +45,7 @@ static int fetch_objects(struct repository *repo,
 	strvec_pushl(&child.args, "-c", "fetch.negotiationAlgorithm=noop",
 		     "fetch", remote_name, "--no-tags",
 		     "--no-write-fetch-head", "--recurse-submodules=no",
-		     "--filter=blob:none", "--stdin", NULL);
+		     "--filter=blob:none", "--map-object-ids", "--stdin", NULL);
 	if (!repo_config_get_bool(repo, "promisor.quiet", &quiet) && quiet)
 		strvec_push(&child.args, "--quiet");
 	if (start_command(&child))

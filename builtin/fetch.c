@@ -111,6 +111,7 @@ struct fetch_config {
 	int recurse_submodules;
 	int parallel;
 	int submodule_fetch_jobs;
+	int map_object_ids;
 };
 
 static int git_fetch_config(const char *k, const char *v,
@@ -2501,6 +2502,9 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
 	if (server_options.nr)
 		gtransport->server_options = &server_options;
 
+	if (config->map_object_ids)
+		gtransport->fetch_map_object_ids = 1;
+
 	sigchain_push_common(unlock_pack_on_signal);
 	atexit(unlock_pack_atexit);
 	sigchain_push(SIGPIPE, SIG_IGN);
@@ -2525,6 +2529,7 @@ int cmd_fetch(int argc,
 		.recurse_submodules = RECURSE_SUBMODULES_DEFAULT,
 		.parallel = 1,
 		.submodule_fetch_jobs = -1,
+		.map_object_ids = 0,
 	};
 	const char *submodule_prefix = "";
 	const char *bundle_uri;
@@ -2635,6 +2640,8 @@ int cmd_fetch(int argc,
 			 N_("write the commit-graph after fetching")),
 		OPT_BOOL(0, "stdin", &stdin_refspecs,
 			 N_("accept refspecs from stdin")),
+		OPT_BOOL(0, "map-object-ids", &config.map_object_ids,
+			 N_("map literal object IDs to the remote algorithm")),
 		OPT_END()
 	};
 

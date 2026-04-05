@@ -188,7 +188,9 @@ test_fetch_push () {
 			git checkout main &&
 			create_blob ghi.txt ghi &&
 			git add ghi.txt &&
-			test_commit --annotate main2
+			test_commit --annotate main2 &&
+			git config uploadpackfilter.allow true &&
+			git config uploadpack.allowfilter true
 		)
 	'
 
@@ -427,6 +429,25 @@ test_fetch_push () {
 			test "$dev" = "$subsource_oid" &&
 			test "$commit" = "$sub_commit" &&
 			test "$submodule" = "$sub_commit"
+		)
+	'
+
+	test_expect_success SHARED_ALGOS "$desc: partial clone" '
+		algos="$dest_algo" &&
+		if [ -n "$dest_compat_algo" ]
+		then
+			algos="$algos:$dest_compat_algo"
+		fi &&
+		GIT_TRACE=1 GIT_TRACE_PACKET=1 git clone --filter=blob:none --object-format="$algos" -b dev source partial &&
+		(
+			cd partial &&
+			set_config "$fsck" "$large_blob" "$protocol" &&
+			git fetch  ../source dev:other &&
+			fetch_shallow_verify_oids "$dest_algo" &&
+			fetch_shallow_verify_oids "$dest_compat_algo" &&
+			git fetch ../source main:main &&
+			fetch_verify_oids "$dest_algo" &&
+			fetch_verify_oids "$dest_compat_algo"
 		)
 	'
 }

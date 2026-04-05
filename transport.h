@@ -131,6 +131,8 @@ struct transport {
 	 * in transport_set_verbosity().
 	 **/
 	unsigned progress : 1;
+
+	unsigned fetch_map_object_ids : 1;
 	/*
 	 * If transport is at least potentially smart, this points to
 	 * git_transport_options structure to use in case transport

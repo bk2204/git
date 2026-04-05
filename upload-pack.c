@@ -92,6 +92,7 @@ struct upload_pack_data {
 	struct oid_array unshallow_response;
 	struct oid_array shallow_references;
 	struct oidtree submodule_references;
+	struct oidset filtered_references;
 
 	unsigned int timeout;					/* v0 only */
 	enum {
@@ -143,6 +144,7 @@ struct upload_pack_data {
 
 static void upload_pack_data_init(struct upload_pack_data *data)
 {
+	const size_t default_oidset_size = 16 * 1024;
 	struct string_list symref = STRING_LIST_INIT_DUP;
 	struct strmap wanted_refs = STRMAP_INIT;
 	struct strvec hidden_refs = STRVEC_INIT;
@@ -174,6 +176,7 @@ static void upload_pack_data_init(struct upload_pack_data *data)
 	packet_writer_init(&data->writer, 1);
 	list_objects_filter_init(&data->filter_options);
 	oidtree_init(&data->submodule_references);
+	oidset_init(&data->filtered_references, default_oidset_size);
 
 	data->keepalive = 5;
 	data->advertise_sid = 0;
@@ -199,6 +202,7 @@ static void upload_pack_data_clear(struct upload_pack_data *data)
 	strvec_clear(&data->stdin_objects);
 	strvec_clear(&data->submodule_revision_args);
 	oidtree_clear(&data->submodule_references);
+	oidset_clear(&data->filtered_references);
 
 	free((char *)data->pack_objects_hook);
 }
@@ -1896,15 +1900,16 @@ static void compute_shallow_info(struct upload_pack_data *data)
 		deepen(data, INFINITE_DEPTH);
 }
 
-static void compute_submodule_maps(struct upload_pack_data *data,
-				   const struct git_hash_algo *hash_algo UNUSED,
-				   const struct git_hash_algo *map_hash_algo)
+static void compute_object_maps(struct upload_pack_data *data,
+				const struct git_hash_algo *hash_algo UNUSED,
+				const struct git_hash_algo *map_hash_algo)
 {
 	if (!map_hash_algo)
 		return;
 
 	compute_object_mappings(
 		&data->submodule_references,
+		&data->filtered_references,
 		&data->filter_options,
 		&data->submodule_revision_args,
 		&data->stdin_objects
@@ -1924,12 +1929,15 @@ static void send_object_map_info(struct upload_pack_data *data,
 		.map_algo = map_algo,
 	};
 	struct oidset seen_wanted_refs = OIDSET_INIT;
+	struct oidset_iter oiter;
+	struct object_id *cur;
 
 	if (!map_algo ||
 	    (strmap_empty(&data->wanted_refs) &&
 	     !data->shallow_response.nr &&
 	     !data->unshallow_response.nr &&
-	     oidtree_is_empty(&data->submodule_references)))
+	     oidtree_is_empty(&data->submodule_references) &&
+	     oidset_size(&data->filtered_references) == 0))
 		return;
 
 	if (headerfooter)
@@ -1962,6 +1970,12 @@ static void send_object_map_info(struct upload_pack_data *data,
 	oidtree_each(&data->submodule_references,
 		     null_oid(the_repository->hash_algo),
 		     0, send_one_mapped_submodule, &d);
+
+	d.text = "filter";
+	oidset_iter_init(&data->filtered_references, &oiter);
+	while ((cur = oidset_iter_next(&oiter))) {
+		send_one_mapped_shallow(cur, &d);
+	}
 
 	if (headerfooter)
 		packet_writer_delim(&data->writer);
@@ -2059,8 +2073,8 @@ int upload_pack_v2(struct repository *r, struct packet_reader *request)
 					     data.uri_protocols.nr ?
 					     &data.uri_protocols : NULL,
 					     request->hash_algo);
-			compute_submodule_maps(&data, request->hash_algo,
-					       request->map_hash_algo);
+			compute_object_maps(&data, request->hash_algo,
+					    request->map_hash_algo);
 			send_object_map_info(&data, request->map_hash_algo, true);
 			send_wanted_ref_info(&data);
 			send_shallow_info(&data);

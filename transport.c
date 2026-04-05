@@ -1830,6 +1830,7 @@ static void add_object_to_maps(struct object *obj, const char *name UNUSED,
 }
 
 void compute_object_mappings(struct oidtree *submodules,
+			     struct oidset *filtered,
 			     struct list_objects_filter_options *filter_options,
 			     struct strvec *rev_args,
 			     struct strvec *stdin_objects)
@@ -1848,15 +1849,18 @@ void compute_object_mappings(struct oidtree *submodules,
 	revs.include_check = commit_is_not_in_promisor_pack;
 	revs.include_check_obj = object_is_not_in_promisor_pack;
 
-	if (filter_options)
+	if (filter_options) {
 		list_objects_filter_copy(&revs.filter, filter_options);
-	else
+	} else {
 		list_objects_filter_init(&revs.filter);
-	/*
-	 * We are only interested in trees when converting submodules, since
-	 * they're the only objects which hold submodules, so exclude blobs.
-	 */
-	parse_list_objects_filter(&revs.filter, "blob:none");
+		/*
+		 * We are only interested in trees when converting submodules,
+		 * since they're the only objects which hold submodules, if we
+		 * don't have any need for filtered objects because the caller
+		 * didn't provide any, then exclude blobs for efficiency.
+		 */
+		parse_list_objects_filter(&revs.filter, "blob:none");
+	}
 
 	setup_revisions_from_strvec(rev_args, &revs, &s_r_opt);
 
@@ -1888,9 +1892,10 @@ void compute_object_mappings(struct oidtree *submodules,
 
 	if (prepare_revision_walk(&revs))
 		die(_("revision walk setup failed"));
-	traverse_commit_list(&revs,
-			     NULL, add_object_to_maps,
-			     submodules);
+	traverse_commit_list_filtered(&revs,
+				      NULL, add_object_to_maps,
+				      submodules,
+				      filter_options ? filtered : NULL);
 
 	release_revisions(&revs);
 }

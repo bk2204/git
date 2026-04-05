@@ -578,6 +578,7 @@ static void advertise_submodules(struct repository *r, struct strbuf *buf,
 	compute_object_mappings(
 		&submodules,
 		NULL,
+		NULL,
 		&rev_args,
 		&stdin_objects
 	);

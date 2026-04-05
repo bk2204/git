@@ -1302,6 +1302,8 @@ void parse_one_object_format_info(struct repository *r,
 		kind = LOOSE_TYPE_SHALLOW;
 	else if (skip_prefix(arg, "submodule ", &arg) && allow_submodules)
 		kind = LOOSE_TYPE_SUBMODULE;
+	else if (skip_prefix(arg, "filter ", &arg))
+		kind = LOOSE_TYPE_FILTER;
 
 	if (kind) {
 		if (parse_oid_hex_algop(arg, &oid, &arg, hash_algo) ||

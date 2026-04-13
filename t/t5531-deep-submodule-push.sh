@@ -304,7 +304,7 @@ test_expect_success 'push succeeds if submodule commit disabling recursion from 
 	)
 '
 
-test_expect_success 'submodule entry pointing at a tag is error' '
+test_expect_success BROKEN_OBJECTS 'submodule entry pointing at a tag is error' '
 	git -C work/gar/bage tag -a test1 -m "tag" &&
 	tag=$(git -C work/gar/bage rev-parse test1^{tag}) &&
 	git -C work update-index --cacheinfo 160000 "$tag" gar/bage &&

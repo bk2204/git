@@ -226,6 +226,8 @@ static void consume_shallow_list(struct fetch_pack_args *args,
 				continue;
 			if (starts_with(reader->line, "unshallow "))
 				continue;
+			if (starts_with(reader->line, "map-object "))
+				continue;
 			die(_("git fetch-pack: expected shallow list"));
 		}
 		if (reader->status != PACKET_READ_FLUSH)

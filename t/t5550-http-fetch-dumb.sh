@@ -12,6 +12,12 @@ then
 	test_done
 fi
 
+if test_have_prereq COMPAT_HASH
+then
+	skip_all='skipping test; dumb HTTP protocol not supported with hash interoperability.'
+	test_done
+fi
+
 . "$TEST_DIRECTORY"/lib-httpd.sh
 start_httpd
 

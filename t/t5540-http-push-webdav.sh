@@ -24,6 +24,13 @@ then
 	test_done
 fi
 
+
+if test_have_prereq COMPAT_HASH
+then
+	skip_all='skipping test; dumb HTTP protocol not supported with hash interoperability.'
+	test_done
+fi
+
 LIB_HTTPD_DAV=t
 . "$TEST_DIRECTORY"/lib-httpd.sh
 ROOT_PATH="$PWD"

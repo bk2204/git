@@ -123,13 +123,17 @@ test_expect_success 'git receive-pack --advertise-refs: v1' '
 '
 
 test_expect_success 'git upload-pack --advertise-refs: v2' '
+	if test -n "$test_repo_compat_hash_algo"
+	then
+		ofm=$(printf "\\nobject-format-map=%s" "$test_repo_compat_hash_algo")
+	fi &&
 	cat >expect <<-EOF &&
 	version 2
 	agent=FAKE
 	ls-refs=unborn
 	fetch=shallow wait-for-done
 	server-option
-	object-format=$(test_oid algo)
+	object-format=$(test_oid algo)$ofm
 	0000
 	EOF
 

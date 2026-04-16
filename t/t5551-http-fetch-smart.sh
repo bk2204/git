@@ -321,7 +321,7 @@ test_expect_success 'smart clone respects namespace' '
 	test_cmp expect actual
 '
 
-test_expect_success 'dumb clone via http-backend respects namespace' '
+test_expect_success !COMPAT_HASH 'dumb clone via http-backend respects namespace' '
 	git --git-dir="$HTTPD_DOCUMENT_ROOT_PATH/repo.git" \
 		config http.getanyfile true &&
 	GIT_SMART_HTTP=0 git clone \

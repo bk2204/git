@@ -886,16 +886,25 @@ static void add_shallow(struct upload_pack_data *data,
 		struct object *object = &result->item->object;
 		if (!(object->flags & (CLIENT_SHALLOW|NOT_SHALLOW))) {
 			struct object_id *tree;
+			bool parsed;
 
 			oid_array_append(&data->shallow_response, &object->oid);
 
-			repo_parse_commit(the_repository, result->item);
+			parsed = object->parsed;
+			if (parsed)
+				unparse_commit(the_repository, &object->oid);
+			repo_parse_commit_gently(the_repository, result->item, 0, 1);
 
 			tree = get_commit_tree_oid(result->item);
 			if (tree)
 				oid_array_append(&data->shallow_references, tree);
 			for (struct commit_list *p = result->item->parents; p; p = p->next) {
 				oid_array_append(&data->shallow_references, &p->item->object.oid);
+			}
+
+			if (parsed) {
+				unparse_commit(the_repository, &object->oid);
+				repo_parse_commit(the_repository, result->item);
 			}
 
 			register_shallow(the_repository, &object->oid);

@@ -21,8 +21,10 @@
 #include "quote.h"
 #include "dir.h"
 #include "run-command.h"
+#include "loose.h"
 #include "packfile.h"
 #include "object-file.h"
+#include "object-file-convert.h"
 #include "object-name.h"
 #include "odb.h"
 #include "mem-pool.h"
@@ -484,7 +486,8 @@ static void alloc_objects(unsigned int cnt)
 	alloc_count += cnt;
 }
 
-static struct object_entry *new_object(struct object_id *oid)
+static struct object_entry *new_object(struct object_id *oid,
+				       struct object_id *compat_oid)
 {
 	struct object_entry *e;
 
@@ -493,6 +496,11 @@ static struct object_entry *new_object(struct object_id *oid)
 
 	e = blocks->next_free++;
 	oidcpy(&e->idx.oid, oid);
+	if (compat_oid) {
+		oidcpy(&e->idx.compat_oid, compat_oid);
+		repo_add_loose_object_map(the_repository->objects->sources,
+					  oid, compat_oid, LOOSE_TYPE_LOOSE);
+	}
 	return e;
 }
 
@@ -502,7 +510,8 @@ static struct object_entry *find_object(struct object_id *oid)
 					   struct object_entry, ent);
 }
 
-static struct object_entry *insert_object(struct object_id *oid)
+static struct object_entry *insert_object(struct object_id *oid,
+					  struct object_id *compat_oid)
 {
 	struct object_entry *e;
 	unsigned int hash = oidhash(oid);
@@ -510,7 +519,7 @@ static struct object_entry *insert_object(struct object_id *oid)
 	e = hashmap_get_entry_from_hash(&object_table, hash, oid,
 					struct object_entry, ent);
 	if (!e) {
-		e = new_object(oid);
+		e = new_object(oid, compat_oid);
 		e->idx.offset = 0;
 		hashmap_entry_init(&e->ent, hash);
 		hashmap_add(&object_table, &e->ent);
@@ -961,10 +970,11 @@ static int store_object(
 	void *out, *delta;
 	struct object_entry *e;
 	unsigned char hdr[96];
-	struct object_id oid;
+	struct object_id oid, compat_oid;
 	unsigned long hdrlen, deltalen;
 	struct git_hash_ctx c;
 	git_zstream s;
+	struct repository *r = the_repository;
 
 	hdrlen = format_object_header((char *)hdr, sizeof(hdr), type,
 				      dat->len);
@@ -975,7 +985,12 @@ static int store_object(
 	if (oidout)
 		oidcpy(oidout, &oid);
 
-	e = insert_object(&oid);
+	if (r->compat_hash_algo)
+		convert_and_hash_object_file(r, r->hash_algo,
+					     r->compat_hash_algo, dat->buf,
+					     dat->len, type, &compat_oid, 0);
+
+	e = insert_object(&oid, r->compat_hash_algo ? &compat_oid : NULL);
 	if (mark)
 		insert_mark(&marks, mark, e);
 	if (e->idx.offset) {
@@ -1109,10 +1124,10 @@ static void stream_blob(uintmax_t len, struct object_id *oidout, uintmax_t mark)
 	unsigned char *out_buf = xmalloc(out_sz);
 	struct odb_source *source;
 	struct object_entry *e;
-	struct object_id oid;
+	struct object_id oid, compat_oid;
 	unsigned long hdrlen;
 	off_t offset;
-	struct git_hash_ctx c;
+	struct git_hash_ctx c, compat_ctx, *compat_c = NULL;
 	git_zstream s;
 	struct hashfile_checkpoint checkpoint;
 	int status = Z_OK;
@@ -1129,8 +1144,15 @@ static void stream_blob(uintmax_t len, struct object_id *oidout, uintmax_t mark)
 
 	hdrlen = format_object_header((char *)out_buf, out_sz, OBJ_BLOB, len);
 
+	if (the_repository->compat_hash_algo) {
+		compat_c = &compat_ctx;
+		the_repository->compat_hash_algo->init_fn(compat_c);
+	}
+
 	the_hash_algo->init_fn(&c);
 	git_hash_update(&c, out_buf, hdrlen);
+	if (compat_c)
+		git_hash_update(compat_c, out_buf, hdrlen);
 
 	crc32_begin(pack_file);
 
@@ -1149,6 +1171,8 @@ static void stream_blob(uintmax_t len, struct object_id *oidout, uintmax_t mark)
 				die(_("EOF in data (%" PRIuMAX " bytes remaining)"), len);
 
 			git_hash_update(&c, in_buf, n);
+			if (compat_c)
+				git_hash_update(compat_c, in_buf, n);
 			s.next_in = in_buf;
 			s.avail_in = n;
 			len -= n;
@@ -1175,11 +1199,13 @@ static void stream_blob(uintmax_t len, struct object_id *oidout, uintmax_t mark)
 	}
 	git_deflate_end(&s);
 	git_hash_final_oid(&oid, &c);
+	if (compat_c)
+		git_hash_final_oid(&compat_oid, compat_c);
 
 	if (oidout)
 		oidcpy(oidout, &oid);
 
-	e = insert_object(&oid);
+	e = insert_object(&oid, compat_c ? &compat_oid : NULL);
 
 	if (mark)
 		insert_mark(&marks, mark, e);
@@ -1777,11 +1803,19 @@ static void insert_object_entry(struct mark_set **s, struct object_id *oid, uint
 	struct object_entry *e;
 	e = find_object(oid);
 	if (!e) {
+		struct object_id compat_oid, *compat = NULL;
 		enum object_type type = odb_read_object_info(the_repository->objects,
 							     oid, NULL);
 		if (type < 0)
 			die(_("object not found: %s"), oid_to_hex(oid));
-		e = insert_object(oid);
+		if (the_repository->compat_hash_algo) {
+			if (repo_oid_to_algop(the_repository, oid,
+					      the_repository->compat_hash_algo,
+					      &compat_oid))
+				die(_("unable to map object %s"), oid_to_hex(oid));
+			compat = &compat_oid;
+		}
+		e = insert_object(oid, compat);
 		e->type = type;
 		e->pack_id = MAX_PACK_ID;
 		e->idx.offset = 1; /* just not zero! */
@@ -3409,12 +3443,21 @@ static struct object_entry *dereference(struct object_entry *oe,
 	const unsigned hexsz = the_hash_algo->hexsz;
 
 	if (!oe) {
+		struct object_id compat_oid, *compat = NULL;
 		enum object_type type = odb_read_object_info(the_repository->objects,
 							     oid, NULL);
 		if (type < 0)
 			die(_("object not found: %s"), oid_to_hex(oid));
+
+		if (the_repository->compat_hash_algo) {
+			if (repo_oid_to_algop(the_repository, oid,
+					      the_repository->compat_hash_algo,
+					      &compat_oid))
+				die(_("unable to map object %s"), oid_to_hex(oid));
+			compat = &compat_oid;
+		}
 		/* cache it! */
-		oe = insert_object(oid);
+		oe = insert_object(oid, compat);
 		oe->type = type;
 		oe->pack_id = MAX_PACK_ID;
 		oe->idx.offset = 1;

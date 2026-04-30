@@ -34,4 +34,12 @@ int convert_object_file(struct repository *repo,
 			struct missing_object *missing,
 			int flags);
 
+int convert_and_hash_object_file(struct repository *repo,
+				 const struct git_hash_algo *from,
+				 const struct git_hash_algo *to,
+				 const void *buf, size_t len,
+				 enum object_type type,
+				 struct object_id *oid,
+				 int flags);
+
 #endif /* OBJECT_CONVERT_H */

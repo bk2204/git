@@ -7,6 +7,7 @@
 #include "repository.h"
 #include "hash.h"
 #include "object.h"
+#include "object-file.h"
 #include "loose.h"
 #include "commit.h"
 #include "gpg-interface.h"
@@ -355,4 +356,38 @@ int convert_object_file(struct repository *repo,
 	}
 	die(_("Failed to convert object from %s to %s"),
 		from->name, to->name);
+}
+
+int convert_and_hash_object_file(struct repository *repo,
+				 const struct git_hash_algo *from,
+				 const struct git_hash_algo *to,
+				 const void *buf, size_t len,
+				 enum object_type type,
+				 struct object_id *oid,
+				 int flags)
+{
+	struct strbuf strbuf = STRBUF_INIT;
+	size_t hdrlen;
+	unsigned char hdr[96];
+	struct git_hash_ctx c;
+
+	if (type != OBJ_BLOB) {
+		int ret = 0;
+		ret = convert_object_file(repo, &strbuf, from, to, buf, len,
+					  type, NULL, flags);
+		if (ret)
+			return ret;
+		buf = strbuf.buf;
+		len = strbuf.len;
+	}
+
+	hdrlen = format_object_header((char *)hdr, sizeof(hdr), type,
+				      len);
+
+	to->init_fn(&c);
+	git_hash_update(&c, hdr, hdrlen);
+	git_hash_update(&c, buf, len);
+	git_hash_final_oid(oid, &c);
+
+	return 0;
 }

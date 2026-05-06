@@ -674,6 +674,10 @@ static enum extension_result handle_extension(const char *var,
 		struct string_list_item *item;
 		int format;
 
+		if (data->compat_hash_algo)
+			return error(_("multiple values of '%s' are not supported"),
+				     "extensions.compatobjectformat");
+
 		if (!value)
 			return config_error_nonbool(var);
 		format = hash_algo_by_name(value);

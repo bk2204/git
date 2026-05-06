@@ -312,4 +312,15 @@ do
 	'
 done
 
+test_expect_success 'reject multiple compatibility algorithms' '
+	git init --object-format=sha256 multiple-algorithms &&
+	cat >>multiple-algorithms/.git/config <<-EOM &&
+	[extensions]
+		compatobjectformat = sha1
+		compatobjectformat = blake2b256
+	EOM
+	test_must_fail git -C multiple-algorithms rev-parse HEAD 2>err &&
+	test_grep "multiple values.*are not supported" err
+'
+
 test_done

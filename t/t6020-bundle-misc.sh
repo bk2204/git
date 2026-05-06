@@ -554,7 +554,7 @@ test_expect_success 'incremental bundle between two annotated tags' '
 
 for filter in "blob:none" "tree:0" "tree:1" "blob:limit=100"
 do
-	test_expect_success "filtered bundle: $filter" '
+	test_expect_success !COMPAT_HASH "filtered bundle: $filter" '
 		test_when_finished rm -rf .git/objects/pack cloned unbundled &&
 		git bundle create partial.bdl \
 			--all \

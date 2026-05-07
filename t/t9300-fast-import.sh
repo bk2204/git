@@ -1858,7 +1858,7 @@ test_expect_success 'P: superproject & submodule mix' '
 	git submodule update
 '
 
-test_expect_success 'P: verbatim SHA gitlinks' '
+test_expect_success !COMPAT_HASH 'P: verbatim SHA gitlinks' '
 	SUBLAST=$(git rev-parse --verify sub) &&
 	SUBPREV=$(git rev-parse --verify sub^) &&
 
@@ -3912,14 +3912,14 @@ cat >Y-marks <<\Y_INPUT_END
 :4 ff729f5e62f72c0c3978207d9a80e5f3a65f14d7
 Y_INPUT_END
 
-test_expect_success 'Y: setup' '
+test_expect_success !COMPAT_HASH 'Y: setup' '
 	test_oid_cache <<-EOF
 	Ymain sha1:9afed2f9161ddf416c0a1863b8b0725b00070504
 	Ymain sha256:c0a1010da1df187b2e287654793df01b464bd6f8e3f17fc1481a7dadf84caee3
 	EOF
 '
 
-test_expect_success 'Y: rewrite submodules' '
+test_expect_success !COMPAT_HASH 'Y: rewrite submodules' '
 	git init main1 &&
 	(
 		cd main1 &&

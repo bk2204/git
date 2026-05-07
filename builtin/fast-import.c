@@ -796,6 +796,13 @@ static void start_packfile(void)
 	all_packs[pack_id] = p;
 }
 
+static int offset_compare(const void *_a, const void *_b)
+{
+	struct pack_idx_entry *a = *(struct pack_idx_entry **)_a;
+	struct pack_idx_entry *b = *(struct pack_idx_entry **)_b;
+	return a->offset - b->offset;
+}
+
 static const char *create_index(void)
 {
 	const char *tmpfile;
@@ -813,6 +820,8 @@ static const char *create_index(void)
 	last = idx + object_count;
 	if (c != last)
 		die(_("internal consistency error creating the index"));
+
+	QSORT(idx, object_count, offset_compare);
 
 	tmpfile = write_idx_file(the_repository, NULL, idx, object_count,
 				 &pack_idx_opts, pack_data->hash);

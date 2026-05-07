@@ -2404,8 +2404,12 @@ static void file_change_m(const char *p, struct branch *b)
 {
 	static struct strbuf path = STRBUF_INIT;
 	struct object_entry *oe;
-	struct object_id oid;
+	struct object_id oid, compat_oid;
 	uint16_t mode, inline_data = 0;
+	const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+
+	if (compat)
+		oidclr(&compat_oid, compat);
 
 	p = parse_mode(p, &mode);
 	if (!p)
@@ -2428,6 +2432,7 @@ static void file_change_m(const char *p, struct branch *b)
 	if (*p == ':') {
 		oe = find_mark(marks, parse_mark_ref_space(&p));
 		oidcpy(&oid, &oe->idx.oid);
+		oidcpy(&compat_oid, &oe->idx.compat_oid);
 	} else if (skip_prefix(p, "inline ", &p)) {
 		inline_data = 1;
 		oe = NULL; /* not used with inline_data, but makes gcc happy */
@@ -2437,6 +2442,8 @@ static void file_change_m(const char *p, struct branch *b)
 		oe = find_object(&oid);
 		if (*p++ != ' ')
 			die(_("missing space after SHA1: %s"), command_buf.buf);
+		if (compat && oe)
+			oidcpy(&compat_oid, &oe->idx.compat_oid);
 	}
 
 	strbuf_reset(&path);
@@ -2463,6 +2470,14 @@ static void file_change_m(const char *p, struct branch *b)
 		 * Accept the sha1 without checking; it expected to be in
 		 * another repository.
 		 */
+		if (compat) {
+			if (is_null_oid(&compat_oid))
+				die(_("cannot map object ID %s when writing gitlink"),
+				    oid_to_hex(&oid));
+			repo_add_loose_object_map(the_repository->objects->sources,
+						  &oid, &compat_oid,
+						  LOOSE_TYPE_SUBMODULE | LOOSE_WRITE);
+		}
 	} else if (inline_data) {
 		if (S_ISDIR(mode))
 			die(_("directories cannot be specified 'inline': %s"),

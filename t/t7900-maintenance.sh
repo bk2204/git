@@ -344,10 +344,19 @@ test_expect_success 'loose-objects task' '
 	# but does not create a pack-file.
 	git maintenance run --task=loose-objects &&
 	ls .git/objects >obj-dir-after &&
-	cat >expect <<-\EOF &&
-	info
-	pack
-	EOF
+	if test_have_prereq COMPAT_HASH
+	then
+		cat >expect <<-\EOF
+		info
+		object-map
+		pack
+		EOF
+	else
+		cat >expect <<-\EOF
+		info
+		pack
+		EOF
+	fi &&
 	test_cmp expect obj-dir-after &&
 	ls .git/objects/pack/*.pack >packs-after &&
 	test_cmp packs-between packs-after

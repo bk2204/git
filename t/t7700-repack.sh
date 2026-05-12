@@ -667,7 +667,7 @@ test_expect_success '--write-midx with preferred bitmap tips' '
 # into stdout.
 get_sorted_objects_from_pack () {
 	git show-index <$(cat "$1") >raw &&
-	cut -d" " -f2 raw
+	cut -d" " -f2 raw | sort
 }
 
 test_expect_success '--write-midx -b packs non-kept objects' '

@@ -69,8 +69,13 @@ test_expect_success TEE_DOES_NOT_HANG \
 	git init --bare remote.git &&
 	git receive-pack remote.git <out >actual 2>err &&
 
-	test_grep "missing necessary objects" actual &&
-	test_grep "fatal: Failed to traverse parents" err &&
+	if test_have_prereq COMPAT_HASH
+	then
+		test_grep "could not map object" actual
+	else
+		test_grep "missing necessary objects" actual &&
+		test_grep "fatal: Failed to traverse parents" err
+	fi &&
 	test_must_fail git -C remote.git cat-file -e $(git -C repo rev-parse HEAD)
 '
 
@@ -91,9 +96,14 @@ test_expect_success TEE_DOES_NOT_HANG \
 	git init --bare remote.git &&
 	git receive-pack --skip-connectivity-check remote.git <out >actual 2>err &&
 
-	test_grep ! "missing necessary objects" actual &&
-	test_must_be_empty err &&
-	git -C remote.git cat-file -e $(git -C repo rev-parse HEAD) &&
+	if test_have_prereq COMPAT_HASH
+	then
+		test_grep "could not map object" actual
+	else
+		test_grep ! "missing necessary objects" actual &&
+		test_must_be_empty err &&
+		git -C remote.git cat-file -e $(git -C repo rev-parse HEAD)
+	fi &&
 	test_must_fail git -C remote.git rev-list $(git -C repo rev-parse HEAD)
 '
 

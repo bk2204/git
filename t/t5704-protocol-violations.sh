@@ -39,7 +39,7 @@ test_expect_success 'bogus symref in v0 capabilities' '
 	dst=refs/heads/foo &&
 	{
 		printf "%s HEAD\0symref object-format=%s symref=HEAD:%s\n" \
-			"$oid" "$GIT_DEFAULT_HASH" "$dst" |
+			"$oid" "$test_hash_algo" "$dst" |
 			test-tool pkt-line pack-raw-stdin &&
 		printf "0000"
 	} >input &&

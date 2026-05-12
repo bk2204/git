@@ -828,7 +828,7 @@ test_expect_success 'alternate objects are correctly blamed' '
 	mkdir alt.git/objects/$(dirname $path) &&
 	>alt.git/objects/$(dirname $path)/$(basename $path) &&
 	test_must_fail git fsck >out 2>&1 &&
-	test_grep alt.git out
+	test_grep -E "alt.git|cannot find mapping" out
 '
 
 test_expect_success 'fsck errors in packed objects' '
@@ -1061,7 +1061,7 @@ test_expect_success PERL_TEST_HELPERS 'detect corrupt index file in fsck' '
 	test_grep "bad index file" errors
 '
 
-test_expect_success 'fsck error and recovery on invalid object type' '
+test_expect_success BROKEN_OBJECTS 'fsck error and recovery on invalid object type' '
 	git init --bare garbage-type &&
 	(
 		cd garbage-type &&

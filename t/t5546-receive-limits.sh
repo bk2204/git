@@ -64,7 +64,7 @@ test_pack_input_limit () {
 		git --bare init dest
 	'
 
-	test_expect_success 'receive trumps transfer' '
+	test_expect_success !COMPAT_HASH 'receive trumps transfer' '
 		git --git-dir=dest config receive.unpacklimit "$unpack_limit" &&
 		git --git-dir=dest config transfer.unpacklimit "$other_limit" &&
 		git push dest HEAD &&

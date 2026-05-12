@@ -662,7 +662,6 @@ static void unpack_all(void)
 {
 	int i;
 	unsigned char *hdr = fill(sizeof(struct pack_header));
-	struct odb_transaction *transaction;
 
 	if (get_be32(hdr) != PACK_SIGNATURE)
 		die("bad pack file");
@@ -678,12 +677,10 @@ static void unpack_all(void)
 		progress = start_progress(the_repository,
 					  _("Unpacking objects"), nr_objects);
 	CALLOC_ARRAY(obj_list, nr_objects);
-	transaction = odb_transaction_begin(the_repository->objects);
 	for (i = 0; i < nr_objects; i++) {
 		unpack_one(i);
 		display_progress(progress, i + 1);
 	}
-	odb_transaction_commit(transaction);
 	stop_progress(&progress);
 
 	if (delta_list)
@@ -698,6 +695,7 @@ int cmd_unpack_objects(int argc,
 	int i;
 	struct object_id oid;
 	struct git_hash_ctx tmp_ctx;
+	struct odb_transaction *transaction;
 
 	disable_replace_refs();
 
@@ -751,6 +749,7 @@ int cmd_unpack_objects(int argc,
 		usage(unpack_usage);
 	}
 	the_hash_algo->init_fn(&ctx);
+	transaction = odb_transaction_begin(the_repository->objects);
 	unpack_all();
 	git_hash_update(&ctx, buffer, offset);
 	the_hash_algo->init_fn(&tmp_ctx);
@@ -761,6 +760,7 @@ int cmd_unpack_objects(int argc,
 		if (strict && fsck_finish(&fsck_options))
 			die(_("fsck error in pack objects"));
 	}
+	odb_transaction_commit(transaction);
 	if (!hasheq(fill(the_hash_algo->rawsz), oid.hash,
 		    the_repository->hash_algo))
 		die("final sha1 did not match");

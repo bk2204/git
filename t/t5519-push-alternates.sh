@@ -122,7 +122,7 @@ test_expect_success 'alice works and pushes yet again' '
 	)
 '
 
-test_expect_success 'bob works and pushes again' '
+test_expect_success !COMPAT_HASH 'bob works and pushes again' '
 	(
 		cd alice-pub &&
 		git cat-file commit main >../bob-work/commit

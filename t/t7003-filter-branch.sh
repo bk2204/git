@@ -465,7 +465,7 @@ test_expect_success 'rewrite submodule with another content' '
 	test $orig_head != $(git show-ref --hash --head HEAD)
 '
 
-test_expect_success 'replace submodule revision' '
+test_expect_success BROKEN_OBJECTS 'replace submodule revision' '
 	invalid=$(test_oid numeric) &&
 	git reset --hard original &&
 	git filter-branch -f --tree-filter \

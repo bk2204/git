@@ -6,6 +6,12 @@ export GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME
 
 . ./test-lib.sh
 
+extract_oids () {
+	git show-index >temp &&
+	awk "{print \$2}" temp | sort &&
+	rm -f temp
+}
+
 test_expect_success 'setup repo' '
 	test_commit initial &&
 	for i in $(test_seq 1 3)
@@ -41,14 +47,14 @@ test_expect_success 'setup repo' '
 test_expect_success 'non-sparse pack-objects' '
 	git pack-objects --stdout --revs --no-sparse <packinput.txt >nonsparse.pack &&
 	git index-pack -o nonsparse.idx nonsparse.pack &&
-	git show-index <nonsparse.idx | awk "{print \$2}" >nonsparse_objects.txt &&
+	extract_oids <nonsparse.idx >nonsparse_objects.txt &&
 	test_cmp expect_objects.txt nonsparse_objects.txt
 '
 
 test_expect_success 'sparse pack-objects' '
 	git pack-objects --stdout --revs --sparse <packinput.txt >sparse.pack &&
 	git index-pack -o sparse.idx sparse.pack &&
-	git show-index <sparse.idx | awk "{print \$2}" >sparse_objects.txt &&
+	extract_oids <sparse.idx >sparse_objects.txt &&
 	test_cmp expect_objects.txt sparse_objects.txt
 '
 
@@ -69,7 +75,7 @@ test_expect_success 'duplicate a folder from f3 and commit to topic1' '
 test_expect_success 'non-sparse pack-objects' '
 	git pack-objects --stdout --revs --no-sparse <packinput.txt >nonsparse.pack &&
 	git index-pack -o nonsparse.idx nonsparse.pack &&
-	git show-index <nonsparse.idx | awk "{print \$2}" >nonsparse_objects.txt &&
+	extract_oids <nonsparse.idx >nonsparse_objects.txt &&
 	comm -1 -2 required_objects.txt nonsparse_objects.txt >nonsparse_required_objects.txt &&
 	test_cmp required_objects.txt nonsparse_required_objects.txt
 '
@@ -77,7 +83,7 @@ test_expect_success 'non-sparse pack-objects' '
 test_expect_success 'sparse pack-objects' '
 	git pack-objects --stdout --revs --sparse <packinput.txt >sparse.pack &&
 	git index-pack -o sparse.idx sparse.pack &&
-	git show-index <sparse.idx | awk "{print \$2}" >sparse_objects.txt &&
+	extract_oids <sparse.idx >sparse_objects.txt &&
 	comm -1 -2 required_objects.txt sparse_objects.txt >sparse_required_objects.txt &&
 	test_cmp required_objects.txt sparse_required_objects.txt
 '
@@ -103,7 +109,7 @@ test_expect_success 'duplicate a folder from f1 into f3' '
 test_expect_success 'non-sparse pack-objects' '
 	git pack-objects --stdout --revs --no-sparse <packinput.txt >nonsparse.pack &&
 	git index-pack -o nonsparse.idx nonsparse.pack &&
-	git show-index <nonsparse.idx | awk "{print \$2}" >nonsparse_objects.txt &&
+	extract_oids <nonsparse.idx >nonsparse_objects.txt &&
 	comm -1 -2 required_objects.txt nonsparse_objects.txt >nonsparse_required_objects.txt &&
 	test_cmp required_objects.txt nonsparse_required_objects.txt
 '
@@ -119,7 +125,7 @@ test_expect_success 'sparse pack-objects' '
 		topic1:f3/f4/data.txt | sort >expect_sparse_objects.txt &&
 	git pack-objects --stdout --revs <packinput.txt >sparse.pack &&
 	git index-pack -o sparse.idx sparse.pack &&
-	git show-index <sparse.idx | awk "{print \$2}" >sparse_objects.txt &&
+	extract_oids <sparse.idx >sparse_objects.txt &&
 	test_cmp expect_sparse_objects.txt sparse_objects.txt
 '
 
@@ -127,14 +133,14 @@ test_expect_success 'pack.useSparse enables algorithm' '
 	git config pack.useSparse true &&
 	git pack-objects --stdout --revs <packinput.txt >sparse.pack &&
 	git index-pack -o sparse.idx sparse.pack &&
-	git show-index <sparse.idx | awk "{print \$2}" >sparse_objects.txt &&
+	extract_oids <sparse.idx >sparse_objects.txt &&
 	test_cmp expect_sparse_objects.txt sparse_objects.txt
 '
 
 test_expect_success 'pack.useSparse overridden' '
 	git pack-objects --stdout --revs --no-sparse <packinput.txt >sparse.pack &&
 	git index-pack -o sparse.idx sparse.pack &&
-	git show-index <sparse.idx | awk "{print \$2}" >sparse_objects.txt &&
+	extract_oids <sparse.idx >sparse_objects.txt &&
 	test_cmp required_objects.txt sparse_objects.txt
 '
 

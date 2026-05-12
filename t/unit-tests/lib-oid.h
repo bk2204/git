@@ -25,4 +25,11 @@ void cl_parse_any_oid (const char *s, struct object_id *oid);
 
 int cl_setup_hash_algo(void);
 
+/*
+ * Returns one of GIT_HASH_{SHA1, SHA256, UNKNOWN} based on the value of
+ * GIT_TEST_DEFAULT_HASH environment variable. The fallback value in the
+ * absence of GIT_TEST_DEFAULT_HASH is GIT_HASH_UNKNOWN.
+ */
+int cl_setup_compat_hash_algo(void);
+
 #endif /* LIB_OID_H */

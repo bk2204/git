@@ -8,10 +8,40 @@ int cl_setup_hash_algo(void)
 	static int algo = -1;
 
 	if (algo < 0) {
-		const char *algo_name = getenv("GIT_TEST_DEFAULT_HASH");
+		const char *envvar = getenv("GIT_TEST_DEFAULT_HASH");
+		char *algo_name = envvar ? xstrdup(envvar) : NULL;
+
+		if (algo_name) {
+			char *colon = strchr(algo_name, ':');
+
+			if (colon)
+				*colon = '\0';
+		}
+
 		algo = algo_name ? hash_algo_by_name(algo_name) : GIT_HASH_SHA1;
 
 		cl_assert(algo != GIT_HASH_UNKNOWN);
+		free(algo_name);
+	}
+	return algo;
+}
+
+int cl_setup_compat_hash_algo(void)
+{
+	static int algo = -1;
+
+	if (algo < 0) {
+		const char *algo_name = getenv("GIT_TEST_DEFAULT_HASH");
+		const char *colon = algo_name ? strchr(algo_name, ':') : algo_name;
+
+		if (colon) {
+			algo_name = colon + 1;
+			algo = hash_algo_by_name(algo_name);
+
+			cl_assert(algo != GIT_HASH_UNKNOWN);
+		} else {
+			algo = GIT_HASH_UNKNOWN;
+		}
 	}
 	return algo;
 }

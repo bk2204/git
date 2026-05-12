@@ -74,6 +74,10 @@ void test_oid_array__initialize(void)
 	/* The hash algo is used by oid_array_lookup() internally */
 	int algo = cl_setup_hash_algo();
 	repo_set_hash_algo(the_repository, algo);
+
+	algo = cl_setup_compat_hash_algo();
+	if (algo != GIT_HASH_UNKNOWN)
+		repo_set_compat_hash_algo(the_repository, algo);
 }
 
 static const char *arr_input[] = { "88", "44", "aa", "55" };

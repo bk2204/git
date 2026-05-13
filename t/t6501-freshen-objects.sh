@@ -140,7 +140,7 @@ do
 	'
 done
 
-test_expect_success 'do not complain about existing broken links (commit)' '
+test_expect_success BROKEN_OBJECTS 'do not complain about existing broken links (commit)' '
 	cat >broken-commit <<-EOF &&
 	tree $(test_oid 001)
 	parent $(test_oid 002)
@@ -155,7 +155,7 @@ test_expect_success 'do not complain about existing broken links (commit)' '
 	test_must_be_empty stderr
 '
 
-test_expect_success 'do not complain about existing broken links (tree)' '
+test_expect_success BROKEN_OBJECTS 'do not complain about existing broken links (tree)' '
 	cat >broken-tree <<-EOF &&
 	100644 blob $(test_oid 003)	foo
 	EOF
@@ -165,7 +165,7 @@ test_expect_success 'do not complain about existing broken links (tree)' '
 	test_must_be_empty stderr
 '
 
-test_expect_success 'do not complain about existing broken links (tag)' '
+test_expect_success BROKEN_OBJECTS 'do not complain about existing broken links (tag)' '
 	cat >broken-tag <<-EOF &&
 	object $(test_oid 004)
 	type commit

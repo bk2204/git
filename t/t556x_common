@@ -44,9 +44,12 @@ get_static_files() {
 	GET objects/info/packs "$1" &&
 	GET objects/info/alternates "$1" &&
 	GET objects/info/http-alternates "$1" &&
-	GET $LOOSE_URL "$1" &&
-	GET $PACK_URL "$1" &&
-	GET $IDX_URL "$1"
+	if ! test_have_prereq COMPAT_HASH
+	then
+		GET "$LOOSE_URL" "$1"
+	fi &&
+	GET "$PACK_URL" "$1" &&
+	GET "$IDX_URL" "$1"
 }
 
 SMART=smart

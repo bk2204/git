@@ -132,6 +132,11 @@ GET  /smart/repo.git/info/refs?service=git-receive-pack HTTP/1.1 403 -
 POST /smart/repo.git/git-receive-pack HTTP/1.1 403 -
 EOF
 test_expect_success 'server request log matches test results' '
+	if test_have_prereq COMPAT_HASH
+	then
+		grep -vE "repo.git/ HTTP/1.1" exp >exp2 &&
+		mv exp2 exp
+	fi &&
 	check_access_log exp
 '
 

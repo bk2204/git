@@ -15,19 +15,25 @@ test_expect_success 'setup to generate files with expected content' '
 	wrong_algo sha256:sha1
 	EOF
 
+	if test -n "$test_repo_compat_hash_algo"
+	then
+		ofm=$(printf "\\nobject-format-map=%s" "$test_repo_compat_hash_algo")
+	fi &&
+
 	if test_have_prereq WINDOWS
 	then
 		printf "agent=FAKE\n" >agent_capability
 	else
 		printf -- "-%s\n" $(uname -s | test_redact_non_printables) >>agent_capability
 	fi &&
+
 	cat >expect.base <<-EOF &&
 	version 2
 	$(cat agent_capability)
 	ls-refs=unborn
 	fetch=shallow wait-for-done
 	server-option
-	object-format=$(test_oid algo)
+	object-format=$(test_oid algo)$ofm
 	EOF
 	cat >expect.trailer <<-EOF
 	0000

@@ -33,6 +33,7 @@
 #include "fsmonitor.h"
 #include "write-or-die.h"
 #include "loose.h"
+#include "object-file-convert.h"
 
 /*
  * Default to not allowing changes to the list of files. The
@@ -424,11 +425,25 @@ static int process_path(const char *path, struct stat *st, int stat_errno)
 	return add_one_path(ce, path, len, st);
 }
 
+static int resolve_one_compat_submodule(struct repository *r, const char *submodule,
+					const struct object_id *oid,
+					struct object_id *compat_oid)
+{
+	int ret;
+	struct repository subrepo;
+	if (repo_submodule_init(&subrepo, r, submodule, null_oid(r->hash_algo)))
+		return -1;
+	ret = repo_oid_to_algop(&subrepo, oid, r->compat_hash_algo, compat_oid);
+	repo_clear(&subrepo);
+	return ret;
+}
+
 static int add_cacheinfo(unsigned int mode, const struct object_id *oid,
 			 const char *path, int stage)
 {
 	int len, option;
 	struct cache_entry *ce;
+	struct object_id compat_oid;
 
 	if (!verify_path(path, mode))
 		return error("Invalid path '%s'", path);
@@ -445,6 +460,11 @@ static int add_cacheinfo(unsigned int mode, const struct object_id *oid,
 		ce->ce_flags |= CE_VALID;
 	option = allow_add ? ADD_CACHE_OK_TO_ADD : 0;
 	option |= allow_replace ? ADD_CACHE_OK_TO_REPLACE : 0;
+
+	if (the_repository->compat_hash_algo && S_ISGITLINK(ce->ce_mode) &&
+	    !resolve_one_compat_submodule(the_repository, path, oid, &compat_oid))
+		repo_add_loose_object_map(the_repository->objects->sources,
+					  oid, &compat_oid, LOOSE_WRITE | LOOSE_TYPE_SUBMODULE);
 	if (add_index_entry(the_repository->index, ce, option))
 		return error("%s: cannot add to the index - missing --add option?",
 			     path);

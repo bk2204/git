@@ -1221,7 +1221,7 @@ configure_exclusion () {
 	cat objh
 }
 
-test_expect_success 'part of packfile response provided as URI' '
+test_expect_success !COMPAT_HASH 'part of packfile response provided as URI' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child log &&
 
@@ -1270,7 +1270,7 @@ test_expect_success 'part of packfile response provided as URI' '
 	test_line_count = 6 filelist
 '
 
-test_expect_success 'packfile URIs with fetch instead of clone' '
+test_expect_success !COMPAT_HASH 'packfile URIs with fetch instead of clone' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child log &&
 
@@ -1291,7 +1291,7 @@ test_expect_success 'packfile URIs with fetch instead of clone' '
 		fetch "$HTTPD_URL/smart/http_parent"
 '
 
-test_expect_success 'fetching with valid packfile URI but invalid hash fails' '
+test_expect_success !COMPAT_HASH 'fetching with valid packfile URI but invalid hash fails' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child log &&
 
@@ -1322,7 +1322,7 @@ test_expect_success 'fetching with valid packfile URI but invalid hash fails' '
 	test_grep "pack downloaded from.*does not match expected hash" err
 '
 
-test_expect_success 'packfile-uri with transfer.fsckobjects' '
+test_expect_success !COMPAT_HASH 'packfile-uri with transfer.fsckobjects' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child log &&
 
@@ -1346,7 +1346,7 @@ test_expect_success 'packfile-uri with transfer.fsckobjects' '
 	test_line_count = 4 filelist
 '
 
-test_expect_success 'packfile-uri with transfer.fsckobjects fails on bad object' '
+test_expect_success !COMPAT_HASH 'packfile-uri with transfer.fsckobjects fails on bad object' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child log &&
 
@@ -1376,7 +1376,7 @@ test_expect_success 'packfile-uri with transfer.fsckobjects fails on bad object'
 	test_grep "invalid author/committer line - missing email" error
 '
 
-test_expect_success 'packfile-uri with transfer.fsckobjects succeeds when .gitmodules is separate from tree' '
+test_expect_success !COMPAT_HASH 'packfile-uri with transfer.fsckobjects succeeds when .gitmodules is separate from tree' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child &&
 
@@ -1402,7 +1402,7 @@ test_expect_success 'packfile-uri with transfer.fsckobjects succeeds when .gitmo
 	test_line_count = 4 filelist
 '
 
-test_expect_success 'packfile-uri with transfer.fsckobjects fails when .gitmodules separate from tree is invalid' '
+test_expect_success !COMPAT_HASH 'packfile-uri with transfer.fsckobjects fails when .gitmodules separate from tree is invalid' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child err &&
 
@@ -1424,7 +1424,7 @@ test_expect_success 'packfile-uri with transfer.fsckobjects fails when .gitmodul
 	test_grep "disallowed submodule name" err
 '
 
-test_expect_success 'packfile-uri path redacted in trace' '
+test_expect_success !COMPAT_HASH 'packfile-uri path redacted in trace' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child log &&
 
@@ -1449,7 +1449,7 @@ test_expect_success 'packfile-uri path redacted in trace' '
 	grep -F "clone< \\1$(cat packh) $HTTPD_URL/<redacted>" log
 '
 
-test_expect_success 'packfile-uri path not redacted in trace when GIT_TRACE_REDACT=0' '
+test_expect_success !COMPAT_HASH 'packfile-uri path not redacted in trace when GIT_TRACE_REDACT=0' '
 	P="$HTTPD_DOCUMENT_ROOT_PATH/http_parent" &&
 	rm -rf "$P" http_child log &&
 

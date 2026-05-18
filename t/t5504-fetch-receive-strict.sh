@@ -72,11 +72,19 @@ test_expect_success 'push without strict' '
 		git config fetch.fsckobjects false &&
 		git config transfer.fsckobjects false
 	) &&
-	cat >exp <<-\EOF &&
-	To dst
-	!	refs/heads/main:refs/heads/test	[remote rejected] (missing necessary objects)
-	Done
-	EOF
+	if test_have_prereq COMPAT_HASH
+	then
+		cat >exp <<-\EOF
+		To dst
+		!	refs/heads/main:refs/heads/test	[remote rejected] (unpacker error)
+		EOF
+	else
+		cat >exp <<-\EOF
+		To dst
+		!	refs/heads/main:refs/heads/test	[remote rejected] (missing necessary objects)
+		Done
+		EOF
+	fi &&
 	test_must_fail git push --porcelain dst main:refs/heads/test >act &&
 	test_cmp exp act
 '

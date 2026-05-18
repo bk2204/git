@@ -41,9 +41,9 @@ test_expect_success 'setup patch_clone' '
 	git update-ref HEAD $(echo C | git commit-tree $(git write-tree) -p $B) &&
 	rm .git/objects/info/alternates &&
 
-	if test_path_is_file ../.git/objects/loose-object-idx
+	if test_path_is_dir ../.git/objects/object-map
 	then
-	  sed -e 1d ../.git/objects/loose-object-idx >>.git/objects/loose-object-idx
+		cp ../.git/objects/object-map/*.map .git/objects/object-map
 	fi &&
 
 	git --git-dir=../.git cat-file commit $B |

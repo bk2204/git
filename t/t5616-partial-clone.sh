@@ -266,6 +266,7 @@ test_expect_success 'partial clone with transfer.fsckobjects=1 works with submod
 	git -C src_with_sub commit -m "commit with submodule" &&
 
 	git -c transfer.fsckobjects=1 \
+		-c transfer.allowmappedsubmodules=1 \
 		clone --filter="blob:none" "file://$(pwd)/src_with_sub" dst &&
 	test_when_finished rm -rf dst
 '
@@ -783,13 +784,18 @@ test_expect_success 'upon cloning, check that all refs point to objects' '
 	test_must_fail git -c protocol.version=2 clone \
 		--filter=blob:none $HTTPD_URL/one_time_script/server repo 2>err &&
 
-	test_grep "did not send all necessary objects" err &&
+	if test_have_prereq COMPAT_HASH
+	then
+		test_grep "failed to map objects" err
+	else
+		test_grep "did not send all necessary objects" err
+	fi &&
 
 	# Ensure that the one-time-script script was used.
 	! test -e "$HTTPD_ROOT_PATH/one-time-script"
 '
 
-test_expect_success 'when partial cloning, tolerate server not sending target of tag' '
+test_expect_success !COMPAT_HASH 'when partial cloning, tolerate server not sending target of tag' '
 	SERVER="$HTTPD_DOCUMENT_ROOT_PATH/server" &&
 	rm -rf "$SERVER" repo &&
 	test_create_repo "$SERVER" &&

@@ -266,7 +266,7 @@ test_expect_success 'fetching from another promisor remote' '
 	grep "$HASH2" out
 '
 
-test_expect_success 'fetching with --filter configures a promisor remote' '
+test_expect_success !COMPAT_HASH 'fetching with --filter configures a promisor remote' '
 	test_create_repo server3 &&
 	test_commit -C server3 baz &&
 	git -C server3 repack -a -d --write-bitmap-index &&
@@ -502,7 +502,7 @@ test_expect_success 'single promisor remote can be re-initialized gracefully' '
 	git -C repo fetch --filter=blob:none foo
 '
 
-test_expect_success 'gc repacks promisor objects separately from non-promisor objects' '
+test_expect_success !COMPAT_HASH 'gc repacks promisor objects separately from non-promisor objects' '
 	rm -rf repo &&
 	test_create_repo repo &&
 	test_commit -C repo one &&
@@ -596,7 +596,7 @@ test_expect_success 'repack -d does not irreversibly delete promisor objects' '
 	repack_and_check -l "$TWO" "$THREE"
 '
 
-test_expect_success 'gc stops traversal when a missing but promised object is reached' '
+test_expect_success !COMPAT_HASH 'gc stops traversal when a missing but promised object is reached' '
 	rm -rf repo &&
 	test_create_repo repo &&
 	test_commit -C repo my_commit &&

@@ -1307,8 +1307,14 @@ test_expect_success PERL_TEST_HELPERS 'reader notices out-of-bounds fanout' '
 	# immediately).
 	corrupt_chunk OIDF 0 $(printf "%02x000000" $(test_seq 0 254)) &&
 	test_must_fail git log 2>err &&
-	cat >expect <<-\EOF &&
-	error: oid fanout out of order: fanout[254] = fe000000 > 5c = fanout[255]
+	if test_have_prereq COMPAT_HASH
+	then
+		offset=5b
+	else
+		offset=5c
+	fi &&
+	cat >expect <<-EOF &&
+	error: oid fanout out of order: fanout[254] = fe000000 > $offset = fanout[255]
 	fatal: multi-pack-index required OID fanout chunk missing or corrupted
 	EOF
 	test_cmp expect err

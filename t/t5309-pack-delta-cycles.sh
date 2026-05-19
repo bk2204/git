@@ -81,7 +81,7 @@ test_expect_success 'failover to a duplicate object in the same pack' '
 	git index-pack --fix-thin --stdin <recoverable.pack
 '
 
-test_expect_success 'index-pack works with thin pack A->B->C with B on disk' '
+test_expect_success !COMPAT_HASH 'index-pack works with thin pack A->B->C with B on disk' '
 	git init server &&
 	(
 		cd server &&

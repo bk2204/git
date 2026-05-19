@@ -14,10 +14,13 @@ test_expect_success 'setup simple repo' '
 	mkdir subdir &&
 	test_commit subdir/bar &&
 	test_commit subdir/xyzzy &&
-	fake_commit=$(echo $ZERO_OID | sed s/0/a/) &&
-	git update-index --add --cacheinfo 160000,$fake_commit,link1 &&
-	git update-index --add --cacheinfo 160000,$fake_commit,link2 &&
-	git commit -m "add gitlink" &&
+	if test_have_prereq BROKEN_OBJECTS
+	then
+		fake_commit=$(echo $ZERO_OID | sed s/0/a/) &&
+		git update-index --add --cacheinfo 160000,$fake_commit,link1 &&
+		git update-index --add --cacheinfo 160000,$fake_commit,link2 &&
+		git commit -m "add gitlink"
+	fi &&
 	git tag -m "annotated tag" mytag &&
 	git tag -m "annotated tag with long message" longtag
 '
@@ -117,7 +120,7 @@ test_expect_success 'paths in subdir ended up in one tree' '
 	test_cmp expect actual
 '
 
-test_expect_success 'identical gitlinks got identical oid' '
+test_expect_success BROKEN_OBJECTS 'identical gitlinks got identical oid' '
 	awk "/commit/ { print \$3 }" <root | sort -u >commits &&
 	test_line_count = 1 commits
 '

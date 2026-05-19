@@ -258,44 +258,40 @@ static struct pack_list * pack_list_difference(const struct pack_list *A,
 
 static void cmp_two_packs(struct pack_list *p1, struct pack_list *p2)
 {
-	size_t p1_off = 0, p2_off = 0, p1_step, p2_step;
-	const unsigned char *p1_base, *p2_base;
+	size_t p1_off = 0, p2_off = 0;
 	struct llist_item *p1_hint = NULL, *p2_hint = NULL;
-	const unsigned int hashsz = the_hash_algo->rawsz;
 
 	if (!p1->unique_objects)
 		p1->unique_objects = llist_copy(p1->remaining_objects);
 	if (!p2->unique_objects)
 		p2->unique_objects = llist_copy(p2->remaining_objects);
 
-	p1_base = p1->pack->index_data;
-	p2_base = p2->pack->index_data;
-	p1_base += 256 * 4 + ((p1->pack->index_version < 2) ? 4 : 8);
-	p2_base += 256 * 4 + ((p2->pack->index_version < 2) ? 4 : 8);
-	p1_step = hashsz + ((p1->pack->index_version < 2) ? 4 : 0);
-	p2_step = hashsz + ((p2->pack->index_version < 2) ? 4 : 0);
-
-	while (p1_off < p1->pack->num_objects * p1_step &&
-	       p2_off < p2->pack->num_objects * p2_step)
+	while (p1_off < p1->pack->num_objects &&
+	       p2_off < p2->pack->num_objects)
 	{
-		const int cmp = hashcmp(p1_base + p1_off, p2_base + p2_off,
-					the_repository->hash_algo);
+		struct object_id p1_oid, p2_oid;
+		int cmp;
+
+		nth_packed_object_id(&p1_oid, p1->pack, p1_off);
+		nth_packed_object_id(&p2_oid, p2->pack, p2_off);
+
+		cmp = oidcmp(&p1_oid, &p2_oid);
 		/* cmp ~ p1 - p2 */
 		if (cmp == 0) {
 			p1_hint = llist_sorted_remove(p1->unique_objects,
-					p1_base + p1_off,
+					p1_oid.hash,
 					p1_hint);
 			p2_hint = llist_sorted_remove(p2->unique_objects,
-					p1_base + p1_off,
+					p2_oid.hash,
 					p2_hint);
-			p1_off += p1_step;
-			p2_off += p2_step;
+			p1_off++;
+			p2_off++;
 			continue;
 		}
 		if (cmp < 0) { /* p1 has the object, p2 doesn't */
-			p1_off += p1_step;
+			p1_off++;
 		} else { /* p2 has the object, p1 doesn't */
-			p2_off += p2_step;
+			p2_off++;
 		}
 	}
 }
@@ -303,33 +299,30 @@ static void cmp_two_packs(struct pack_list *p1, struct pack_list *p2)
 static size_t sizeof_union(struct packed_git *p1, struct packed_git *p2)
 {
 	size_t ret = 0;
-	size_t p1_off = 0, p2_off = 0, p1_step, p2_step;
-	const unsigned char *p1_base, *p2_base;
-	const unsigned int hashsz = the_hash_algo->rawsz;
+	size_t p1_off = 0, p2_off = 0;
 
-	p1_base = p1->index_data;
-	p2_base = p2->index_data;
-	p1_base += 256 * 4 + ((p1->index_version < 2) ? 4 : 8);
-	p2_base += 256 * 4 + ((p2->index_version < 2) ? 4 : 8);
-	p1_step = hashsz + ((p1->index_version < 2) ? 4 : 0);
-	p2_step = hashsz + ((p2->index_version < 2) ? 4 : 0);
-
-	while (p1_off < p1->num_objects * p1_step &&
-	       p2_off < p2->num_objects * p2_step)
+	while (p1_off < p1->num_objects &&
+	       p2_off < p2->num_objects)
 	{
-		int cmp = hashcmp(p1_base + p1_off, p2_base + p2_off,
-				  the_repository->hash_algo);
+		struct object_id p1_oid, p2_oid;
+		int cmp;
+
+		nth_packed_object_id(&p1_oid, p1, p1_off);
+		nth_packed_object_id(&p2_oid, p2, p2_off);
+
+		cmp = oidcmp(&p1_oid, &p2_oid);
+
 		/* cmp ~ p1 - p2 */
 		if (cmp == 0) {
 			ret++;
-			p1_off += p1_step;
-			p2_off += p2_step;
+			p1_off++;
+			p2_off++;
 			continue;
 		}
 		if (cmp < 0) { /* p1 has the object, p2 doesn't */
-			p1_off += p1_step;
+			p1_off++;
 		} else { /* p2 has the object, p1 doesn't */
-			p2_off += p2_step;
+			p2_off++;
 		}
 	}
 	return ret;
@@ -537,8 +530,6 @@ static void scan_alt_odb_packs(void)
 static struct pack_list * add_pack(struct packed_git *p)
 {
 	struct pack_list l;
-	size_t off = 0, step;
-	const unsigned char *base;
 
 	if (!p->pack_local && !(alt_odb || verbose))
 		return NULL;
@@ -551,12 +542,10 @@ static struct pack_list * add_pack(struct packed_git *p)
 		return NULL;
 	}
 
-	base = p->index_data;
-	base += 256 * 4 + ((p->index_version < 2) ? 4 : 8);
-	step = the_hash_algo->rawsz + ((p->index_version < 2) ? 4 : 0);
-	while (off < p->num_objects * step) {
-		llist_insert_back(l.remaining_objects, base + off);
-		off += step;
+	for (uint32_t i = 0; i < p->num_objects; i++) {
+		struct object_id oid;
+		nth_packed_object_id(&oid, p, i);
+		llist_insert_back(l.remaining_objects, oid.hash);
 	}
 	l.all_objects_size = l.remaining_objects->size;
 	l.unique_objects = NULL;

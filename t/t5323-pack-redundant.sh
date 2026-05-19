@@ -318,7 +318,7 @@ test_expect_success 'main: clean loose objects' '
 	(
 		cd "$main_repo" &&
 		git prune-packed &&
-		find objects -type f | sed -e "/objects\/pack\//d" >out &&
+		find objects -type f | sed -e "/objects\/pack\//d" -e "/objects\/object-map\//d" >out &&
 		test_must_be_empty out
 	)
 '

@@ -10,6 +10,12 @@ then
 	test_done
 fi
 
+if test_have_prereq COMPAT_HASH
+then
+	skip_all='skipping promisor remote capabilities tests; compatibility hash algorithm enabled'
+	test_done
+fi
+
 GIT_TEST_MULTI_PACK_INDEX=0
 GIT_TEST_MULTI_PACK_INDEX_WRITE_INCREMENTAL=0
 

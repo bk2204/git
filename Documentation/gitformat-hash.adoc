@@ -1,0 +1,101 @@
+gitformat-hash(5)
+==================
+
+NAME
+----
+gitformat-hash - Git hash algorithms
+
+
+DESCRIPTION
+-----------
+
+Git currently supports two hash algorithms, the original SHA-1 and the newer
+SHA-256.  Every object is identified by its hash, usually called an object ID.
+
+Git specifies the hash used to identify objects and perform operations in the
+`extensions.objectFormat` key in the repository configuration; if none is
+specified, the default is SHA-1.  In addition, a repository may also support an
+additional compatibility hash algorithm in `extensions.compatObjectFormat`; if
+no value is specified, there is no compatibility algorithm.
+
+Compatibility algorithms
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+When a compatibility hash algorithm is in use, Git maintains a mapping of every
+object ID between the main hash algorithm and the compatibility algorithm.  This
+mapping allows Git to effectively preserve the repository in both algorithms.
+The SHA-1 history is written as if the repository were entirely and permanently
+SHA-1 and the SHA-256 history is written as if the repository were entirely and
+permanently SHA-256.  The only difference is that new signed commits and tags
+contain signatures over both versions of the object.
+
+This mapping allows Git to easily and quickly map any particular object into the
+compatibility algorithm.  Blobs are simply hashed with both algorithms, and, for
+example, a tree is converted by converting each entry in the tree using the
+mapping and then hashing the result.
+
+When a compatibility hash algorithm is enabled, Git will attempt to map every
+new object added to the repository to that algorithm.  If it fails, it will die
+with an error message.  `git fsck` verifies each of these mappings and will
+fail if they are invalid or incorrect.
+
+Interoperability with other algorithms
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A repository with a compatibility hash algorithm can interoperate with a
+repository in either hash algorithm.
+
+There are a few conditions:
+
+. A client repository must either have a complete history or it must talk to a
+	server that has a complete history supporting both algorithms and has protocol
+	interoperability enabled.
+. A fetch or clone of a history containing submodules requires a server with a
+	complete history supporting both algorithms, a full mapping of all submodules,
+	and protocol interoperability enabled.
+. A fetch or clone of a history containing mergetags requires the objects
+	specified in the mergetags to be reachable in history.
+. A client repository must push to a server using the server's main algorithm.
+	This means that the client must have mappings for any submodules that exist if
+	the server's main algorithm and the client's main algorithm differ.
+
+A history is said to be complete if the repository is using none of shallow
+clones, partial clones, or promisor packs.
+
+This means that for repositories without submodules, it is possible to perform a
+full clone from a remote repository in the compatibility algorithm successfully.
+This can be used to convert a repository from one hash algorithm to another.
+
+There is a potential security problem with providing mappings of submodules over
+the protocol.  Namely, there is no way to guarantee that the SHA-1 object ID and
+the SHA-256 object ID correspond to the same commit.  This means that, for
+example, a malicious server could provide a SHA-256 object ID for a submodule
+that was up to date with all security fixes, but map that to a SHA-1 object ID
+for an older commit with security problems.
+
+Unsupported features
+^^^^^^^^^^^^^^^^^^^^
+
+There are a few features which are not presently supported with a compatibility
+algorithm:
+
+* Filtered bundles are unsupported because there is currently no way to provide
+	a mapping.
+* Multi-pack index cannot be used as the sole pack index format because it does
+	not yet provide mappings.
+* Pack index v1 and v2 cannot be used because they do not provide object
+	mappings.  Git automatically uses pack index v3 instead when necessary, which
+	does handle mappings.
+* Packfile URIs are not supported because the protocol-provided packfile is not
+	complete and its objects cannot be mapped.
+* Large object promisors cannot be used if the server does not actually have
+	the entire history, since the server must have a complete history in order to
+	provide object mappings.
+* `git fast-import` does not accept submodules in compatibility mode because
+	there is no provision for mappings.
+* Remote helpers do not emit signatures in the compatibility algorithm for
+	signed tags.
+
+GIT
+---
+Part of the linkgit:git[1] suite

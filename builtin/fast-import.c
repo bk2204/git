@@ -2944,6 +2944,7 @@ static void handle_signature_if_invalid(struct strbuf *new_data,
 	struct strbuf tmp_buf = STRBUF_INIT;
 	struct signature_check signature_check = { 0 };
 	int ret;
+	struct repository *r = the_repository;
 
 	/* Check signature in a temporary commit buffer */
 	strbuf_addbuf(&tmp_buf, new_data);
@@ -2957,30 +2958,59 @@ static void handle_signature_if_invalid(struct strbuf *new_data,
 		warn_invalid_signature(&signature_check, msg->buf, mode);
 
 		if (mode == SIGN_SIGN_IF_INVALID) {
-			struct strbuf signature = STRBUF_INIT;
-			struct strbuf payload = STRBUF_INIT;
-
-			/*
-			 * NEEDSWORK: To properly support interoperability mode
-			 * when signing commit signatures, the commit buffer
-			 * must be provided in both the repository and
-			 * compatibility object formats. As currently
-			 * implemented, only the repository object format is
-			 * considered meaning compatibility signatures cannot be
-			 * generated. Thus, attempting to sign commit signatures
-			 * in interoperability mode is currently unsupported.
-			 */
-			if (the_repository->compat_hash_algo)
-				die(_("signing commits in interoperability mode is unsupported"));
+			struct strbuf signature = STRBUF_INIT, compat_signature = STRBUF_INIT;
+			struct strbuf payload = STRBUF_INIT, compat_payload = STRBUF_INIT;
+			struct sig_pairs {
+				struct strbuf *sig;
+				const struct git_hash_algo *algo;
+			} bufs[2] = {
+				{ &compat_signature, r->compat_hash_algo },
+				{ &signature, r->hash_algo },
+			};
 
 			strbuf_addstr(&payload, signature_check.payload);
+			if (r->compat_hash_algo) {
+				convert_object_file(r, &compat_payload,
+						    r->hash_algo,
+						    r->compat_hash_algo,
+						    payload.buf, payload.len,
+						    OBJ_COMMIT, NULL, 0);
+			}
+
 			if (sign_buffer(&payload, &signature, signed_commit_keyid,
 					SIGN_BUFFER_USE_DEFAULT_KEY))
 				die(_("failed to sign commit object"));
-			add_header_signature(new_data, &signature, the_hash_algo);
+
+			if (r->compat_hash_algo) {
+				if (sign_buffer(&compat_payload, &compat_signature,
+						signed_commit_keyid,
+						SIGN_BUFFER_USE_DEFAULT_KEY))
+					die(_("failed to sign commit object"));
+
+				/*
+				 * We write algorithms in the order they were implemented in
+				 * Git to produce a stable hash when multiple algorithms are
+				 * used.
+				 */
+				if (hash_algo_by_ptr(bufs[0].algo) > hash_algo_by_ptr(bufs[1].algo))
+					SWAP(bufs[0], bufs[1]);
+			}
+
+			/*
+			 * We traverse each algorithm in order, and apply the signature
+			 * to the buffer.  The compatibility mapping is written
+			 * later.
+			 */
+			for (size_t i = 0; i < ARRAY_SIZE(bufs); i++) {
+				if (!bufs[i].algo)
+					continue;
+				add_header_signature(new_data, bufs[i].sig, bufs[i].algo);
+			}
 
 			strbuf_release(&signature);
 			strbuf_release(&payload);
+			strbuf_release(&compat_signature);
+			strbuf_release(&compat_payload);
 		}
 
 		finalize_commit_buffer(new_data, NULL, NULL, msg);

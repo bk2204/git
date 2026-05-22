@@ -156,7 +156,17 @@ do
 		else
 			test_grep "replacing invalid signature" log &&
 			test_grep -E "^gpgsig(-sha256)? " actual &&
-			git -C new verify-commit "$IMPORTED"
+			git -C new verify-commit "$IMPORTED" &&
+			git -C new cat-file commit "$IMPORTED" >commit &&
+			if [ -n "$test_repo_compat_hash_algo" ]
+			then
+				grep -E "^gpgsig(-sha256)? " commit >actual &&
+				cat >expected <<-\EOF &&
+				gpgsig -----BEGIN PGP SIGNATURE-----
+				gpgsig-sha256 -----BEGIN PGP SIGNATURE-----
+				EOF
+				test_cmp actual expected
+			fi
 		fi
 	'
 

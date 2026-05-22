@@ -39,7 +39,7 @@ test_expect_success 'setup submodule mapping with large id' '
 	echo ":12345 $new" >to
 '
 
-test_expect_success 'import with submodule mapping' '
+test_expect_success BROKEN_OBJECTS 'import with submodule mapping' '
 	git init dst &&
 	git -C dst fast-import \
 		--rewrite-submodules-from=sub:../from \
@@ -50,7 +50,7 @@ test_expect_success 'import with submodule mapping' '
 	test_cmp expect actual
 '
 
-test_expect_success 'paths adjusted for relative subdir' '
+test_expect_success BROKEN_OBJECTS 'paths adjusted for relative subdir' '
 	git init deep-dst &&
 	mkdir deep-dst/subdir &&
 	>deep-dst/subdir/empty-marks &&

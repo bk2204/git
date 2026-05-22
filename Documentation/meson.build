@@ -175,6 +175,7 @@ manpages = {
   'gitformat-bundle.adoc' : 5,
   'gitformat-chunk.adoc' : 5,
   'gitformat-commit-graph.adoc' : 5,
+  'gitformat-hash.adoc' : 5,
   'gitformat-index.adoc' : 5,
   'gitformat-loose.adoc' : 5,
   'gitformat-pack.adoc' : 5,

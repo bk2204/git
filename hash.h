@@ -321,6 +321,9 @@ struct git_hash_algo {
 	/* The all-zeros OID. */
 	const struct object_id *null_oid;
 
+	/* The header for signed commits. */
+	const char *gpgsig_header;
+
 	/* The unsafe variant of this hash function, if one exists. */
 	const struct git_hash_algo *unsafe;
 };

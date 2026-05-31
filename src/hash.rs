@@ -330,6 +330,14 @@ impl HashAlgorithm {
         }
     }
 
+    /// The header used in signed objects.
+    pub const fn gpgsig_header(self) -> &'static str {
+        match self {
+            HashAlgorithm::SHA1 => "gpgsig",
+            HashAlgorithm::SHA256 => "gpgsig-sha256",
+        }
+    }
+
     /// A pointer to the C `struct git_hash_algo` for interoperability with C.
     pub fn hash_algo_ptr(self) -> *const c_void {
         unsafe { c::hash_algo_ptr_by_number(self as u32) }

@@ -195,6 +195,7 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		.final_oid_fn = git_hash_unknown_final_oid,
 		.empty_tree = NULL,
 		.empty_blob = NULL,
+		.gpgsig_header = NULL,
 		.null_oid = NULL,
 	},
 	{
@@ -211,6 +212,7 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		.unsafe = &sha1_unsafe_algo,
 		.empty_tree = &empty_tree_oid,
 		.empty_blob = &empty_blob_oid,
+		.gpgsig_header = "gpgsig",
 		.null_oid = &null_oid_sha1,
 	},
 	{
@@ -226,6 +228,7 @@ const struct git_hash_algo hash_algos[GIT_HASH_NALGOS] = {
 		.final_oid_fn = git_hash_sha256_final_oid,
 		.empty_tree = &empty_tree_oid_sha256,
 		.empty_blob = &empty_blob_oid_sha256,
+		.gpgsig_header = "gpgsig-sha256",
 		.null_oid = &null_oid_sha256,
 	}
 };

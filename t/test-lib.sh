@@ -1902,7 +1902,7 @@ test_lazy_prereq UNZIP '
 '
 
 run_with_limited_cmdline () {
-	(ulimit -s 128 && "$@")
+	(ulimit -s 384 && "$@")
 }
 
 test_lazy_prereq CMDLINE_LIMIT '

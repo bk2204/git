@@ -244,6 +244,8 @@ mk_http_pair () {
 	mk_repo_pair &&
 	git -C upstream config receive.advertisePushOptions "$1" &&
 	git -C upstream config http.receivepack true &&
+	git -C upstream config gc.auto 0 &&
+	git -C upstream config maintenance.auto 0 &&
 	cp -R upstream/.git "$HTTPD_DOCUMENT_ROOT_PATH"/upstream.git &&
 	git clone "$HTTPD_URL"/smart/upstream test_http_clone
 }

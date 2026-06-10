@@ -17,6 +17,8 @@ commit() {
 
 test_expect_success 'setup' '
 	git config --global transfer.fsckObjects true &&
+	git config --global gc.auto 0 &&
+	git config --global maintenance.auto 0 &&
 	commit 1 &&
 	commit 2 &&
 	commit 3 &&

@@ -3178,29 +3178,52 @@ static void parse_new_commit(const char *arg)
 	b->last_commit = object_count_by_type[OBJ_COMMIT];
 }
 
-static void handle_tag_signature_if_invalid(struct strbuf *buf,
+static void handle_tag_signature_if_invalid(struct strbuf *orig_buf,
+					    struct strbuf *buf,
 					    struct strbuf *msg,
-					    size_t sig_offset)
+					    size_t sig_offset,
+					    struct strbuf *sig,
+					    const struct git_hash_algo *algo)
 {
 	struct strbuf signature = STRBUF_INIT;
-	struct strbuf payload = STRBUF_INIT;
+	struct strbuf payload = STRBUF_INIT, compat_payload = STRBUF_INIT;
 	struct signature_check sigc = { 0 };
+	bool sig_ok = false;
 
-	strbuf_addbuf(&payload, buf);
+	strbuf_addbuf(&payload, orig_buf);
 	strbuf_addch(&payload, '\n');
 	strbuf_add(&payload, msg->buf, sig_offset);
-	strbuf_add(&signature, msg->buf + sig_offset, msg->len - sig_offset);
+
+	if (algo == the_repository->compat_hash_algo) {
+		if (convert_object_file(the_repository, &compat_payload,
+					the_repository->hash_algo,
+					the_repository->compat_hash_algo,
+					payload.buf, payload.len,
+					OBJ_TAG, NULL,
+					OBJ_CONVERT_SKIP_TAG_SIG))
+			die(_("unable to convert tag object for signature"));
+
+		strbuf_swap(&compat_payload, &payload);
+	}
+
+	if (sig)
+		strbuf_addbuf(&signature, sig);
+	else
+		strbuf_add(&signature, msg->buf + sig_offset, msg->len - sig_offset);
 
 	sigc.payload_type = SIGNATURE_PAYLOAD_TAG;
 	sigc.payload = strbuf_detach(&payload, &sigc.payload_len);
 
-	if (!check_signature(&sigc, signature.buf, signature.len))
+	if (!check_signature(&sigc, signature.buf, signature.len)) {
+		sig_ok = true;
 		goto out;
+	}
 
 	if (signed_tag_mode == SIGN_ABORT_IF_INVALID)
 		die(_("aborting due to invalid signature"));
 
-	strbuf_setlen(msg, sig_offset);
+	if (!sig)
+		strbuf_setlen(msg, sig_offset);
 
 	if (signed_tag_mode == SIGN_SIGN_IF_INVALID) {
 		strbuf_attach(&payload, sigc.payload, sigc.payload_len,
@@ -3212,22 +3235,42 @@ static void handle_tag_signature_if_invalid(struct strbuf *buf,
 				SIGN_BUFFER_USE_DEFAULT_KEY))
 			die(_("failed to sign tag object"));
 
-		strbuf_addbuf(msg, &signature);
+		if (algo == the_repository->compat_hash_algo)
+			add_header_signature(buf, &signature, the_repository->compat_hash_algo);
+		else
+			strbuf_addbuf(msg, &signature);
 	}
 
 out:
+	if (sig_ok && sig) {
+		if (algo == the_repository->compat_hash_algo)
+			add_header_signature(buf, &signature, the_repository->compat_hash_algo);
+		else
+			strbuf_addbuf(msg, &signature);
+	}
 	signature_check_clear(&sigc);
 	strbuf_release(&signature);
 	strbuf_release(&payload);
+	strbuf_release(&compat_payload);
 }
 
-static void handle_tag_signature(struct strbuf *buf, struct strbuf *msg, const char *name)
+static void handle_tag_signature(struct strbuf *buf, struct strbuf *msg,
+				 struct signature_data *sigs,
+				 const char *name)
 {
+	struct strbuf orig_buf = STRBUF_INIT;
+	bool has_header_sig = false;
 	size_t sig_offset = parse_signed_buffer(msg->buf, msg->len);
 
+	for (size_t i = 1; i < GIT_HASH_NALGOS; i++) {
+		if (sigs[i].hash_algo && sigs[i].sig_format && sigs[i].data.len) {
+			has_header_sig = true;
+		}
+	}
+
 	/* If there is no signature, there is nothing to do. */
-	if (sig_offset >= msg->len)
-		return;
+	if (sig_offset >= msg->len && !has_header_sig)
+		goto out;
 
 	switch (signed_tag_mode) {
 
@@ -3236,6 +3279,14 @@ static void handle_tag_signature(struct strbuf *buf, struct strbuf *msg, const c
 		warning(_("importing a tag signature verbatim for tag '%s'"), name);
 		/* fallthru */
 	case SIGN_VERBATIM:
+		if (has_header_sig) {
+			size_t algo = hash_algo_by_ptr(the_repository->hash_algo);
+			for (size_t i = 1; i < GIT_HASH_NALGOS; i++)
+				if (i != algo && sigs[i].data.len)
+					add_header_signature(buf, &sigs[i].data,
+							     &hash_algos[i]);
+			strbuf_addbuf(msg, &sigs[algo].data);
+		}
 		/* Nothing to do, the signature will be put into the imported tag. */
 		break;
 
@@ -3250,7 +3301,27 @@ static void handle_tag_signature(struct strbuf *buf, struct strbuf *msg, const c
 	case SIGN_ABORT_IF_INVALID:
 	case SIGN_SIGN_IF_INVALID:
 	case SIGN_STRIP_IF_INVALID:
-		handle_tag_signature_if_invalid(buf, msg, sig_offset);
+		strbuf_addbuf(&orig_buf, buf);
+		if (has_header_sig) {
+			const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+			size_t algo = compat ? hash_algo_by_ptr(compat) : GIT_HASH_UNKNOWN;
+
+			if (compat && sigs[algo].data.len)
+				handle_tag_signature_if_invalid(&orig_buf, buf, msg,
+								sig_offset,
+								&sigs[algo].data,
+								compat);
+
+			algo = hash_algo_by_ptr(the_repository->hash_algo);
+			handle_tag_signature_if_invalid(&orig_buf, buf, msg,
+							sig_offset,
+							&sigs[algo].data,
+							the_repository->hash_algo);
+		} else {
+			handle_tag_signature_if_invalid(&orig_buf, buf, msg, sig_offset,
+							NULL, the_repository->hash_algo);
+		}
+		strbuf_release(&orig_buf);
 		break;
 
 	/* Third, aborting modes */
@@ -3260,6 +3331,11 @@ static void handle_tag_signature(struct strbuf *buf, struct strbuf *msg, const c
 	default:
 		BUG("invalid signed_tag_mode value %d from tag '%s'",
 		    signed_tag_mode, name);
+	}
+out:
+	for (size_t i = 1; i < GIT_HASH_NALGOS; i++) {
+		free(sigs[i].hash_algo);
+		strbuf_release(&sigs[i].data);
 	}
 }
 
@@ -3274,6 +3350,13 @@ static void parse_new_tag(const char *arg)
 	struct object_id oid;
 	enum object_type type;
 	const char *v;
+	struct signature_data sigs[GIT_HASH_NALGOS];
+
+	for (int i = 0; i < ARRAY_SIZE(sigs); i++) {
+		sigs[i].hash_algo = NULL;
+		sigs[i].sig_format = NULL;
+		strbuf_init(&sigs[i].data, 0);
+	}
 
 	t = mem_pool_calloc(&fi_mem_pool, 1, sizeof(struct tag));
 	t->name = mem_pool_strdup(&fi_mem_pool, arg);
@@ -3323,6 +3406,11 @@ static void parse_new_tag(const char *arg)
 	} else
 		tagger = NULL;
 
+	while (skip_prefix(command_buf.buf, "gpgsig ", &v)) {
+		import_one_signature(&sigs[GIT_HASH_SHA1], &sigs[GIT_HASH_SHA256], v);
+		read_next_command();
+	}
+
 	/* tag payload/message */
 	parse_data(&msg, 0, NULL);
 
@@ -3338,7 +3426,7 @@ static void parse_new_tag(const char *arg)
 		strbuf_addf(&new_data,
 			    "tagger %s\n", tagger);
 
-	handle_tag_signature(&new_data, &msg, t->name);
+	handle_tag_signature(&new_data, &msg, sigs, t->name);
 
 	strbuf_addch(&new_data, '\n');
 	strbuf_addbuf(&new_data, &msg);

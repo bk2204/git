@@ -344,7 +344,10 @@ test_expect_success GPG 'signed-commits=abort' '
 test_expect_success GPG 'signed-commits=verbatim' '
 
 	git fast-export --signed-commits=verbatim --reencode=no commit-signing >output &&
-	test_grep -E "^gpgsig $GIT_DEFAULT_HASH openpgp" output &&
+	for i in $(echo "$GIT_DEFAULT_HASH" | sed "s/:/ /g")
+	do
+		test_grep -E "^gpgsig $i openpgp" output || return 1
+	done &&
 	grep "encoding ISO-8859-1" output &&
 	git -C new fast-import <output &&
 	STRIPPED=$(git -C new rev-parse --verify refs/heads/commit-signing) &&
@@ -355,7 +358,10 @@ test_expect_success GPG 'signed-commits=verbatim' '
 test_expect_success GPG 'signed-commits=warn-verbatim' '
 
 	git fast-export --signed-commits=warn-verbatim --reencode=no commit-signing >output 2>err &&
-	test_grep -E "^gpgsig $GIT_DEFAULT_HASH openpgp" output &&
+	for i in $(echo "$GIT_DEFAULT_HASH" | sed "s/:/ /g")
+	do
+		test_grep -E "^gpgsig $i openpgp" output || return 1
+	done &&
 	grep "encoding ISO-8859-1" output &&
 	test -s err &&
 	git -C new fast-import <output &&
@@ -403,7 +409,10 @@ test_expect_success GPGSM 'setup X.509 signed commit' '
 test_expect_success GPGSM 'round-trip X.509 signed commit' '
 
 	git fast-export --signed-commits=verbatim x509-signing >output &&
-	test_grep -E "^gpgsig $GIT_DEFAULT_HASH x509" output &&
+	for i in $(echo "$GIT_DEFAULT_HASH" | sed "s/:/ /g")
+	do
+		test_grep -E "^gpgsig $i x509" output || return 1
+	done &&
 	git -C new fast-import <output &&
 	git -C new cat-file commit refs/heads/x509-signing >actual &&
 	grep "^gpgsig" actual &&
@@ -428,7 +437,10 @@ test_expect_success GPGSSH 'setup SSH signed commit' '
 test_expect_success GPGSSH 'round-trip SSH signed commit' '
 
 	git fast-export --signed-commits=verbatim ssh-signing >output &&
-	test_grep -E "^gpgsig $GIT_DEFAULT_HASH ssh" output &&
+	for i in $(echo "$GIT_DEFAULT_HASH" | sed "s/:/ /g")
+	do
+		test_grep -E "^gpgsig $i ssh" output || return 1
+	done &&
 	git -C new fast-import <output &&
 	git -C new cat-file commit refs/heads/ssh-signing >actual &&
 	grep "^gpgsig" actual &&

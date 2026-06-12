@@ -8,6 +8,13 @@ GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=main
 . "$TEST_DIRECTORY/lib-gpg.sh"
 
 test_expect_success 'set up unsigned initial commit and import repo' '
+	# We do not round trip with a compat hash with verbatim, only
+	# verbatim-header.
+	verbatim=verbatim &&
+	if test_have_prereq COMPAT_HASH
+	then
+		verbatim=verbatim-header
+	fi &&
 	test_commit first &&
 	git init new
 '
@@ -17,7 +24,7 @@ test_expect_success 'import no signed tag with --signed-tags=abort' '
 	git -C new fast-import --quiet --signed-tags=abort <output
 '
 
-test_expect_success GPG 'set up OpenPGP signed tag' '
+test_expect_success GPG 'set up OpenPGP signed tag with --verbatim' '
 	git tag -s -m "OpenPGP signed tag" openpgp-signed first &&
 	OPENPGP_SIGNED=$(git rev-parse --verify refs/tags/openpgp-signed) &&
 	git fast-export --signed-tags=verbatim openpgp-signed >output
@@ -30,7 +37,35 @@ test_expect_success GPG 'import OpenPGP signed tag with --signed-tags=abort' '
 test_expect_success GPG 'import OpenPGP signed tag with --signed-tags=verbatim' '
 	git -C new fast-import --quiet --signed-tags=verbatim <output >log 2>&1 &&
 	IMPORTED=$(git -C new rev-parse --verify refs/tags/openpgp-signed) &&
-	test $OPENPGP_SIGNED = $IMPORTED &&
+	if ! test_have_prereq COMPAT_HASH
+	then
+		test $OPENPGP_SIGNED = $IMPORTED
+	fi &&
+	git -C new cat-file tag openpgp-signed >actual &&
+	test_grep "BEGIN PGP SIGNATURE" actual &&
+	test_must_be_empty log
+'
+
+test_expect_success GPG 'set up OpenPGP signed tag with --verbatim-header' '
+	git tag -s -m "OpenPGP signed tag" openpgp-signed-2 first &&
+	OPENPGP_SIGNED2=$(git rev-parse --verify refs/tags/openpgp-signed-2) &&
+	git fast-export --signed-tags=verbatim openpgp-signed-2 >output
+'
+
+test_expect_success GPG 'set up OpenPGP signed tag with --verbatim-header' '
+	git fast-export --signed-tags=verbatim-header openpgp-signed-2 >output
+'
+
+test_expect_success GPG 'import OpenPGP signed tag with --signed-tags=abort' '
+	test_must_fail git -C new fast-import --quiet --signed-tags=abort <output
+'
+
+test_expect_success GPG 'import OpenPGP signed tag with --signed-tags=verbatim' '
+	git -C new fast-import --quiet --signed-tags=verbatim <output >log 2>&1 &&
+	IMPORTED=$(git -C new rev-parse --verify refs/tags/openpgp-signed-2) &&
+	test $OPENPGP_SIGNED2 = $IMPORTED &&
+	git -C new cat-file tag openpgp-signed-2 >actual &&
+	test_grep "BEGIN PGP SIGNATURE" actual &&
 	test_must_be_empty log
 '
 
@@ -52,7 +87,7 @@ test_expect_success GPGSM 'import X.509 signed tag with --signed-tags=warn-strip
 	test_grep ! "SIGNED MESSAGE" out
 '
 
-test_expect_success GPGSSH 'setup SSH signed tag' '
+test_expect_success GPGSSH 'setup SSH signed tag with --verbatim' '
 	test_config gpg.format ssh &&
 	test_config user.signingkey "${GPGSSH_KEY_PRIMARY}" &&
 
@@ -65,15 +100,38 @@ test_expect_success GPGSSH 'import SSH signed tag with --signed-tags=warn-verbat
 	git -C new fast-import --quiet --signed-tags=warn-verbatim <output >log 2>&1 &&
 	test_grep "importing a tag signature verbatim for tag '\''ssh-signed'\''" log &&
 	IMPORTED=$(git -C new rev-parse --verify refs/tags/ssh-signed) &&
-	test $SSH_SIGNED = $IMPORTED
+	git -C new cat-file tag refs/tags/ssh-signed >actual &&
+	test_grep "BEGIN SSH SIGNATURE" actual &&
+	if ! test_have_prereq COMPAT_HASH
+	then
+		test $SSH_SIGNED = $IMPORTED
+	fi
+'
+
+test_expect_success GPGSSH 'setup SSH signed tag with --verbatim-header' '
+	test_config gpg.format ssh &&
+	test_config user.signingkey "${GPGSSH_KEY_PRIMARY}" &&
+
+	git tag -s -m "SSH signed tag" ssh-signed-2 first &&
+	SSH_SIGNED2=$(git rev-parse --verify refs/tags/ssh-signed-2) &&
+	git fast-export --signed-tags=verbatim-header ssh-signed-2 >output
+'
+
+test_expect_success GPGSSH 'import SSH signed tag with --signed-tags=warn-verbatim' '
+	git -C new fast-import --quiet --signed-tags=warn-verbatim <output >log 2>&1 &&
+	test_grep "importing a tag signature verbatim for tag '\''ssh-signed-2'\''" log &&
+	IMPORTED=$(git -C new rev-parse --verify refs/tags/ssh-signed-2) &&
+	git -C new cat-file tag refs/tags/ssh-signed >actual &&
+	test_grep "BEGIN SSH SIGNATURE" actual &&
+	test $SSH_SIGNED2 = $IMPORTED
 '
 
 test_expect_success GPGSSH 'import SSH signed tag with --signed-tags=strip' '
 	git -C new fast-import --quiet --signed-tags=strip <output >log 2>&1 &&
 	test_must_be_empty log &&
-	IMPORTED=$(git -C new rev-parse --verify refs/tags/ssh-signed) &&
-	test $SSH_SIGNED != $IMPORTED &&
-	git -C new cat-file -p ssh-signed >out &&
+	IMPORTED=$(git -C new rev-parse --verify refs/tags/ssh-signed-2) &&
+	test $SSH_SIGNED2 != $IMPORTED &&
+	git -C new cat-file -p ssh-signed-2 >out &&
 	test_grep ! "SSH SIGNATURE" out
 '
 
@@ -83,7 +141,7 @@ do
 		test_when_finished rm -rf import &&
 		git init import &&
 
-		git fast-export --signed-tags=verbatim >output &&
+		git fast-export --signed-tags=$verbatim >output &&
 		git -C import fast-import --quiet --signed-tags=$mode <output >log 2>&1 &&
 		test_must_be_empty log
 	'
@@ -92,8 +150,8 @@ do
 		test_when_finished rm -rf import &&
 		git init import &&
 
-		git fast-export --signed-tags=verbatim openpgp-signed >output &&
-		git -C import fast-import --quiet --signed-tags=$mode <output >log 2>&1 &&
+		git fast-export --signed-tags=$verbatim openpgp-signed >output &&
+		git -C import fast-import --quiet --signed-tags=$mode <output &&
 		IMPORTED=$(git -C import rev-parse --verify refs/tags/openpgp-signed) &&
 		test $OPENPGP_SIGNED = $IMPORTED &&
 		git -C import cat-file tag "$IMPORTED" >actual &&
@@ -141,7 +199,7 @@ do
 		test_when_finished rm -rf import &&
 		git init import &&
 
-		git fast-export --signed-tags=verbatim x509-signed >output &&
+		git fast-export --signed-tags=$verbatim x509-signed >output &&
 		git -C import fast-import --quiet --signed-tags=$mode <output >log 2>&1 &&
 		IMPORTED=$(git -C import rev-parse --verify refs/tags/x509-signed) &&
 		test $X509_SIGNED = $IMPORTED &&
@@ -156,7 +214,7 @@ do
 
 		test_config -C import gpg.ssh.allowedSignersFile "${GPGSSH_ALLOWED_SIGNERS}" &&
 
-		git fast-export --signed-tags=verbatim ssh-signed >output &&
+		git fast-export --signed-tags=$verbatim ssh-signed >output &&
 		git -C import fast-import --quiet --signed-tags=$mode <output >log 2>&1 &&
 		IMPORTED=$(git -C import rev-parse --verify refs/tags/ssh-signed) &&
 		test $SSH_SIGNED = $IMPORTED &&

@@ -1158,8 +1158,12 @@ int parse_sign_mode(const char *arg, enum sign_mode *mode, const char **keyid)
 		*mode = SIGN_ABORT;
 	} else if (!strcmp(arg, "verbatim") || !strcmp(arg, "ignore")) {
 		*mode = SIGN_VERBATIM;
+	} else if (!strcmp(arg, "verbatim-header")) {
+		*mode = SIGN_VERBATIM_HEADER;
 	} else if (!strcmp(arg, "warn-verbatim") || !strcmp(arg, "warn")) {
 		*mode = SIGN_WARN_VERBATIM;
+	} else if (!strcmp(arg, "warn-verbatim-header")) {
+		*mode = SIGN_WARN_VERBATIM_HEADER;
 	} else if (!strcmp(arg, "warn-strip")) {
 		*mode = SIGN_WARN_STRIP;
 	} else if (!strcmp(arg, "strip")) {

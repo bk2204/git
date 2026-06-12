@@ -888,6 +888,7 @@ static void handle_tag(const char *name, struct tag *tag)
 	struct object *tagged;
 	int tagged_mark;
 	struct commit *p;
+	struct string_list signatures = STRING_LIST_INIT_DUP;
 
 	/* Trees have no identifier in fast-export output, thus we have no way
 	 * to output tags of trees, tags of tags of trees, etc.  Simply omit
@@ -940,8 +941,19 @@ static void handle_tag(const char *name, struct tag *tag)
 
 	/* handle signed tags */
 	if (message) {
+		struct strbuf payload = STRBUF_INIT, second_sig = STRBUF_INIT;
 		size_t sig_offset = parse_signed_buffer(message, message_size);
-		if (sig_offset < message_size)
+		size_t buf_sig_offset = sig_offset + (message - buf);
+		const struct git_hash_algo *compat = the_repository->compat_hash_algo;
+
+		if (compat && parse_buffer_signed_by_header(buf, buf_sig_offset,
+							    &payload, &second_sig,
+							    compat)) {
+			string_list_append(&signatures, second_sig.buf)->util =
+				(void *)compat->name;
+		}
+
+		if (sig_offset < message_size || signatures.nr)
 			switch (signed_tag_mode) {
 			/* Exporting modes */
 			case SIGN_WARN_VERBATIM:
@@ -949,6 +961,19 @@ static void handle_tag(const char *name, struct tag *tag)
 					oid_to_hex(&tag->object.oid));
 				/* fallthru */
 			case SIGN_VERBATIM:
+				string_list_clear(&signatures, 0);
+				break;
+
+			case SIGN_WARN_VERBATIM_HEADER:
+				warning(_("exporting signed tag %s"),
+					oid_to_hex(&tag->object.oid));
+				/* fallthru */
+			case SIGN_VERBATIM_HEADER:
+				if (sig_offset < message_size) {
+					string_list_append(&signatures, message + sig_offset)->util =
+						(void *)the_repository->hash_algo->name;
+					message_size = sig_offset;
+				}
 				break;
 
 			/* Stripping modes */
@@ -958,6 +983,7 @@ static void handle_tag(const char *name, struct tag *tag)
 				/* fallthru */
 			case SIGN_STRIP:
 				message_size = sig_offset;
+				string_list_clear(&signatures, 0);
 				break;
 
 			/* Aborting modes */
@@ -968,6 +994,8 @@ static void handle_tag(const char *name, struct tag *tag)
 			default:
 				BUG("invalid signed_commit_mode value %d", signed_commit_mode);
 			}
+		strbuf_release(&payload);
+		strbuf_release(&second_sig);
 	}
 
 	/* handle tag->tagged having been filtered out due to paths specified */
@@ -1019,11 +1047,19 @@ static void handle_tag(const char *name, struct tag *tag)
 
 	if (show_original_ids)
 		printf("original-oid %s\n", oid_to_hex(&tag->object.oid));
-	printf("%.*s%sdata %d\n%.*s\n",
+	printf("%.*s%s",
 	       (int)(tagger_end - tagger), tagger,
-	       tagger == tagger_end ? "" : "\n",
+	       tagger == tagger_end ? "" : "\n");
+
+	for (size_t i = 0; i < signatures.nr; i++) {
+		struct string_list_item *item = &signatures.items[i];
+		print_signature(item->string, item->util);
+	}
+
+	printf("data %d\n%.*s\n",
 	       (int)message_size, (int)message_size, message ? message : "");
 	free(buf);
+	string_list_clear(&signatures, 0);
 }
 
 static struct commit *get_commit(struct rev_cmdline_entry *e, const char *full_name)

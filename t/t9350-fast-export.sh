@@ -476,7 +476,7 @@ test_expect_success 'setup submodule' '
 
 '
 
-test_expect_success 'submodule fast-export | fast-import' '
+test_expect_success !COMPAT_HASH 'submodule fast-export | fast-import' '
 
 	test_config_global protocol.file.allow always &&
 	SUBENT1=$(git ls-tree main^ sub) &&
@@ -525,7 +525,7 @@ test_expect_success 'setup copies' '
 
 '
 
-test_expect_success 'fast-export -C -C | fast-import' '
+test_expect_success !COMPAT_HASH 'fast-export -C -C | fast-import' '
 
 	ENTRY=$(git rev-parse --verify copy) &&
 	rm -rf new &&
@@ -820,7 +820,7 @@ test_expect_success PERL_TEST_HELPERS 'fast-export quotes pathnames' '
 	)
 '
 
-test_expect_success 'test bidirectionality' '
+test_expect_success !COMPAT_HASH 'test bidirectionality' '
 	git init marks-test &&
 	git fast-export --export-marks=marks-cur --import-marks-if-exists=marks-cur --branches | \
 	git --git-dir=marks-test/.git fast-import --export-marks=marks-new --import-marks-if-exists=marks-new &&
@@ -832,22 +832,35 @@ test_expect_success 'test bidirectionality' '
 	git fast-import --export-marks=marks-cur --import-marks-if-exists=marks-cur
 '
 
-cat > expected << EOF
-blob
-mark :13
-data 5
-bump
+test_expect_success 'compute marks' '
+	if test_have_prereq COMPAT_HASH
+	then
+		m1=:11 &&
+		m2=:12 &&
+		m3=:13
+	else
+		m1=:12 &&
+		m2=:13 &&
+		m3=:14
+	fi &&
+	cat >expected <<-EOF
+	blob
+	mark $m2
+	data 5
+	bump
 
-commit refs/heads/main
-mark :14
-author A U Thor <author@example.com> 1112912773 -0700
-committer C O Mitter <committer@example.com> 1112912773 -0700
-data 5
-bump
-from :12
-M 100644 :13 file
+	commit refs/heads/main
+	mark $m3
+	author A U Thor <author@example.com> 1112912773 -0700
+	committer C O Mitter <committer@example.com> 1112912773 -0700
+	data 5
+	bump
+	from $m1
+	M 100644 $m2 file
 
-EOF
+	EOF
+'
+
 
 test_expect_success ICONV 'avoid uninteresting refs' '
 	> tmp-marks &&
@@ -862,11 +875,13 @@ test_expect_success ICONV 'avoid uninteresting refs' '
 	test_cmp expected actual
 '
 
-cat > expected << EOF
-reset refs/heads/main
-from :14
+test_expect_success 'set up expected results' '
+	cat >expected <<-EOF
+	reset refs/heads/main
+	from $m3
 
-EOF
+	EOF
+'
 
 test_expect_success ICONV 'refs are updated even if no commits need to be exported' '
 	> tmp-marks &&

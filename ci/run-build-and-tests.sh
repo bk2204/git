@@ -44,6 +44,12 @@ linux-clang)
 linux-sha256)
 	export GIT_TEST_DEFAULT_HASH=sha256
 	;;
+linux-sha256-interop)
+	export GIT_TEST_DEFAULT_HASH=sha256:sha1
+	;;
+linux-sha1-interop)
+	export GIT_TEST_DEFAULT_HASH=sha1:sha256
+	;;
 linux-reftable|linux-reftable-leaks|osx-reftable)
 	export GIT_TEST_DEFAULT_REF_FORMAT=reftable
 	;;

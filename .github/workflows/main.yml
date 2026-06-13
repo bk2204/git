@@ -379,6 +379,12 @@ jobs:
         - jobname: linux-sha256
           image: ubuntu:rolling
           cc: clang
+        - jobname: linux-sha256-interop
+          image: ubuntu:rolling
+          cc: clang
+        - jobname: linux-sha1-interop
+          image: ubuntu:rolling
+          cc: clang
         - jobname: linux-reftable
           image: ubuntu:rolling
           cc: clang

@@ -224,7 +224,7 @@ test_expect_success GPG 'push signed tag' '
 	compare_refs ! local signed-tag server signed-tag
 '
 
-test_expect_success GPG 'push signed tag with signed-tags capability' '
+test_expect_success GPG,!COMPAT_HASH 'push signed tag with signed-tags capability' '
 	(cd local &&
 	git checkout main &&
 	git tag -s -m signed-tag signed-tag-2 &&

@@ -1014,7 +1014,7 @@ test_expect_success GPG,RUST 'export and import of doubly signed commit' '
 	test_grep -E "^gpgsig " actual &&
 	test_grep -E "^gpgsig-sha256 " actual &&
 	IMPORTED=$(git -C new rev-parse refs/heads/dual-signed) &&
-	if test "$GIT_DEFAULT_HASH" = "sha1"
+	if test "$test_hash_algo" = "sha1"
 	then
 		test $SHA1_B = $IMPORTED
 	else

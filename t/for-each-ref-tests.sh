@@ -70,7 +70,7 @@ test_atom () {
 			tag)
 				# We cannot use $3 as it expects sanitize_pgp to run
 				git cat-file tag $ref >out &&
-				expect=$(tail -n +6 out | wc -c) &&
+				expect=$(grep -vE "^( |gpgsig)" out | tail -n +6 | wc -c) &&
 				rm -f out ;;
 			tree | blob)
 				expect="" ;;

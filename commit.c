@@ -1280,11 +1280,14 @@ int remove_signature(struct strbuf *buf)
 		const char *next = memchr(line, '\n', tail - line);
 		next = next ? next + 1 : tail;
 
+
 		if (in_signature && line[0] == ' ')
 			sigp->end = next;
 		else if (starts_with(line, "gpgsig")) {
-			int i;
-			for (i = 1; i < GIT_HASH_NALGOS; i++) {
+			if (in_signature && sigp - sigs != ARRAY_SIZE(sigs))
+				sigp++;
+
+			for (int i = 1; i < GIT_HASH_NALGOS; i++) {
 				const char *p;
 				if (skip_prefix(line, gpg_sig_headers[i], &p) &&
 				    *p == ' ') {

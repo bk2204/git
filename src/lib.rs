@@ -1,4 +1,5 @@
 pub mod csum_file;
+pub mod error;
 pub mod hash;
 pub mod loose;
 pub mod object;

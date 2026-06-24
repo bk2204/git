@@ -14,6 +14,8 @@ use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt::{self, Display};
 
+pub mod header;
+
 /// An error indicating an invalid object type.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct InvalidObjectType(pub u32);

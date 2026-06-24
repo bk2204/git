@@ -4,4 +4,5 @@ pub mod hash;
 pub mod loose;
 pub mod object;
 pub mod strbuf;
+pub mod util;
 pub mod varint;

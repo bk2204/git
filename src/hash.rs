@@ -20,7 +20,7 @@ pub const GIT_MAX_RAWSZ: usize = 32;
 /// An error indicating an invalid hash algorithm.
 ///
 /// The contained `u32` is the same as the `algo` field in `ObjectID`.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct InvalidHashAlgorithm(pub u32);
 
 impl Display for InvalidHashAlgorithm {

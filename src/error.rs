@@ -10,7 +10,7 @@
 // You should have received a copy of the GNU General Public License along
 // with this program; if not, see <https://www.gnu.org/licenses/>.
 
-use crate::hash::InvalidHashAlgorithm;
+use crate::hash::{InvalidHashAlgorithm, InvalidHexObjectID};
 use std::ffi::CStr;
 use std::fmt::{Debug, Display, Formatter};
 use std::os::raw::c_void;
@@ -21,6 +21,7 @@ union CErrorValue {
     hash_algo: u32,
     ptr: *mut c_void,
     unused: u64,
+    offset: usize,
 }
 
 impl Debug for CErrorValue {
@@ -141,6 +142,15 @@ impl From<Error> for CError {
                 ErrorConstant::InvalidHashAlgorithm,
                 CErrorValue { hash_algo: algo },
             ),
+            Error::InvalidHexObjectID(InvalidHexObjectID::InvalidCharacter(offset)) => {
+                Self::new_with_static_value(
+                    ErrorConstant::InvalidHexObjectIDWithInvalidCharacter,
+                    CErrorValue { offset },
+                )
+            }
+            Error::InvalidHexObjectID(InvalidHexObjectID::Truncated) => {
+                Self::new(ErrorConstant::InvalidTruncatedHexObjectID)
+            }
         }
     }
 }
@@ -151,6 +161,8 @@ impl From<Error> for CError {
 pub enum ErrorConstant {
     Errno = 1,
     InvalidHashAlgorithm = 2,
+    InvalidHexObjectIDWithInvalidCharacter = 3,
+    InvalidTruncatedHexObjectID = 4,
 }
 
 impl ErrorConstant {
@@ -158,6 +170,8 @@ impl ErrorConstant {
         match code {
             1 => Some(Self::Errno),
             2 => Some(Self::InvalidHashAlgorithm),
+            3 => Some(Self::InvalidHexObjectIDWithInvalidCharacter),
+            4 => Some(Self::InvalidTruncatedHexObjectID),
             _ => None,
         }
     }
@@ -173,6 +187,8 @@ pub enum Error {
     Errno(i32),
     /// An invalid hash algorithm with the specified integer value.
     InvalidHashAlgorithm(u32),
+    /// An invalid full hex object ID.
+    InvalidHexObjectID(InvalidHexObjectID),
 }
 
 impl Error {
@@ -181,10 +197,15 @@ impl Error {
         match self {
             Self::Errno(..) => ErrorConstant::Errno,
             Self::InvalidHashAlgorithm(..) => ErrorConstant::InvalidHashAlgorithm,
-            // Do not use `_` to match exhaustively here so that we force every new error to have a
-            // valid error constant associated with it.  Additionally, when adding cases here, be
-            // sure to add a test for this case farther down in `tests::error_tests` below, which
-            // verifies that the C code that formats errors is also appropriately wired up.
+            Self::InvalidHexObjectID(InvalidHexObjectID::InvalidCharacter(..)) => {
+                ErrorConstant::InvalidHexObjectIDWithInvalidCharacter
+            }
+            Self::InvalidHexObjectID(InvalidHexObjectID::Truncated) => {
+                ErrorConstant::InvalidTruncatedHexObjectID
+            } // Do not use `_` to match exhaustively here so that we force every new error to have a
+              // valid error constant associated with it.  Additionally, when adding cases here, be
+              // sure to add a test for this case farther down in `tests::error_tests` below, which
+              // verifies that the C code that formats errors is also appropriately wired up.
         }
     }
 }
@@ -218,6 +239,12 @@ impl std::error::Error for Error {}
 impl From<InvalidHashAlgorithm> for Error {
     fn from(e: InvalidHashAlgorithm) -> Self {
         Self::InvalidHashAlgorithm(e.0)
+    }
+}
+
+impl From<InvalidHexObjectID> for Error {
+    fn from(e: InvalidHexObjectID) -> Self {
+        Self::InvalidHexObjectID(e)
     }
 }
 
@@ -266,11 +293,23 @@ mod tests {
 
     #[test]
     fn error_tests() {
-        let testcases: &[(Error, ErrorConstant, &str)] = &[(
-            Error::InvalidHashAlgorithm(9),
-            ErrorConstant::InvalidHashAlgorithm,
-            "invalid hash algorithm 9",
-        )];
+        let testcases: &[(Error, ErrorConstant, &str)] = &[
+            (
+                Error::InvalidHashAlgorithm(9),
+                ErrorConstant::InvalidHashAlgorithm,
+                "invalid hash algorithm 9",
+            ),
+            (
+                Error::InvalidHexObjectID(InvalidHexObjectID::InvalidCharacter(4)),
+                ErrorConstant::InvalidHexObjectIDWithInvalidCharacter,
+                "invalid hex object ID at character 4",
+            ),
+            (
+                Error::InvalidHexObjectID(InvalidHexObjectID::Truncated),
+                ErrorConstant::InvalidTruncatedHexObjectID,
+                "truncated hex object ID",
+            ),
+        ];
         for (err, constant, text) in testcases {
             assert_eq!(err.constant(), *constant, "{:?}", constant);
             assert_eq!(err.to_string(), *text, "{:?}", constant);

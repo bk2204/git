@@ -14,12 +14,15 @@
 enum git_err_const {
 	GIT_ERRC_ERRNO = 1,
 	GIT_ERRC_INVALID_HASH_ALGORITHM = 2,
+	GIT_ERRC_INVALID_HEX_OBJECT_ID_WITH_INVALID_CHAR = 3,
+	GIT_ERRC_INVALID_TRUNCATED_HEX_OBJECT_ID = 4,
 };
 
 union git_err_value {
 	uint32_t hash_algo;
 	void *ptr;
 	uint64_t unused;
+	size_t offset;
 };
 
 struct git_err {

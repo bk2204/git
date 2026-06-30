@@ -13,6 +13,12 @@ static bool format_error(struct strbuf *buf, struct git_err err)
 	case GIT_ERRC_INVALID_HASH_ALGORITHM:
 		strbuf_addf(buf, _("invalid hash algorithm %d"), err.value.hash_algo);
 		return true;
+	case GIT_ERRC_INVALID_HEX_OBJECT_ID_WITH_INVALID_CHAR:
+		strbuf_addf(buf, _("invalid hex object ID at character %" PRIuMAX), (uintmax_t)err.value.offset);
+		return true;
+	case GIT_ERRC_INVALID_TRUNCATED_HEX_OBJECT_ID:
+		strbuf_addf(buf, _("truncated hex object ID"));
+		return true;
 	default:
 		return false;
 	}

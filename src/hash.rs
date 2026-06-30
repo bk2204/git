@@ -31,6 +31,26 @@ impl Display for InvalidHashAlgorithm {
 
 impl Error for InvalidHashAlgorithm {}
 
+/// An error indicating an invalid hex object ID.
+///
+/// The contained `usize` is the offset of the invalid character.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum InvalidHexObjectID {
+    InvalidCharacter(usize),
+    Truncated,
+}
+
+impl Display for InvalidHexObjectID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidCharacter(off) => write!(f, "invalid hex object ID at offset {}", off),
+            Self::Truncated => write!(f, "truncated hex object ID"),
+        }
+    }
+}
+
+impl Error for InvalidHexObjectID {}
+
 /// A binary object ID.
 #[repr(C)]
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -74,6 +94,65 @@ impl ObjectID {
             Some(algo) => Ok(&mut self.hash[0..algo.raw_len()]),
             None => Err(InvalidHashAlgorithm(self.algo)),
         }
+    }
+
+    const HEXVAL_TABLE: [i8; 256] = [
+        -1, -1, -1, -1, -1, -1, -1, -1, // 00-07
+        -1, -1, -1, -1, -1, -1, -1, -1, // 08-0f
+        -1, -1, -1, -1, -1, -1, -1, -1, // 10-17
+        -1, -1, -1, -1, -1, -1, -1, -1, // 18-1f
+        -1, -1, -1, -1, -1, -1, -1, -1, // 20-27
+        -1, -1, -1, -1, -1, -1, -1, -1, // 28-2f
+        0, 1, 2, 3, 4, 5, 6, 7, // 30-37
+        8, 9, -1, -1, -1, -1, -1, -1, // 38-3f
+        -1, 10, 11, 12, 13, 14, 15, -1, // 40-47
+        -1, -1, -1, -1, -1, -1, -1, -1, // 48-4f
+        -1, -1, -1, -1, -1, -1, -1, -1, // 50-57
+        -1, -1, -1, -1, -1, -1, -1, -1, // 58-5f
+        -1, 10, 11, 12, 13, 14, 15, -1, // 60-67
+        -1, -1, -1, -1, -1, -1, -1, -1, // 68-67
+        -1, -1, -1, -1, -1, -1, -1, -1, // 70-77
+        -1, -1, -1, -1, -1, -1, -1, -1, // 78-7f
+        -1, -1, -1, -1, -1, -1, -1, -1, // 80-87
+        -1, -1, -1, -1, -1, -1, -1, -1, // 88-8f
+        -1, -1, -1, -1, -1, -1, -1, -1, // 90-97
+        -1, -1, -1, -1, -1, -1, -1, -1, // 98-9f
+        -1, -1, -1, -1, -1, -1, -1, -1, // a0-a7
+        -1, -1, -1, -1, -1, -1, -1, -1, // a8-af
+        -1, -1, -1, -1, -1, -1, -1, -1, // b0-b7
+        -1, -1, -1, -1, -1, -1, -1, -1, // b8-bf
+        -1, -1, -1, -1, -1, -1, -1, -1, // c0-c7
+        -1, -1, -1, -1, -1, -1, -1, -1, // c8-cf
+        -1, -1, -1, -1, -1, -1, -1, -1, // d0-d7
+        -1, -1, -1, -1, -1, -1, -1, -1, // d8-df
+        -1, -1, -1, -1, -1, -1, -1, -1, // e0-e7
+        -1, -1, -1, -1, -1, -1, -1, -1, // e8-ef
+        -1, -1, -1, -1, -1, -1, -1, -1, // f0-f7
+        -1, -1, -1, -1, -1, -1, -1, -1, // f8-ff
+    ];
+
+    pub fn from_hex(data: &[u8], algo: HashAlgorithm) -> Result<Self, InvalidHexObjectID> {
+        let mut result = [0u8; GIT_MAX_RAWSZ];
+        if data.len() < algo.hex_len() {
+            return Err(InvalidHexObjectID::Truncated);
+        }
+        for i in 0..algo.raw_len() {
+            let first = Self::HEXVAL_TABLE[data[i * 2] as usize] as i32;
+            let second = Self::HEXVAL_TABLE[data[i * 2 + 1] as usize] as i32;
+            let r = (first << 4) | second;
+            if r < 0 {
+                if first < 0 {
+                    return Err(InvalidHexObjectID::InvalidCharacter(i * 2));
+                } else {
+                    return Err(InvalidHexObjectID::InvalidCharacter(i * 2 + 1));
+                }
+            }
+            result[i] = r as u8;
+        }
+        Ok(Self {
+            hash: result,
+            algo: algo as u32,
+        })
     }
 }
 
@@ -367,7 +446,7 @@ pub mod c {
 
 #[cfg(test)]
 mod tests {
-    use super::{CryptoDigest, HashAlgorithm, ObjectID};
+    use super::{CryptoDigest, HashAlgorithm, InvalidHexObjectID, ObjectID};
     use std::io::Write;
 
     fn all_algos() -> &'static [HashAlgorithm] {
@@ -401,7 +480,27 @@ mod tests {
     }
 
     #[test]
-    fn object_ids_format_correctly() {
+    fn rejects_invalid_oids() {
+        let testcases: &[(&[u8], HashAlgorithm, InvalidHexObjectID)] = &[
+            (
+                b"0123456abcdef",
+                HashAlgorithm::SHA256,
+                InvalidHexObjectID::Truncated,
+            ),
+            (
+                b"twenty-bytes-of-junktwenty-bytes-of-junk",
+                HashAlgorithm::SHA1,
+                InvalidHexObjectID::InvalidCharacter(0),
+            ),
+        ];
+
+        for (badoid, algo, err) in testcases {
+            assert_eq!(ObjectID::from_hex(badoid, *algo), Err(*err));
+        }
+    }
+
+    #[test]
+    fn object_ids_format_and_parse_correctly() {
         let entries = &[
             (
                 HashAlgorithm::SHA1.null_oid(),
@@ -437,6 +536,9 @@ mod tests {
         for (oid, display, debug) in entries {
             assert_eq!(format!("{}", oid), *display);
             assert_eq!(format!("{:?}", oid), *debug);
+
+            let parsed = ObjectID::from_hex(display.as_bytes(), oid.algo().unwrap()).unwrap();
+            assert_eq!(parsed, **oid);
         }
     }
 

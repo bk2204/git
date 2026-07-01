@@ -322,6 +322,11 @@ impl HashAlgorithm {
         algo: Self::SHA256 as u32,
     };
 
+    /// A slice of all hash algorithms.
+    pub fn all_algorithms() -> &'static [HashAlgorithm] {
+        &[Self::SHA1, Self::SHA256]
+    }
+
     /// Return a hash algorithm based on the internal integer ID used by Git.
     ///
     /// Returns `None` if the algorithm doesn't indicate a valid algorithm.
@@ -342,6 +347,18 @@ impl HashAlgorithm {
             0x73323536 => Some(HashAlgorithm::SHA256),
             _ => None,
         }
+    }
+
+    /// Return a hash algorithm based on the internal integer ID used by Git.
+    ///
+    /// Returns `None` if the algorithm doesn't indicate a valid algorithm.
+    pub fn from_ptr(ptr: *const c_void) -> Option<HashAlgorithm> {
+        for algo in Self::all_algorithms() {
+            if algo.hash_algo_ptr() == ptr {
+                return Some(*algo);
+            }
+        }
+        None
     }
 
     /// The name of this hash algorithm as a string suitable for the configuration file.
@@ -449,13 +466,9 @@ mod tests {
     use super::{CryptoDigest, HashAlgorithm, InvalidHexObjectID, ObjectID};
     use std::io::Write;
 
-    fn all_algos() -> &'static [HashAlgorithm] {
-        &[HashAlgorithm::SHA1, HashAlgorithm::SHA256]
-    }
-
     #[test]
     fn format_id_round_trips() {
-        for algo in all_algos() {
+        for algo in HashAlgorithm::all_algorithms() {
             assert_eq!(
                 *algo,
                 HashAlgorithm::from_format_id(algo.format_id()).unwrap()
@@ -465,14 +478,14 @@ mod tests {
 
     #[test]
     fn offset_round_trips() {
-        for algo in all_algos() {
+        for algo in HashAlgorithm::all_algorithms() {
             assert_eq!(*algo, HashAlgorithm::from_u32(*algo as u32).unwrap());
         }
     }
 
     #[test]
     fn slices_have_correct_length() {
-        for algo in all_algos() {
+        for algo in HashAlgorithm::all_algorithms() {
             for oid in [algo.null_oid(), algo.empty_blob(), algo.empty_tree()] {
                 assert_eq!(oid.as_slice().unwrap().len(), algo.raw_len());
             }
@@ -544,7 +557,7 @@ mod tests {
 
     #[test]
     fn hasher_works_correctly() {
-        for algo in all_algos() {
+        for algo in HashAlgorithm::all_algorithms() {
             let tests: &[(&[u8], &ObjectID)] = &[
                 (b"blob 0\0", algo.empty_blob()),
                 (b"tree 0\0", algo.empty_tree()),

@@ -385,7 +385,7 @@ int run_commit_hook(int editor_is_used, const char *index_file,
 
 /* Parse the signature out of a header. */
 int parse_buffer_signed_by_header(const char *buffer,
-				  unsigned long size,
+				  size_t size,
 				  struct strbuf *payload,
 				  struct strbuf *signature,
 				  const struct git_hash_algo *algop);

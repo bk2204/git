@@ -1218,7 +1218,7 @@ int parse_signed_commit(const struct commit *commit,
 }
 
 int parse_buffer_signed_by_header(const char *buffer,
-				  unsigned long size,
+				  size_t size,
 				  struct strbuf *payload,
 				  struct strbuf *signature,
 				  const struct git_hash_algo *algop)

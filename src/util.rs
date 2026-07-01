@@ -19,3 +19,20 @@ pub(crate) fn element_offset<T>(data: &[T], item: &T) -> Option<usize> {
     let item = item as *const T;
     unsafe { item.offset_from(data) }.try_into().ok()
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    pub(crate) fn strip_q(data: &[u8]) -> Vec<u8> {
+        data.iter()
+            .cloned()
+            .enumerate()
+            .filter_map(|(i, b)| {
+                if i + 1 >= data.len() || !(b == b'Q' && data[i + 1] == b'\n') {
+                    Some(b)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}

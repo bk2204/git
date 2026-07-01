@@ -3,6 +3,7 @@ pub mod error;
 pub mod hash;
 pub mod loose;
 pub mod object;
+pub mod signature;
 pub mod strbuf;
 pub mod util;
 pub mod varint;

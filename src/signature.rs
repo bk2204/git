@@ -123,6 +123,51 @@ pub fn parse_buffer_signed_by_header<W: Write>(
     saw_signature
 }
 
+pub mod c {
+    use crate::hash::HashAlgorithm;
+    use crate::strbuf::Strbuf;
+    use std::os::raw::{c_char, c_int, c_void};
+
+    /// Parse a commit or tag buffer and split it into a payload and a signature.
+    ///
+    /// `payload` is the body of the tag without any signatures and `signature` is the signature
+    /// corresponding to the algorithm in `algop`.
+    ///
+    /// # Safety
+    ///
+    /// `buffer` must be a valid buffer pointing to at least `size` bytes of data.  `payload` and
+    /// `signature` must be validly initialized string buffers and `algop` must be a pointer to a
+    /// valid `struct git_hash_algo` that points to a valid and supported hash algorithm.
+    #[no_mangle]
+    pub unsafe extern "C" fn parse_buffer_signed_by_header(
+        buffer: *const c_char,
+        size: usize,
+        payload: *mut Strbuf,
+        signature: *mut Strbuf,
+        algop: *const c_void,
+    ) -> c_int {
+        let data = std::slice::from_raw_parts(buffer as *const u8, size);
+        let algo = HashAlgorithm::from_ptr(algop).expect("valid hash algorithm pointer");
+        let payload = unsafe { &mut *payload };
+        let signature = unsafe { &mut *signature };
+        super::parse_buffer_signed_by_header(data, algo, payload, signature) as c_int
+    }
+
+    /// Parse a potentially signed buffer and return the offset of the last byte of the unsigned
+    /// body.
+    ///
+    /// If the body is not signed, returns `size`.
+    ///
+    /// # Safety
+    ///
+    /// `buffer` must be a valid buffer of at least `size` bytes.
+    #[no_mangle]
+    pub unsafe extern "C" fn parse_signed_buffer(buffer: *const c_char, size: usize) -> usize {
+        let data = std::slice::from_raw_parts(buffer as *const u8, size);
+        super::parse_signed_buffer(data).0.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1217,6 +1217,7 @@ int parse_signed_commit(const struct commit *commit,
 	return ret;
 }
 
+#ifndef WITH_RUST
 int parse_buffer_signed_by_header(const char *buffer,
 				  size_t size,
 				  struct strbuf *payload,
@@ -1261,6 +1262,7 @@ int parse_buffer_signed_by_header(const char *buffer,
 	}
 	return saw_signature;
 }
+#endif
 
 int remove_signature(struct strbuf *buf)
 {

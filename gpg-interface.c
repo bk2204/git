@@ -699,6 +699,7 @@ void print_signature_buffer(const struct signature_check *sigc, unsigned flags)
 		fputs(output, stderr);
 }
 
+#ifndef WITH_RUST
 size_t parse_signed_buffer(const char *buf, size_t size)
 {
 	size_t len = 0;
@@ -714,6 +715,7 @@ size_t parse_signed_buffer(const char *buf, size_t size)
 	}
 	return match;
 }
+#endif
 
 int parse_signature(const char *buf, size_t size, struct strbuf *payload, struct strbuf *signature)
 {

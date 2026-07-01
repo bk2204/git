@@ -15,6 +15,7 @@ use std::error::Error;
 use std::fmt::{self, Display};
 
 pub mod header;
+pub mod tree;
 
 /// An error indicating an invalid object type.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]

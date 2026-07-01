@@ -14,6 +14,7 @@ use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt::{self, Display};
 
+pub mod convert;
 pub mod header;
 pub mod tree;
 

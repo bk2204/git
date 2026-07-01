@@ -11,6 +11,8 @@
 // with this program; if not, see <https://www.gnu.org/licenses/>.
 
 use crate::hash::{HashAlgorithm, ObjectID};
+use crate::object::convert::ObjectMapper;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::io::{self, Write};
@@ -509,6 +511,16 @@ impl<'a> MmapedObjectMap<'a> {
     }
 }
 
+impl<'obj> ObjectMapper for MmapedObjectMap<'obj> {
+    fn map_oid<'a, 'b: 'a>(
+        &'b mut self,
+        src: &'a ObjectID,
+        to: HashAlgorithm,
+    ) -> Option<Cow<'a, ObjectID>> {
+        MmapedObjectMap::map_oid(self, src, to).map(Cow::Owned)
+    }
+}
+
 /// A map for loose and other non-packed object IDs that maps between a storage and compatibility
 /// mapping.
 ///
@@ -649,6 +661,16 @@ impl ObjectMap {
         }
         let entry = self.map_object(oid, algo);
         entry.map(|obj| &obj.oid)
+    }
+}
+
+impl ObjectMapper for ObjectMap {
+    fn map_oid<'a, 'b: 'a>(
+        &'b mut self,
+        src: &'a ObjectID,
+        to: HashAlgorithm,
+    ) -> Option<Cow<'a, ObjectID>> {
+        ObjectMap::map_oid(self, src, to).map(|oid| Cow::Borrowed(oid))
     }
 }
 

@@ -4,6 +4,13 @@ test_description='check random commands outside repo'
 
 . ./test-lib.sh
 
+test_lazy_prereq SVN '
+	test_have_prereq PERL && test -z "$NO_SVN_TESTS" && perl -w -e "
+		use SVN::Core;
+		use SVN::Repos;
+	"
+'
+
 test_expect_success 'set up a non-repo directory and test file' '
 	GIT_CEILING_DIRECTORIES=$(pwd) &&
 	export GIT_CEILING_DIRECTORIES &&
@@ -138,6 +145,8 @@ do
 	case "$cmd" in
 	instaweb)
 		prereq=PERL ;;
+	svn)
+		prereq=SVN ;;
 	*)
 		prereq= ;;
 	esac

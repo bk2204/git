@@ -1594,7 +1594,7 @@ ALL_LDFLAGS = $(LDFLAGS) $(LDFLAGS_APPEND)
 
 ifndef NO_RUST
 BASIC_CFLAGS += -DWITH_RUST
-GITLIBS += $(RUST_LIB)
+GITLIBS += $(RUST_LIB) $(LIB_FILE)
 ifeq ($(uname_S),Windows)
 EXTLIBS += -luserenv
 endif

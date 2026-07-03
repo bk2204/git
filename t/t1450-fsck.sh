@@ -495,7 +495,7 @@ test_expect_success 'tag rejects invalid headers' '
 	$header -----BEGIN PGP SIGNATURE-----
 	 Not a valid signature
 	 -----END PGP SIGNATURE-----
-	junk
+	junk data
 
 	This is a bad tag with junk at the end of the headers.
 	EOF

@@ -18,7 +18,7 @@ use crate::signature::parse_signed_buffer;
 use std::borrow::Cow;
 use std::io::{Cursor, Write};
 use std::num::NonZeroU32;
-use std::os::raw::c_void;
+use std::os::raw::{c_char, c_void};
 
 /// A trait to map an object to another algorithm.
 pub trait ObjectMapper {
@@ -82,6 +82,14 @@ pub enum ConversionError {
     UnknownHeader(ObjectType),
     InvalidHeader(ObjectType),
     InvalidObjectID(ObjectType, &'static str),
+}
+
+#[repr(C)]
+pub struct ConversionErrorData {
+    pub kind: ObjectType,
+    pub header: *const c_char,
+    pub header_len: usize,
+    pub missing_object: MissingObjectError,
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]

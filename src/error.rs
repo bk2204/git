@@ -11,22 +11,23 @@
 // with this program; if not, see <https://www.gnu.org/licenses/>.
 
 use crate::hash::{InvalidHashAlgorithm, InvalidHexObjectID};
+use crate::object::convert::{ConversionError, ConversionErrorData};
 use std::ffi::CStr;
 use std::fmt::{Debug, Display, Formatter};
-use std::os::raw::c_void;
+use std::os::raw::{c_char, c_void};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 union CErrorValue {
     hash_algo: u32,
     ptr: *mut c_void,
-    unused: u64,
+    u64val: u64,
     offset: usize,
 }
 
 impl Debug for CErrorValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "CErrorValue({:x})", unsafe { self.unused })
+        write!(f, "CErrorValue({:x})", unsafe { self.u64val })
     }
 }
 
@@ -51,7 +52,7 @@ impl CError {
     pub fn success() -> Self {
         Self {
             code: 0,
-            value: CErrorValue { unused: 0 },
+            value: CErrorValue { u64val: 0 },
         }
     }
 
@@ -59,7 +60,7 @@ impl CError {
     pub fn new(code: ErrorConstant) -> Self {
         Self {
             code: code as u64,
-            value: CErrorValue { unused: 0 },
+            value: CErrorValue { u64val: 0 },
         }
     }
 
@@ -67,7 +68,7 @@ impl CError {
     pub fn new_errno(errno: i32) -> Self {
         Self {
             code: (errno as u32) as u64 | Self::BIT_IS_ERRNO,
-            value: CErrorValue { unused: 0 },
+            value: CErrorValue { u64val: 0 },
         }
     }
 
@@ -77,6 +78,18 @@ impl CError {
         Self {
             code: code as u64,
             value,
+        }
+    }
+
+    /// Create a new `CError` with the given data and an additional payload that will be stored as
+    /// a pointer which must be freed.
+    fn new_with_pointer<T, U: Into<Box<T>>>(code: ErrorConstant, value: U) -> Self {
+        let value: Box<T> = value.into();
+        Self {
+            code: code as u64,
+            value: CErrorValue {
+                ptr: Box::into_raw(value) as *mut c_void,
+            },
         }
     }
 
@@ -125,6 +138,13 @@ impl Drop for CError {
                     return;
                 }
                 match ErrorConstant::from_u32((self.code & !Self::BITMASK) as u32) {
+                    Some(ErrorConstant::MissingObjectInConversion)
+                    | Some(ErrorConstant::InvalidObject)
+                    | Some(ErrorConstant::UnknownObjectHeader)
+                    | Some(ErrorConstant::InvalidObjectHeader)
+                    | Some(ErrorConstant::InvalidObjectIDInHeader) => {
+                        std::mem::drop(unsafe { Box::from_raw(ptr as *mut ConversionErrorData) })
+                    }
                     _ => (),
                 }
             } else {
@@ -151,6 +171,45 @@ impl From<Error> for CError {
             Error::InvalidHexObjectID(InvalidHexObjectID::Truncated) => {
                 Self::new(ErrorConstant::InvalidTruncatedHexObjectID)
             }
+            Error::ConversionError(ConversionError::MissingObject(kind, header, ref obj)) => {
+                Self::new_with_pointer::<ConversionErrorData, _>(
+                    e.constant(),
+                    ConversionErrorData {
+                        kind,
+                        header: header.as_ptr() as *const c_char,
+                        header_len: header.len(),
+                        missing_object: obj.clone(),
+                    },
+                )
+            }
+            Error::ConversionError(ConversionError::InvalidTreeEntry) => Self::new(e.constant()),
+            Error::ConversionError(ConversionError::InvalidObject(kind))
+            | Error::ConversionError(ConversionError::UnknownHeader(kind))
+            | Error::ConversionError(ConversionError::InvalidHeader(kind)) => {
+                Self::new_with_pointer::<ConversionErrorData, _>(
+                    e.constant(),
+                    ConversionErrorData {
+                        kind,
+                        header: std::ptr::null(),
+                        header_len: 0,
+                        missing_object: unsafe { std::mem::zeroed() },
+                    },
+                )
+            }
+            Error::ConversionError(ConversionError::InvalidObjectID(kind, header)) => {
+                Self::new_with_pointer::<ConversionErrorData, _>(
+                    e.constant(),
+                    ConversionErrorData {
+                        kind,
+                        header: header.as_ptr() as *const c_char,
+                        header_len: header.len(),
+                        missing_object: unsafe { std::mem::zeroed() },
+                    },
+                )
+            }
+            Error::InvalidObjectType(val) => {
+                Self::new_with_static_value(e.constant(), CErrorValue { u64val: val as u64 })
+            }
         }
     }
 }
@@ -163,6 +222,13 @@ pub enum ErrorConstant {
     InvalidHashAlgorithm = 2,
     InvalidHexObjectIDWithInvalidCharacter = 3,
     InvalidTruncatedHexObjectID = 4,
+    MissingObjectInConversion = 5,
+    InvalidTreeEntry = 6,
+    InvalidObject = 7,
+    UnknownObjectHeader = 8,
+    InvalidObjectHeader = 9,
+    InvalidObjectIDInHeader = 10,
+    InvalidObjectType = 11,
 }
 
 impl ErrorConstant {
@@ -172,6 +238,13 @@ impl ErrorConstant {
             2 => Some(Self::InvalidHashAlgorithm),
             3 => Some(Self::InvalidHexObjectIDWithInvalidCharacter),
             4 => Some(Self::InvalidTruncatedHexObjectID),
+            5 => Some(Self::MissingObjectInConversion),
+            6 => Some(Self::InvalidTreeEntry),
+            7 => Some(Self::InvalidObject),
+            8 => Some(Self::UnknownObjectHeader),
+            9 => Some(Self::InvalidObjectHeader),
+            10 => Some(Self::InvalidObjectIDInHeader),
+            11 => Some(Self::InvalidObjectType),
             _ => None,
         }
     }
@@ -189,6 +262,10 @@ pub enum Error {
     InvalidHashAlgorithm(u32),
     /// An invalid full hex object ID.
     InvalidHexObjectID(InvalidHexObjectID),
+    /// An error converting an object from one algorithm to another.
+    ConversionError(ConversionError),
+    /// An invalid object type.
+    InvalidObjectType(u32),
 }
 
 impl Error {
@@ -202,10 +279,30 @@ impl Error {
             }
             Self::InvalidHexObjectID(InvalidHexObjectID::Truncated) => {
                 ErrorConstant::InvalidTruncatedHexObjectID
-            } // Do not use `_` to match exhaustively here so that we force every new error to have a
-              // valid error constant associated with it.  Additionally, when adding cases here, be
-              // sure to add a test for this case farther down in `tests::error_tests` below, which
-              // verifies that the C code that formats errors is also appropriately wired up.
+            }
+            Self::ConversionError(ConversionError::MissingObject(..)) => {
+                ErrorConstant::MissingObjectInConversion
+            }
+            Self::ConversionError(ConversionError::InvalidTreeEntry) => {
+                ErrorConstant::InvalidTreeEntry
+            }
+            Self::ConversionError(ConversionError::InvalidObject(..)) => {
+                ErrorConstant::InvalidObject
+            }
+            Self::ConversionError(ConversionError::UnknownHeader(..)) => {
+                ErrorConstant::UnknownObjectHeader
+            }
+            Self::ConversionError(ConversionError::InvalidHeader(..)) => {
+                ErrorConstant::InvalidObjectHeader
+            }
+            Self::ConversionError(ConversionError::InvalidObjectID(..)) => {
+                ErrorConstant::InvalidObjectIDInHeader
+            }
+            Self::InvalidObjectType(..) => ErrorConstant::InvalidObjectType,
+            // Do not use `_` to match exhaustively here so that we force every new error to have a
+            // valid error constant associated with it.  Additionally, when adding cases here, be
+            // sure to add a test for this case farther down in `tests::error_tests` below, which
+            // verifies that the C code that formats errors is also appropriately wired up.
         }
     }
 }
@@ -248,6 +345,12 @@ impl From<InvalidHexObjectID> for Error {
     }
 }
 
+impl From<ConversionError> for Error {
+    fn from(e: ConversionError) -> Self {
+        Self::ConversionError(e)
+    }
+}
+
 pub mod c {
     use super::CError;
     use std::os::raw::{c_char, c_void};
@@ -266,6 +369,9 @@ pub mod c {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hash::HashAlgorithm;
+    use crate::object::convert::MissingObjectError;
+    use crate::object::ObjectType;
 
     #[test]
     fn expected_size() {
@@ -308,6 +414,41 @@ mod tests {
                 Error::InvalidHexObjectID(InvalidHexObjectID::Truncated),
                 ErrorConstant::InvalidTruncatedHexObjectID,
                 "truncated hex object ID",
+            ),
+            (
+                Error::ConversionError(ConversionError::MissingObject(ObjectType::Commit, "tree", MissingObjectError::new(HashAlgorithm::SHA256.null_oid().clone(), None, Some(ObjectType::Tree)))),
+                ErrorConstant::MissingObjectInConversion,
+                "unable to map tree 0000000000000000000000000000000000000000000000000000000000000000 in commit object",
+            ),
+            (
+                Error::ConversionError(ConversionError::InvalidTreeEntry),
+                ErrorConstant::InvalidTreeEntry,
+                "failed to decode tree entry",
+            ),
+            (
+                Error::ConversionError(ConversionError::InvalidObject(ObjectType::Tag)),
+                ErrorConstant::InvalidObject,
+                "invalid object of type tag",
+            ),
+            (
+                Error::ConversionError(ConversionError::UnknownHeader(ObjectType::Commit)),
+                ErrorConstant::UnknownObjectHeader,
+                "unknown header in commit object",
+            ),
+            (
+                Error::ConversionError(ConversionError::InvalidHeader(ObjectType::Commit)),
+                ErrorConstant::InvalidObjectHeader,
+                "invalid or corrupt header in commit object",
+            ),
+            (
+                Error::ConversionError(ConversionError::InvalidObjectID(ObjectType::Commit, "parent")),
+                ErrorConstant::InvalidObjectIDInHeader,
+                "invalid object ID in parent header in commit object",
+            ),
+            (
+                Error::InvalidObjectType(10),
+                ErrorConstant::InvalidObjectType,
+                "invalid object type 10",
             ),
         ];
         for (err, constant, text) in testcases {

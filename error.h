@@ -2,6 +2,8 @@
 #define ERROR_H
 
 #include "git-compat-util.h"
+#include "object.h"
+#include "object-file-convert.h"
 
 #define GIT_ERR_BIT_IS_ERRNO 0x8000000000000000
 #define GIT_ERR_BIT_IS_ALLOCATED 0x4000000000000000
@@ -16,18 +18,32 @@ enum git_err_const {
 	GIT_ERRC_INVALID_HASH_ALGORITHM = 2,
 	GIT_ERRC_INVALID_HEX_OBJECT_ID_WITH_INVALID_CHAR = 3,
 	GIT_ERRC_INVALID_TRUNCATED_HEX_OBJECT_ID = 4,
+	GIT_ERRC_MISSING_OBJECT_IN_CONVERSION = 5,
+	GIT_ERRC_INVALID_TREE_ENTRY = 6,
+	GIT_ERRC_INVALID_OBJECT = 7,
+	GIT_ERRC_UNKNOWN_OBJECT_HEADER = 8,
+	GIT_ERRC_INVALID_OBJECT_HEADER = 9,
+	GIT_ERRC_INVALID_OBJECT_ID_IN_HEADER = 10,
+	GIT_ERRC_INVALID_OBJECT_TYPE = 11,
 };
 
 union git_err_value {
 	uint32_t hash_algo;
 	void *ptr;
-	uint64_t unused;
+	uint64_t u64val;
 	size_t offset;
 };
 
 struct git_err {
 	uint64_t code;
 	union git_err_value value;
+};
+
+struct conversion_error {
+	enum object_type type;
+	const char *header;
+	size_t header_len;
+	struct missing_object missing_object;
 };
 
 /* Return an error value indicating success. */

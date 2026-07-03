@@ -343,7 +343,12 @@ impl<'a> ObjectConverter<'a> {
 }
 
 pub mod c {
-    use crate::hash::ObjectID;
+    use super::{ObjectConverter, RepoObjectMapper};
+    use crate::error::{CError, Error};
+    use crate::hash::{HashAlgorithm, ObjectID};
+    use crate::object::ObjectType;
+    use crate::strbuf::Strbuf;
+    use std::convert::TryFrom;
     use std::os::raw::{c_int, c_void};
 
     extern "C" {
@@ -353,6 +358,59 @@ pub mod c {
             to: *const c_void,
             dest: *mut ObjectID,
         ) -> c_int;
+    }
+
+    const OBJ_CONVERT_SKIP_TAG_SIG: u32 = 2;
+
+    /// Convert an object from one hash algorithm to another.
+    ///
+    /// Using the data from repository `repo`, map the object of type `kind` from the hash
+    /// algorithm `from` to the hash algorithm `to` and write the converted object into `outbuf`.
+    /// On success, returns 0.
+    ///
+    /// If `missing` is not null and the object cannot be mapped because the mapping for an object
+    /// is missing, write information about the missing object into `missing` and return -2.
+    ///
+    /// Otherwise, on failure, returns -1 and prints an error message to standard error.
+    ///
+    /// # Safety
+    ///
+    /// `missing` must be null or a valid location for objects.  `repo` must be a validly
+    /// initialized `struct repository`.  `from` and `to` must be valid instances of `const struct
+    /// git_hash_algo`.  `buf` must point to at least `len` bytes of data and `outbuf` must be a
+    /// properly initialized `Strbuf`.
+    #[no_mangle]
+    pub unsafe extern "C" fn convert_object_file_1(
+        repo: *mut c_void,
+        outbuf: *mut Strbuf,
+        from: *const c_void,
+        to: *const c_void,
+        buf: *const c_void,
+        len: usize,
+        kind: u32,
+        flags: u32,
+    ) -> CError {
+        let data = std::slice::from_raw_parts(buf as *const u8, len);
+        let from = match HashAlgorithm::from_ptr(from) {
+            Some(algo) => algo,
+            None => return Error::InvalidHashAlgorithm(from as usize as u32).into(),
+        };
+        let to = match HashAlgorithm::from_ptr(to) {
+            Some(algo) => algo,
+            None => return Error::InvalidHashAlgorithm(from as usize as u32).into(),
+        };
+        let kind = match ObjectType::try_from(kind) {
+            Ok(kind) => kind,
+            Err(_) => return Error::InvalidObjectType(kind).into(),
+        };
+        let outbuf = unsafe { &mut *outbuf };
+        let skip_sigs = (flags & OBJ_CONVERT_SKIP_TAG_SIG) != 0;
+        let mut mapper = RepoObjectMapper::new(repo);
+        let mut converter = ObjectConverter::new(&mut mapper, from, to);
+        match converter.convert(kind, data, outbuf, skip_sigs) {
+            Ok(_) => CError::success(),
+            Err(e) => Error::ConversionError(e).into(),
+        }
     }
 }
 

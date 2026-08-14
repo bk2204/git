@@ -888,6 +888,37 @@ out:
 	return ret;
 }
 
+int odb_map_oid(struct object_database *odb,
+		const struct object_id *src,
+		const struct git_hash_algo *to,
+		struct object_id *dest,
+		enum odb_map_oid_flags flags)
+{
+	struct odb_source *source;
+	int ret;
+
+	odb_prepare_alternates(odb, NULL);
+	for (source = odb->sources; source; source = source->next) {
+		ret = odb_source_map_oid(source, src, to, dest, flags);
+		if (ret != -1)
+			return ret;
+	}
+	return -1;
+}
+
+int odb_write_oid_map(struct object_database *odb,
+		      const struct object_id *oid,
+		      const struct object_id *compat_oid,
+		      enum odb_write_oid_map_flags flags)
+{
+	struct odb_source *source;
+
+	odb_prepare_alternates(odb, NULL);
+	for (source = odb->sources; source; source = source->next)
+		if (!odb_source_write_oid_map(source, oid, compat_oid, flags))
+			return 0;
+	return -1;
+}
 /*
  * Return the slot of the most-significant bit set in "val". There are various
  * ways to do this quickly with fls() or __builtin_clzl(), but speed is

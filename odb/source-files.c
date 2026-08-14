@@ -6,6 +6,7 @@
 #include "gettext.h"
 #include "hex.h"
 #include "lockfile.h"
+#include "loose.h"
 #include "object-file.h"
 #include "odb.h"
 #include "odb/source.h"
@@ -943,6 +944,32 @@ static int odb_source_files_fsck(struct odb_source *source,
 	return ret;
 }
 
+static int odb_source_files_map_oid(struct odb_source *source,
+				    const struct object_id *src,
+				    const struct git_hash_algo *to,
+				    struct object_id *dest,
+				    enum odb_map_oid_flags flags)
+{
+	struct odb_source_files *files = odb_source_files_downcast(source);
+	int ret;
+	ret = odb_source_map_oid(&files->loose->base, src, to, dest, flags);
+	if (ret != -1)
+		return ret;
+	ret = odb_source_map_oid(&files->packed->base, src, to, dest, flags);
+	if (ret != -1)
+		return ret;
+	return odb_source_map_oid(&files->loose->base, src, to, dest, flags | ODB_MAP_OID_RELOAD);
+}
+
+static inline int odb_source_files_write_oid_map(struct odb_source *source,
+						 const struct object_id *oid,
+						 const struct object_id *compat_oid,
+						 enum odb_write_oid_map_flags flags)
+{
+	struct odb_source_files *files = odb_source_files_downcast(source);
+	return odb_source_write_oid_map(&files->loose->base, oid, compat_oid, flags);
+}
+
 struct odb_source_files *odb_source_files_new(struct object_database *odb,
 					      const char *path,
 					      bool local)
@@ -969,6 +996,8 @@ struct odb_source_files *odb_source_files_new(struct object_database *odb,
 	files->base.write_object_stream = odb_source_files_write_object_stream;
 	files->base.begin_transaction = odb_source_files_begin_transaction;
 	files->base.read_alternates = odb_source_files_read_alternates;
+	files->base.map_oid = odb_source_files_map_oid;
+	files->base.write_oid_map = odb_source_files_write_oid_map;
 	files->base.optimize = odb_source_files_optimize;
 	files->base.optimize_required = odb_source_files_optimize_required;
 	files->base.generate_pack = odb_source_files_generate_pack;
